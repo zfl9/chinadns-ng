@@ -26,11 +26,11 @@ int main() {
         return errno;
     }
 
-    /* declare src&dest addr */
+    /* declare src & dest addr */
     struct sockaddr_nl src_addr = {.nl_family = AF_NETLINK, .nl_pid = getpid()};
     struct sockaddr_nl dest_addr = {.nl_family = AF_NETLINK, .nl_pid = 0}; // to kernel
 
-    /* bind sre addr for self */
+    /* bind src addr for self */
     if (bind(sockfd, (void *)&src_addr, sizeof(src_addr))) {
         perror("bind() failed");
         return errno;
