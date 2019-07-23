@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
+#undef _GNU_SOURCE
 
 /* netfilter and ipset constants definition */
 #define NFNETLINK_V0 0
@@ -30,11 +31,12 @@ struct nfgenmsg {
     __be16  res_id;         /* resource id */
 };
 
+/* ipset netlink msg buffer maxlen */
 #define MSGBUFFER_MAXLEN 512
 
 /* static global variable declaration */
 static int          g_ipset_socket = -1;
-static __u32        g_ipset_nlmsg_seq = 0;
+static __u32        g_ipset_nlmsg_seq = 1;
 static char         g_ipset_setname4[IPSET_MAXNAMELEN] = {0};
 static char         g_ipset_setname6[IPSET_MAXNAMELEN] = {0};
 static char         g_ipset_sendbuffer4[MSGBUFFER_MAXLEN] = {0};
@@ -49,7 +51,7 @@ static __u32       *g_ipset_nlmsg6_seq_ptr = NULL;
 int new_udp4_socket(void) {
     int sockfd = socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
     if (sockfd < 0) {
-        LOGERR("[new_udp4_socket] socket(AF_INET, SOCK_DGRAM): (%d) %s", errno, strerror(errno));
+        LOGERR("[new_udp4_socket] failed to create udp socket: (%d) %s", errno, strerror(errno));
         exit(errno);
     }
     return sockfd;
@@ -59,7 +61,7 @@ int new_udp4_socket(void) {
 int new_udp6_socket(void) {
     int sockfd = socket(AF_INET6, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
     if (sockfd < 0) {
-        LOGERR("[new_udp6_socket] socket(AF_INET6, SOCK_DGRAM): (%d) %s", errno, strerror(errno));
+        LOGERR("[new_udp6_socket] failed to create udp socket: (%d) %s", errno, strerror(errno));
         exit(errno);
     }
     return sockfd;
@@ -70,7 +72,7 @@ int get_addrstr_family(const char *addrstr) {
     if (!addrstr || strlen(addrstr) == 0) {
         return -1;
     }
-    ipv6_addr_t addrbin;
+    ipv6_addr_t addrbin; /* char [16] array */
     if (inet_pton(AF_INET, addrstr, &addrbin) == 1) {
         return AF_INET;
     } else if (inet_pton(AF_INET6, addrstr, &addrbin) == 1) {
@@ -80,47 +82,49 @@ int get_addrstr_family(const char *addrstr) {
     }
 }
 
-/* build ipv4/ipv6 address structure */
+/* build ipv4 address structure */
 void build_ipv4_addr(struct sockaddr_in *addr, const char *host, uint16_t port) {
     addr->sin_family = AF_INET;
     inet_pton(AF_INET, host, &addr->sin_addr);
     addr->sin_port = htons(port);
 }
 
+/* build ipv6 address structure */
 void build_ipv6_addr(struct sockaddr_in6 *addr, const char *host, uint16_t port) {
     addr->sin6_family = AF_INET6;
     inet_pton(AF_INET6, host, &addr->sin6_addr);
     addr->sin6_port = htons(port);
 }
 
-/* parse ipv4/ipv6 address structure */
+/* parse ipv4 address structure */
 void parse_ipv4_addr(const struct sockaddr_in *addr, char *host, uint16_t *port) {
 	inet_ntop(AF_INET, &addr->sin_addr, host, INET_ADDRSTRLEN);
     *port = ntohs(addr->sin_port);
 }
 
+/* parse ipv6 address structure */
 void parse_ipv6_addr(const struct sockaddr_in6 *addr, char *host, uint16_t *port) {
 	inet_ntop(AF_INET6, &addr->sin6_addr, host, INET6_ADDRSTRLEN);
     *port = ntohs(addr->sin6_port);
 }
 
-/* create netlink socket */
+/* create ipset netlink socket */
 static void ipset_create_nlsocket(void) {
-    // create netlink socket
+    /* create netlink socket */
     g_ipset_socket = socket(AF_NETLINK, SOCK_DGRAM, NETLINK_NETFILTER);
     if (g_ipset_socket < 0) {
         LOGERR("[ipset_create_nlsocket] failed to create netlink socket: (%d) %s", errno, strerror(errno));
         exit(errno);
     }
 
-    // bind netlink address
+    /* bind netlink address */
     struct sockaddr_nl self_addr = {.nl_family = AF_NETLINK, .nl_pid = getpid(), .nl_groups = 0};
     if (bind(g_ipset_socket, (void *)&self_addr, sizeof(self_addr))) {
         LOGERR("[ipset_create_nlsocket] failed to bind address to socket: (%d) %s", errno, strerror(errno));
         exit(errno);
     }
 
-    // connect to kernel
+    /* connect to kernel */
     struct sockaddr_nl dest_addr = {.nl_family = AF_NETLINK, .nl_pid = 0, .nl_groups = 0};
     if (connect(g_ipset_socket, (void *)&dest_addr, sizeof(dest_addr))) {
         LOGERR("[ipset_create_nlsocket] failed to connect to kernel: (%d) %s", errno, strerror(errno));
@@ -139,10 +143,10 @@ static void ipset_prebuild_nlmsg(bool is_ipv4) {
     netlink_msg->nlmsg_len = NLMSG_ALIGN(sizeof(struct nlmsghdr));
     netlink_msg->nlmsg_type = (NFNL_SUBSYS_IPSET << 8) | IPSET_CMD_TEST;
     netlink_msg->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-    netlink_msg->nlmsg_seq = g_ipset_nlmsg_seq; // should be incremented
-    if (is_ipv4) g_ipset_nlmsg4_seq_ptr = &netlink_msg->nlmsg_seq; // ptr for store ipv4 nlmsg seq
-    if (!is_ipv4) g_ipset_nlmsg6_seq_ptr = &netlink_msg->nlmsg_seq; // ptr for store ipv6 nlmsg seq
     netlink_msg->nlmsg_pid = getpid();
+    netlink_msg->nlmsg_seq = g_ipset_nlmsg_seq; // should be incremented
+    if (is_ipv4) g_ipset_nlmsg4_seq_ptr = &netlink_msg->nlmsg_seq; // ptr for set ipv4 nlmsg seq
+    if (!is_ipv4) g_ipset_nlmsg6_seq_ptr = &netlink_msg->nlmsg_seq; // ptr for set ipv6 nlmsg seq
 
     /* netfilter msg */
     struct nfgenmsg *netfilter_msg = buffer + netlink_msg->nlmsg_len;
@@ -191,13 +195,9 @@ static void ipset_prebuild_nlmsg(bool is_ipv4) {
 
 /* init netlink socket for ipset query */
 void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6) {
-    if (!ipset_name4 && !ipset_name6) {
-        LOGERR("[ipset_init_nlsocket] ipset_setname4 and ipset_setname6 are both NULL");
-        exit(1);
-    }
     if (ipset_name4) {
         size_t namelen = strlen(ipset_name4) + 1;
-        if (namelen == 0 || namelen > IPSET_MAXNAMELEN) {
+        if (namelen == 1 || namelen > IPSET_MAXNAMELEN) {
             LOGERR("[ipset_init_nlsocket] length of ipset_setname4 is invalid: %zu", namelen);
             exit(1);
         }
@@ -205,18 +205,18 @@ void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6) {
     }
     if (ipset_name6) {
         size_t namelen = strlen(ipset_name6) + 1;
-        if (namelen == 0 || namelen > IPSET_MAXNAMELEN) {
+        if (namelen == 1 || namelen > IPSET_MAXNAMELEN) {
             LOGERR("[ipset_init_nlsocket] length of ipset_setname6 is invalid: %zu", namelen);
             exit(1);
         }
         strcpy(g_ipset_setname6, ipset_name6);
     }
     ipset_create_nlsocket();
-    ipset_prebuild_nlmsg(true);
-    ipset_prebuild_nlmsg(false);
+    ipset_prebuild_nlmsg(true); /* prebuild ipv4 nlmsg */
+    ipset_prebuild_nlmsg(false); /* prebuild ipv6 nlmsg */
 }
 
-/* check given ipaddr is exists in set */
+/* check given ipaddr is exists in ipset */
 bool ipset_addr4_is_exists(ipv4_addr_t addr) {
     *g_ipset_ipv4addr_ptr = addr;
     *g_ipset_nlmsg4_seq_ptr = g_ipset_nlmsg_seq++;
@@ -224,7 +224,6 @@ bool ipset_addr4_is_exists(ipv4_addr_t addr) {
         LOGERR("[ipset_addr4_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
-
     if (recv(g_ipset_socket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
         LOGERR("[ipset_addr4_is_exists] failed to recv netlink msg from kernel: (%d) %s", errno, strerror(errno));
         return false;
@@ -233,14 +232,14 @@ bool ipset_addr4_is_exists(ipv4_addr_t addr) {
     return netlink_errmsg->error == 0 ? true : false;
 }
 
-bool ipset_addr6_is_exists(ipv6_addr_t addr) {
+/* check given ipaddr is exists in ipset */
+bool ipset_addr6_is_exists(const ipv6_addr_t addr) {
     memcpy(g_ipset_ipv6addr_ptr, addr, sizeof(ipv6_addr_t));
     *g_ipset_nlmsg6_seq_ptr = g_ipset_nlmsg_seq++;
     if (send(g_ipset_socket, g_ipset_sendbuffer6, ((struct nlmsghdr *)g_ipset_sendbuffer6)->nlmsg_len, 0) < 0) {
         LOGERR("[ipset_addr6_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
-
     if (recv(g_ipset_socket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
         LOGERR("[ipset_addr6_is_exists] failed to recv netlink msg from kernel: (%d) %s", errno, strerror(errno));
         return false;

@@ -4,7 +4,6 @@
 #define _GNU_SOURCE
 #include <stdint.h>
 #include <stdbool.h>
-#include <linux/types.h>
 #include <netinet/in.h>
 #undef _GNU_SOURCE
 
@@ -34,8 +33,8 @@ void parse_ipv6_addr(const struct sockaddr_in6 *addr, char *host, uint16_t *port
 /* init netlink socket for ipset query */
 void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6);
 
-/* check given ipaddr is exists in set */
+/* check given ipaddr is exists in ipset */
 bool ipset_addr4_is_exists(ipv4_addr_t addr);
-bool ipset_addr6_is_exists(ipv6_addr_t addr);
+bool ipset_addr6_is_exists(const ipv6_addr_t addr);
 
 #endif
