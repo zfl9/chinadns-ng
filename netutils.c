@@ -191,8 +191,26 @@ static void ipset_prebuild_nlmsg(bool is_ipv4) {
 
 /* init netlink socket for ipset query */
 void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6) {
-    strcpy(g_ipset_setname4, ipset_name4);
-    strcpy(g_ipset_setname6, ipset_name6);
+    if (!ipset_name4 && !ipset_name6) {
+        LOGERR("[ipset_init_nlsocket] ipset_setname4 and ipset_setname6 are both NULL");
+        exit(1);
+    }
+    if (ipset_name4) {
+        size_t namelen = strlen(ipset_name4) + 1;
+        if (namelen == 0 || namelen > IPSET_MAXNAMELEN) {
+            LOGERR("[ipset_init_nlsocket] length of ipset_setname4 is invalid: %zu", namelen);
+            exit(1);
+        }
+        strcpy(g_ipset_setname4, ipset_name4);
+    }
+    if (ipset_name6) {
+        size_t namelen = strlen(ipset_name6) + 1;
+        if (namelen == 0 || namelen > IPSET_MAXNAMELEN) {
+            LOGERR("[ipset_init_nlsocket] length of ipset_setname6 is invalid: %zu", namelen);
+            exit(1);
+        }
+        strcpy(g_ipset_setname6, ipset_name6);
+    }
     ipset_create_nlsocket();
     ipset_prebuild_nlmsg(true);
     ipset_prebuild_nlmsg(false);
