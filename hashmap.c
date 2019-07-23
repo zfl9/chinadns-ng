@@ -3,6 +3,7 @@
 #include "logutils.h"
 #include <stdlib.h>
 #include <unistd.h>
+#undef _GNU_SOURCE
 
 hashmap_t* hashmap_new(void) {
     hashmap_t *hashmap = NULL;
@@ -44,7 +45,7 @@ void hashmap_del(hashmap_t *hashmap, hashmap_key_t key) {
 void hashmap_free(hashmap_t *hashmap) {
     hashmap_entry_t *curr_entry = NULL, *temp_entry = NULL;
     HASH_ITER(hh, hashmap, curr_entry, temp_entry) {
-        if (curr_entry->value > 0) close(curr_entry->value);
+        if (curr_entry->value >= 0) close(curr_entry->value);
         HASH_DEL(hashmap, curr_entry);
         free(curr_entry);
     }
