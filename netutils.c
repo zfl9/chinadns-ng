@@ -219,11 +219,11 @@ void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6) {
 /* check given ipaddr is exists in set */
 bool ipset_addr4_is_exists(ipv4_addr_t addr) {
     *g_ipset_ipv4addr_ptr = addr;
+    *g_ipset_nlmsg4_seq_ptr = g_ipset_nlmsg_seq++;
     if (send(g_ipset_socket, g_ipset_sendbuffer4, ((struct nlmsghdr *)g_ipset_sendbuffer4)->nlmsg_len, 0) < 0) {
         LOGERR("[ipset_addr4_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
-    *g_ipset_nlmsg4_seq_ptr = ++g_ipset_nlmsg_seq;
 
     if (recv(g_ipset_socket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
         LOGERR("[ipset_addr4_is_exists] failed to recv netlink msg from kernel: (%d) %s", errno, strerror(errno));
@@ -235,11 +235,11 @@ bool ipset_addr4_is_exists(ipv4_addr_t addr) {
 
 bool ipset_addr6_is_exists(ipv6_addr_t addr) {
     memcpy(g_ipset_ipv6addr_ptr, addr, sizeof(ipv6_addr_t));
+    *g_ipset_nlmsg6_seq_ptr = g_ipset_nlmsg_seq++;
     if (send(g_ipset_socket, g_ipset_sendbuffer6, ((struct nlmsghdr *)g_ipset_sendbuffer6)->nlmsg_len, 0) < 0) {
         LOGERR("[ipset_addr6_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
-    *g_ipset_nlmsg6_seq_ptr = ++g_ipset_nlmsg_seq;
 
     if (recv(g_ipset_socket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
         LOGERR("[ipset_addr6_is_exists] failed to recv netlink msg from kernel: (%d) %s", errno, strerror(errno));
