@@ -30,20 +30,21 @@ hashmap_value_t hashmap_get(const hashmap_t *hashmap, hashmap_key_t key) {
     return entry ? entry->value : -1;
 }
 
+/* please close timer fd before calling */
 void hashmap_del(hashmap_t *hashmap, hashmap_key_t key) {
     hashmap_entry_t *entry = NULL;
     HASH_FIND(hh, hashmap, &key, sizeof(hashmap_key_t), entry);
     if (entry) {
-        /* please close timer fd before calling */
         HASH_DEL(hashmap, entry);
         free(entry);
     }
 }
 
+/* close all timer fd */
 void hashmap_free(hashmap_t *hashmap) {
     hashmap_entry_t *curr_entry = NULL, *temp_entry = NULL;
     HASH_ITER(hh, hashmap, curr_entry, temp_entry) {
-        close(curr_entry->value); /* close timer fd */
+        if (curr_entry->value > 0) close(curr_entry->value);
         HASH_DEL(hashmap, curr_entry);
         free(curr_entry);
     }
