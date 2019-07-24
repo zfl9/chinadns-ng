@@ -64,11 +64,11 @@ static inline bool dns_rheader_check(const void *data) {
 static bool dns_packet_check(const void *data, ssize_t len, char *name_buf, bool is_query, const void **answer_ptr) {
     /* check packet length */ 
     if (len < (ssize_t)sizeof(dns_header_t) + (ssize_t)sizeof(dns_query_t) + 1) {
-        LOGERR("[dns_packet_check] the dns packet is too small: %zu", len);
+        LOGERR("[dns_packet_check] the dns packet is too small: %zd", len);
         return false;
     }
     if (len > DNS_PACKET_MAXSIZE) {
-        LOGERR("[dns_packet_check] the dns packet is too large: %zu", len);
+        LOGERR("[dns_packet_check] the dns packet is too large: %zd", len);
         return false;
     }
 
@@ -123,7 +123,7 @@ static bool dns_packet_check(const void *data, ssize_t len, char *name_buf, bool
         }
     }
 
-    /* check length and class */
+    /* check query class */
     data += len - q_len;
     len -= len - q_len;
     if (len < (ssize_t)sizeof(dns_query_t)) {
