@@ -23,6 +23,7 @@
 #define IPSET_ATTR_IP 1
 #define IPSET_ATTR_IPADDR_IPV4 1
 #define IPSET_ATTR_IPADDR_IPV6 2
+#define IPSET_ERR_EXIST -4103
 
 /* netfilter's general netlink message structure */
 struct nfgenmsg {
@@ -229,7 +230,16 @@ bool ipset_addr4_is_exists(ipv4_addr_t addr) {
         return false;
     }
     struct nlmsgerr *netlink_errmsg = NLMSG_DATA(g_ipset_recvbuffer);
-    return netlink_errmsg->error == 0 ? true : false;
+    switch (netlink_errmsg->error) {
+        case 0:
+            return true; // exist
+        case IPSET_ERR_EXIST:
+            return false; // not exist
+        default:
+            LOGERR("[ipset_addr4_is_exists] received unknown error code from kernel: %d", netlink_errmsg->error);
+            return false; // error occurred
+    }
+    return false; // unachievable
 }
 
 /* check given ipaddr is exists in ipset */
@@ -245,5 +255,14 @@ bool ipset_addr6_is_exists(const ipv6_addr_t addr) {
         return false;
     }
     struct nlmsgerr *netlink_errmsg = NLMSG_DATA(g_ipset_recvbuffer);
-    return netlink_errmsg->error == 0 ? true : false;
+    switch (netlink_errmsg->error) {
+        case 0:
+            return true; // exist
+        case IPSET_ERR_EXIST:
+            return false; // not exist
+        default:
+            LOGERR("[ipset_addr6_is_exists] received unknown error code from kernel: %d", netlink_errmsg->error);
+            return false; // error occurred
+    }
+    return false; // unachievable
 }
