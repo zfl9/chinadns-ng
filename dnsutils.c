@@ -13,6 +13,8 @@
 #define DNS_CLASS_INTERNET 1
 #define DNS_RECORD_TYPE_A 1 /* ipv4 address */
 #define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
+#define DNS_DNAME_LABEL_MAXLEN 63 /* domain-name label maxlen */
+#define DNS_DNAME_COMPRESSION_MINVAL 192 /* domain-name compression minval */
 
 /* check packet length */
 static inline bool dns_packet_length_check(size_t len) {
@@ -73,25 +75,29 @@ static inline bool dns_reply_header_check(const void *data) {
 
 /* check and get domain name */
 static bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
-    const char *ptr = data + sizeof(dns_header_t);
+    const uint8_t *ptr = data + sizeof(dns_header_t);
     len -= sizeof(dns_header_t);
     if (*ptr == 0) {
         LOGERR("[dns_get_domain_name] the length of the domain name is zero");
         return false;
     }
-    if (*ptr > 63) {
+    if (*ptr >= DNS_DNAME_COMPRESSION_MINVAL) {
         LOGERR("[dns_get_domain_name] the first domain name should not use compression");
         return false;
     }
-    const char *dup_ptr = ptr;
+    if (*ptr > DNS_DNAME_LABEL_MAXLEN) {
+        LOGERR("[dns_get_domain_name] the length of the domain name label is too long");
+        return false;
+    }
+    const uint8_t *dptr = ptr;
     bool is_valid = false;
     while (true) {
-        if (*dup_ptr == 0) {
+        if (*dptr == 0) {
             is_valid = true;
             break;
         }
-        dup_ptr += *dup_ptr + 1;
-        len -= *dup_ptr + 1;
+        dptr += *dptr + 1;
+        len -= *dptr + 1;
         if (len <= 0) {
             break;
         }
@@ -101,7 +107,7 @@ static bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
         return false;
     }
     if (!name_buf) return true;
-    strcpy(name_buf, ptr + 1);
+    strcpy(name_buf, (char *)ptr + 1);
     name_buf += *ptr;
     while (*name_buf > 0) {
         uint8_t next_len = *name_buf;
