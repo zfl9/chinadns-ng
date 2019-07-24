@@ -109,10 +109,10 @@ static bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
     if (!name_buf) return true;
     strcpy(name_buf, (char *)ptr + 1);
     name_buf += *ptr;
-    while (*name_buf > 0) {
-        uint8_t next_len = *name_buf;
-        *name_buf = 0;
-        name_buf += next_len + 1;
+    while (*name_buf != 0) {
+        uint8_t step = *name_buf;
+        *name_buf = '.';
+        name_buf += step + 1;
     }
     return true;
 }
