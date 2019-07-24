@@ -25,17 +25,19 @@ typedef struct __attribute__((packed)) {
 
 /* fixed length of query structure */
 typedef struct __attribute__((packed)) {
+    // field qname; variable length
     uint16_t qtype; // query type: A/AAAA/CNAME/MX, etc.
     uint16_t qclass; // query class: internet=0x0001
 } dns_query_t;
 
 /* fixed length of record structure */
 typedef struct __attribute__((packed)) {
+    // field rname; variable length
     uint16_t rtype; // record type: A/AAAA/CNAME/MX, etc.
     uint16_t rclass; // record class: internet=0x0001
     uint32_t rttl; // record ttl value (in seconds)
     uint16_t rdatalen; // record data length
-    uint8_t  rdata[]; // record data pointer, sizeof(rdata) = 0
+    uint8_t  rdataptr[]; // record data pointer, sizeof=0
 } dns_record_t;
 
 #endif
