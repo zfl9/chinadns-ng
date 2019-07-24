@@ -9,6 +9,7 @@
 #define DNS_QR_QUERY 0
 #define DNS_QR_REPLY 1
 #define DNS_OPCODE_QUERY 0
+#define DNS_RCODE_NOERROR 0
 #define DNS_CLASS_INTERNET 1
 #define DNS_RECORD_TYPE_A 1 /* ipv4 address */
 #define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
