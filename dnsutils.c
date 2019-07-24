@@ -30,19 +30,19 @@ static inline bool dns_packet_length_check(size_t len) {
 /* check query packet header */
 static inline bool dns_query_header_check(const void *data) {
     const dns_header_t *header = data;
-    if (header->qr == 1) {
-        LOGERR("[dns_query_header_check] this is a query packet, but header->qr == 1");
+    if (header->qr != DNS_QR_QUERY) {
+        LOGERR("[dns_query_header_check] this is a query packet, but header->qr != 0");
         return false;
     }
     if (header->opcode != DNS_OPCODE_QUERY) {
-        LOGERR("[dns_query_header_check] this is not a standard query packet, opcode: %hhu", header->opcode);
+        LOGERR("[dns_query_header_check] this is not a standard query, opcode: %hhu", header->opcode);
         return false;
     }
     if (!header->rd) {
         LOGERR("[dns_query_header_check] non-recursive query is not supported");
         return false;
     }
-    if (htons(header->question_count) == 0) {
+    if (ntohs(header->question_count) == 0) {
         LOGERR("[dns_query_header_check] need at least one question section");
         return false;
     }
@@ -52,16 +52,20 @@ static inline bool dns_query_header_check(const void *data) {
 /* check reply packet header */
 static inline bool dns_reply_header_check(const void *data) {
     const dns_header_t *header = data;
-    if (header->qr == 0) {
-        LOGERR("[dns_reply_header_check] this is a reply packet, but header->qr == 0");
+    if (header->qr != DNS_QR_REPLY) {
+        LOGERR("[dns_reply_header_check] this is a reply packet, but header->qr != 1");
+        return false;
+    }
+    if (header->tc) {
+        LOGERR("[dns_reply_header_check] dns reply message has been truncated");
         return false;
     }
     if (!header->ra) {
         LOGERR("[dns_reply_header_check] non-recursive reply is not supported");
         return false;
     }
-    if (header->tc) {
-        LOGERR("[dns_reply_header_check] dns reply message has been truncated");
+    if (ntohs(header->question_count) == 0) {
+        LOGERR("[dns_reply_header_check] need at least one question section");
         return false;
     }
     return true;
@@ -109,6 +113,7 @@ static bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
 
 /* check the ipaddr of the first A/AAAA record is in ipset */
 static bool dns_reply_ipset_check(const void *data, size_t len) {
+    // TODO
     return false;
 }
 
