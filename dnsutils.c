@@ -133,7 +133,7 @@ static bool dns_packet_check(const void *data, ssize_t len, char *name_buf, bool
         return false;
     }
     const dns_query_t *query_ptr = data;
-    if (query_ptr->qclass != DNS_CLASS_INTERNET) {
+    if (ntohs(query_ptr->qclass) != DNS_CLASS_INTERNET) {
         LOGERR("[dns_packet_check] only supports standard internet query class");
         return false;
     }
@@ -145,8 +145,24 @@ static bool dns_packet_check(const void *data, ssize_t len, char *name_buf, bool
 }
 
 /* check the ipaddr of the first A/AAAA record is in `chnroute` ipset */
-static bool dns_ipset_check(const void *data, ssize_t len) {
-    // TODO
+static bool dns_ipset_check(const dns_header_t *header_ptr, const void *ans_ptr, ssize_t len) {
+    uint16_t answer_count = ntohs(header_ptr->answer_count);
+    if (answer_count == 0) return false;
+    if (header_ptr->rcode != DNS_RCODE_NOERROR) return false;
+    if (len <= 0) {
+        LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
+        return false;
+    }
+
+    /* only filter A/AAAA reply */
+    const dns_query_t *query_ptr = ans_ptr - sizeof(dns_query_t);
+    uint16_t qtype = ntohs(query_ptr->qtype);
+    if (qtype != DNS_RECORD_TYPE_A && qtype != DNS_RECORD_TYPE_AAAA) return true;
+
+    for (uint16_t i = 0; i < answer_count; ++i) {
+        // TODO
+    }
+
     return true;
 }
 
@@ -159,5 +175,5 @@ bool dns_query_is_valid(const void *data, ssize_t len, char *name_buf) {
 bool dns_reply_is_valid(const void *data, ssize_t len, char *name_buf, bool is_trusted) {
     const void *answer_ptr = NULL;
     if (!dns_packet_check(data, len, name_buf, false, &answer_ptr)) return false;
-    return is_trusted ? true : dns_ipset_check(answer_ptr, len - (answer_ptr - data));
+    return is_trusted ? true : dns_ipset_check(data, answer_ptr, len - (answer_ptr - data));
 }
