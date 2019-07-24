@@ -44,10 +44,10 @@ typedef struct __attribute__((packed)) {
     uint8_t  rdataptr[]; // record data pointer, sizeof=0
 } dns_record_t;
 
-/* check a dns query is valid, nameptr used to get relevant domain name */
-bool dns_query_is_valid(const void *data, size_t len, const char **nameptr);
+/* check a dns query is valid, `name_buf` used to get relevant domain name */
+bool dns_query_is_valid(const void *data, size_t len, char *name_buf);
 
-/* check a dns reply is valid, nameptr used to get relevant domain name */
-bool dns_reply_is_valid(const void *data, size_t len, const char **nameptr);
+/* check a dns reply is valid, `name_buf` used to get relevant domain name */
+bool dns_reply_is_valid(const void *data, size_t len, char *name_buf, bool is_trusted);
 
 #endif
