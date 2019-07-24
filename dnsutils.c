@@ -59,6 +59,10 @@ static inline bool dns_reply_header_check(const void *data) {
         LOGERR("[dns_reply_header_check] non-recursive reply is not supported");
         return false;
     }
+    if (header->tc) {
+        LOGERR("[dns_reply_header_check] dns reply message has been truncated");
+        return false;
+    }
     return true;
 }
 
