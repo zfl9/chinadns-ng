@@ -123,15 +123,20 @@ static bool dns_packet_check(const void *data, ssize_t len, char *name_buf, bool
         }
     }
 
-    /* check length */
+    /* check length and class */
     data += len - q_len;
     len -= len - q_len;
     if (len < (ssize_t)sizeof(dns_query_t)) {
         LOGERR("[dns_packet_check] the format of the dns packet is incorrect");
         return false;
     }
+    const dns_query_t *query_ptr = data;
+    if (query_ptr->qclass != DNS_CLASS_INTERNET) {
+        LOGERR("[dns_packet_check] only supports standard internet query class");
+        return false;
+    }
 
-    /* save answer ptr */
+    /* save answer section ptr */
     if (answer_ptr) *answer_ptr = data;
 
     return true;
