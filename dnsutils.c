@@ -16,65 +16,67 @@
 #define DNS_DNAME_LABEL_MAXLEN 63 /* domain-name label maxlen */
 #define DNS_DNAME_COMPRESSION_MINVAL 192 /* domain-name compression minval */
 
-/* check packet length */
-static inline bool dns_packet_length_check(size_t len) {
-    if (len < sizeof(dns_header_t) + sizeof(dns_query_t) + 1) {
-        LOGERR("[dns_length_is_valid] the dns packet is too small: %zu", len);
-        return false;
-    }
-    if (len > DNS_PACKET_MAXSIZE) {
-        LOGERR("[dns_length_is_valid] the dns packet is too large: %zu", len);
-        return false;
-    }
-    return true;
-}
-
 /* check query packet header */
-static inline bool dns_query_header_check(const void *data) {
+static inline bool dns_qheader_check(const void *data) {
     const dns_header_t *header = data;
     if (header->qr != DNS_QR_QUERY) {
-        LOGERR("[dns_query_header_check] this is a query packet, but header->qr != 0");
+        LOGERR("[dns_qheader_check] this is a query packet, but header->qr != 0");
         return false;
     }
     if (header->opcode != DNS_OPCODE_QUERY) {
-        LOGERR("[dns_query_header_check] this is not a standard query, opcode: %hhu", header->opcode);
+        LOGERR("[dns_qheader_check] this is not a standard query, opcode: %hhu", header->opcode);
         return false;
     }
     if (!header->rd) {
-        LOGERR("[dns_query_header_check] non-recursive query is not supported");
+        LOGERR("[dns_qheader_check] non-recursive query is not supported");
         return false;
     }
     if (ntohs(header->question_count) != 1) {
-        LOGERR("[dns_query_header_check] there should be one and only one question section");
+        LOGERR("[dns_qheader_check] there should be one and only one question section");
         return false;
     }
     return true;
 }
 
 /* check reply packet header */
-static inline bool dns_reply_header_check(const void *data) {
+static inline bool dns_rheader_check(const void *data) {
     const dns_header_t *header = data;
     if (header->qr != DNS_QR_REPLY) {
-        LOGERR("[dns_reply_header_check] this is a reply packet, but header->qr != 1");
+        LOGERR("[dns_rheader_check] this is a reply packet, but header->qr != 1");
         return false;
     }
     if (header->tc) {
-        LOGERR("[dns_reply_header_check] dns reply message has been truncated");
+        LOGERR("[dns_rheader_check] dns reply message has been truncated");
         return false;
     }
     if (!header->ra) {
-        LOGERR("[dns_reply_header_check] non-recursive reply is not supported");
+        LOGERR("[dns_rheader_check] non-recursive reply is not supported");
         return false;
     }
     if (ntohs(header->question_count) != 1) {
-        LOGERR("[dns_reply_header_check] there should be one and only one question section");
+        LOGERR("[dns_rheader_check] there should be one and only one question section");
         return false;
     }
     return true;
 }
 
-/* check and get domain name */
-static bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
+/* check dns packet */
+static bool dns_packet_check(const void *data, size_t len, char *name_buf, bool is_query, const void **answer_ptr) {
+    /* check packet length */ 
+    if (len < sizeof(dns_header_t) + sizeof(dns_query_t) + 1) {
+        LOGERR("[dns_packet_check] the dns packet is too small: %zu", len);
+        return false;
+    }
+    if (len > DNS_PACKET_MAXSIZE) {
+        LOGERR("[dns_packet_check] the dns packet is too large: %zu", len);
+        return false;
+    }
+
+    /* check packet header */
+    if (is_query) if (!dns_qheader_check(data)) return false;
+    if (!is_query) if (!dns_rheader_check(data)) return false;
+
+    /* check question section */
     const uint8_t *ptr = data + sizeof(dns_header_t);
     len -= sizeof(dns_header_t);
     if (*ptr == 0) {
@@ -117,32 +119,20 @@ static bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
     return true;
 }
 
-/* check the ipaddr of the first A/AAAA record is in ipset */
-static bool dns_reply_ipset_check(const void *data, size_t len) {
-    const dns_header_t *header = data;
-    if (header->rcode != DNS_RCODE_NOERROR) return false;
-    if (ntohs(header->answer_count) == 0) return false;
-
-    data += sizeof(dns_header_t);
-    len -= sizeof(dns_header_t);
-
-    /* skip question section */
-
+/* check the ipaddr of the first A/AAAA record is in `chnroute` ipset */
+static bool dns_ipset_check(const void *data, size_t len) {
+    // TODO
     return true;
 }
 
 /* check a dns query is valid, `name_buf` used to get relevant domain name */
 bool dns_query_is_valid(const void *data, size_t len, char *name_buf) {
-    if (!dns_packet_length_check(len)) return false;
-    if (!dns_query_header_check(data)) return false;
-    if (!dns_get_domain_name(data, len, name_buf)) return false;
-    return true;
+    return dns_packet_check(data, len, name_buf, true, NULL);
 }
 
 /* check a dns reply is valid, `name_buf` used to get relevant domain name */
 bool dns_reply_is_valid(const void *data, size_t len, char *name_buf, bool is_trusted) {
-    if (!dns_packet_length_check(len)) return false;
-    if (!dns_reply_header_check(data)) return false;
-    if (!dns_get_domain_name(data, len, name_buf)) return false;
-    return is_trusted ? true : dns_reply_ipset_check(data, len);
+    const void *answer_ptr = NULL;
+    if (!dns_packet_check(data, len, name_buf, false, &answer_ptr)) return false;
+    return is_trusted ? true : dns_ipset_check(answer_ptr, len - (answer_ptr - data));
 }
