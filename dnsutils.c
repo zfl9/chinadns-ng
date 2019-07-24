@@ -9,7 +9,11 @@
 #define DNS_QR_QUERY 0
 #define DNS_QR_REPLY 1
 #define DNS_OPCODE_QUERY 0
+#define DNS_CLASS_INTERNET 1
+#define DNS_TYPE_A 1 /* ipv4 address */
+#define DNS_TYPE_AAAA 28 /* ipv6 address */
 
+/* check packet length */
 static inline bool dns_packet_length_check(size_t len) {
     if (len < sizeof(dns_header_t) + sizeof(dns_query_t) + 1) {
         LOGERR("[dns_length_is_valid] the dns packet is too small: %zu", len);
@@ -22,6 +26,7 @@ static inline bool dns_packet_length_check(size_t len) {
     return true;
 }
 
+/* check query packet header */
 static inline bool dns_query_header_check(const void *data) {
     const dns_header_t *header = data;
     if (header->qr == 1) {
@@ -43,6 +48,7 @@ static inline bool dns_query_header_check(const void *data) {
     return true;
 }
 
+/* check reply packet header */
 static inline bool dns_reply_header_check(const void *data) {
     const dns_header_t *header = data;
     if (header->qr == 0) {
@@ -56,6 +62,7 @@ static inline bool dns_reply_header_check(const void *data) {
     return true;
 }
 
+/* check and get domain name */
 static inline bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
     const char *ptr = data + sizeof(dns_header_t);
     len -= sizeof(dns_header_t);
@@ -68,7 +75,6 @@ static inline bool dns_get_domain_name(const void *data, size_t len, char *name_
         return false;
     }
     const char *dup_ptr = ptr;
-    size_t dup_len = len;
     bool is_valid = false;
     while (true) {
         if (*dup_ptr == 0) {
@@ -76,10 +82,14 @@ static inline bool dns_get_domain_name(const void *data, size_t len, char *name_
             break;
         }
         dup_ptr += *dup_ptr + 1;
-        dup_len -= *dup_ptr + 1;
-        if (dup_len <= 0) {
+        len -= *dup_ptr + 1;
+        if (len <= 0) {
             break;
         }
+    }
+    if (!is_valid) {
+        LOGERR("[dns_get_domain_name] the format of the dns packet is incorrect");
+        return false;
     }
     if (!name_buf) return true;
     strcpy(name_buf, ptr + 1);
@@ -92,6 +102,7 @@ static inline bool dns_get_domain_name(const void *data, size_t len, char *name_
     return true;
 }
 
+/* check the ipaddr of the first A/AAAA record is in ipset */
 static inline bool dns_reply_ipset_check(const void *data, size_t len) {
     return false;
 }
