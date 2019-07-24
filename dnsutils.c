@@ -44,8 +44,8 @@ static inline bool dns_query_header_check(const void *data) {
         LOGERR("[dns_query_header_check] non-recursive query is not supported");
         return false;
     }
-    if (ntohs(header->question_count) == 0) {
-        LOGERR("[dns_query_header_check] need at least one question section");
+    if (ntohs(header->question_count) != 1) {
+        LOGERR("[dns_query_header_check] there can only be one question section");
         return false;
     }
     return true;
@@ -66,8 +66,8 @@ static inline bool dns_reply_header_check(const void *data) {
         LOGERR("[dns_reply_header_check] non-recursive reply is not supported");
         return false;
     }
-    if (ntohs(header->question_count) == 0) {
-        LOGERR("[dns_reply_header_check] need at least one question section");
+    if (ntohs(header->question_count) != 1) {
+        LOGERR("[dns_reply_header_check] there can only be one question section");
         return false;
     }
     return true;
@@ -119,8 +119,16 @@ static bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
 
 /* check the ipaddr of the first A/AAAA record is in ipset */
 static bool dns_reply_ipset_check(const void *data, size_t len) {
-    // TODO
-    return false;
+    const dns_header_t *header = data;
+    if (header->rcode != DNS_RCODE_NOERROR) return false;
+    if (ntohs(header->answer_count) == 0) return false;
+
+    data += sizeof(dns_header_t);
+    len -= sizeof(dns_header_t);
+
+    /* skip question section */
+
+    return true;
 }
 
 /* check a dns query is valid, `name_buf` used to get relevant domain name */
