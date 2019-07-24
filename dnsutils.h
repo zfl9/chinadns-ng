@@ -14,7 +14,7 @@
 typedef struct __attribute__((packed)) {
     uint16_t id; // id of message
     uint8_t  qr:1; // query=0; response=1
-    uint8_t  opcode:4; // standard-query=1, etc.
+    uint8_t  opcode:4; // standard-query=0, etc.
     uint8_t  aa:1; // is authoritative answer, set by server
     uint8_t  tc:1; // message is truncated, set by server
     uint8_t  rd:1; // is recursion desired, set by client
