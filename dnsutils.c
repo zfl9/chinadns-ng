@@ -45,7 +45,7 @@ static inline bool dns_query_header_check(const void *data) {
         return false;
     }
     if (ntohs(header->question_count) != 1) {
-        LOGERR("[dns_query_header_check] there can only be one question section");
+        LOGERR("[dns_query_header_check] there should be one and only one question section");
         return false;
     }
     return true;
@@ -67,7 +67,7 @@ static inline bool dns_reply_header_check(const void *data) {
         return false;
     }
     if (ntohs(header->question_count) != 1) {
-        LOGERR("[dns_reply_header_check] there can only be one question section");
+        LOGERR("[dns_reply_header_check] there should be one and only one question section");
         return false;
     }
     return true;
