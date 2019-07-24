@@ -45,9 +45,9 @@ typedef struct __attribute__((packed)) {
 } dns_record_t;
 
 /* check if a dns query packet is valid */
-bool dns_query_is_valid(const void *data, size_t len);
+bool dns_query_is_valid(const void *data, size_t len, const char **nameptr);
 
 /* check if a dns reply packet is valid */
-bool dns_reply_is_valid(const void *data, size_t len);
+bool dns_reply_is_valid(const void *data, size_t len, const char **nameptr);
 
 #endif
