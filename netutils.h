@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #undef _GNU_SOURCE
 
+/* ipset setname max len (including '\0') */
 #define IPSET_MAXNAMELEN 32
 
 /* ipv4 binary addr typedef */
