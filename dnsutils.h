@@ -2,9 +2,9 @@
 #define CHINADNS_NG_DNSUTILS_H
 
 #define _GNU_SOURCE
-#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <sys/types.h>
 #undef _GNU_SOURCE
 
 /* dns packet max size (in bytes) */
@@ -45,9 +45,9 @@ typedef struct __attribute__((packed)) {
 } dns_record_t;
 
 /* check a dns query is valid, `name_buf` used to get relevant domain name */
-bool dns_query_is_valid(const void *data, size_t len, char *name_buf);
+bool dns_query_is_valid(const void *data, ssize_t len, char *name_buf);
 
 /* check a dns reply is valid, `name_buf` used to get relevant domain name */
-bool dns_reply_is_valid(const void *data, size_t len, char *name_buf, bool is_trusted);
+bool dns_reply_is_valid(const void *data, ssize_t len, char *name_buf, bool is_trusted);
 
 #endif

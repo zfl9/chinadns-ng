@@ -99,6 +99,8 @@ static bool dns_packet_check(const void *data, ssize_t len, char *name_buf, bool
     while (true) {
         if (*q_ptr == 0) {
             is_valid = true;
+            ++q_ptr;
+            --q_len;
             break;
         }
         q_ptr += *q_ptr + 1;
@@ -137,24 +139,24 @@ static bool dns_packet_check(const void *data, ssize_t len, char *name_buf, bool
     }
 
     /* save answer section ptr */
-    if (answer_ptr) *answer_ptr = data;
+    if (answer_ptr) *answer_ptr = data + sizeof(dns_query_t);
 
     return true;
 }
 
 /* check the ipaddr of the first A/AAAA record is in `chnroute` ipset */
-static bool dns_ipset_check(const void *data, size_t len) {
+static bool dns_ipset_check(const void *data, ssize_t len) {
     // TODO
     return true;
 }
 
 /* check a dns query is valid, `name_buf` used to get relevant domain name */
-bool dns_query_is_valid(const void *data, size_t len, char *name_buf) {
+bool dns_query_is_valid(const void *data, ssize_t len, char *name_buf) {
     return dns_packet_check(data, len, name_buf, true, NULL);
 }
 
 /* check a dns reply is valid, `name_buf` used to get relevant domain name */
-bool dns_reply_is_valid(const void *data, size_t len, char *name_buf, bool is_trusted) {
+bool dns_reply_is_valid(const void *data, ssize_t len, char *name_buf, bool is_trusted) {
     const void *answer_ptr = NULL;
     if (!dns_packet_check(data, len, name_buf, false, &answer_ptr)) return false;
     return is_trusted ? true : dns_ipset_check(answer_ptr, len - (answer_ptr - data));
