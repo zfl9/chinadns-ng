@@ -61,9 +61,9 @@ static inline bool dns_rheader_check(const void *data) {
 }
 
 /* check dns packet */
-static bool dns_packet_check(const void *data, size_t len, char *name_buf, bool is_query, const void **answer_ptr) {
+static bool dns_packet_check(const void *data, ssize_t len, char *name_buf, bool is_query, const void **answer_ptr) {
     /* check packet length */ 
-    if (len < sizeof(dns_header_t) + sizeof(dns_query_t) + 1) {
+    if (len < (ssize_t)sizeof(dns_header_t) + (ssize_t)sizeof(dns_query_t) + 1) {
         LOGERR("[dns_packet_check] the dns packet is too small: %zu", len);
         return false;
     }
@@ -77,45 +77,63 @@ static bool dns_packet_check(const void *data, size_t len, char *name_buf, bool 
     if (!is_query) if (!dns_rheader_check(data)) return false;
 
     /* check question section */
-    const uint8_t *ptr = data + sizeof(dns_header_t);
+    data += sizeof(dns_header_t);
     len -= sizeof(dns_header_t);
-    if (*ptr == 0) {
-        LOGERR("[dns_get_domain_name] the length of the domain name is zero");
+    const uint8_t *q_ptr = data;
+    ssize_t q_len = len;
+    if (*q_ptr == 0) {
+        LOGERR("[dns_packet_check] the length of the domain name is zero");
         return false;
     }
-    if (*ptr >= DNS_DNAME_COMPRESSION_MINVAL) {
-        LOGERR("[dns_get_domain_name] the first domain name should not use compression");
+    if (*q_ptr >= DNS_DNAME_COMPRESSION_MINVAL) {
+        LOGERR("[dns_packet_check] the first domain name should not use compression");
         return false;
     }
-    if (*ptr > DNS_DNAME_LABEL_MAXLEN) {
-        LOGERR("[dns_get_domain_name] the length of the domain name label is too long");
+    if (*q_ptr > DNS_DNAME_LABEL_MAXLEN) {
+        LOGERR("[dns_packet_check] the length of the domain name label is too long");
         return false;
     }
-    const uint8_t *dptr = ptr;
+
+    /* check domain name */
     bool is_valid = false;
     while (true) {
-        if (*dptr == 0) {
+        if (*q_ptr == 0) {
             is_valid = true;
             break;
         }
-        dptr += *dptr + 1;
-        len -= *dptr + 1;
-        if (len <= 0) {
+        q_ptr += *q_ptr + 1;
+        q_len -= *q_ptr + 1;
+        if (q_len <= 0) {
             break;
         }
     }
     if (!is_valid) {
-        LOGERR("[dns_get_domain_name] the format of the dns packet is incorrect");
+        LOGERR("[dns_packet_check] the format of the dns packet is incorrect");
         return false;
     }
-    if (!name_buf) return true;
-    strcpy(name_buf, (char *)ptr + 1);
-    name_buf += *ptr;
-    while (*name_buf != 0) {
-        uint8_t step = *name_buf;
-        *name_buf = '.';
-        name_buf += step + 1;
+
+    /* get domain name */
+    if (name_buf) {
+        strcpy(name_buf, (char *)data + 1);
+        name_buf += *(uint8_t *)data;
+        while (*name_buf != 0) {
+            uint8_t step = *name_buf;
+            *name_buf = '.';
+            name_buf += step + 1;
+        }
     }
+
+    /* check length */
+    data += len - q_len;
+    len -= len - q_len;
+    if (len < (ssize_t)sizeof(dns_query_t)) {
+        LOGERR("[dns_packet_check] the format of the dns packet is incorrect");
+        return false;
+    }
+
+    /* save answer ptr */
+    if (answer_ptr) *answer_ptr = data;
+
     return true;
 }
 
