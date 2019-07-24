@@ -10,8 +10,8 @@
 #define DNS_QR_REPLY 1
 #define DNS_OPCODE_QUERY 0
 #define DNS_CLASS_INTERNET 1
-#define DNS_TYPE_A 1 /* ipv4 address */
-#define DNS_TYPE_AAAA 28 /* ipv6 address */
+#define DNS_RECORD_TYPE_A 1 /* ipv4 address */
+#define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
 
 /* check packet length */
 static inline bool dns_packet_length_check(size_t len) {
@@ -63,7 +63,7 @@ static inline bool dns_reply_header_check(const void *data) {
 }
 
 /* check and get domain name */
-static inline bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
+static bool dns_get_domain_name(const void *data, size_t len, char *name_buf) {
     const char *ptr = data + sizeof(dns_header_t);
     len -= sizeof(dns_header_t);
     if (*ptr == 0) {
@@ -103,7 +103,7 @@ static inline bool dns_get_domain_name(const void *data, size_t len, char *name_
 }
 
 /* check the ipaddr of the first A/AAAA record is in ipset */
-static inline bool dns_reply_ipset_check(const void *data, size_t len) {
+static bool dns_reply_ipset_check(const void *data, size_t len) {
     return false;
 }
 
