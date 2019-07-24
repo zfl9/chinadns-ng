@@ -2,6 +2,7 @@
 #define CHINADNS_NG_DNSUTILS_H
 
 #define _GNU_SOURCE
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #undef _GNU_SOURCE
@@ -39,5 +40,11 @@ typedef struct __attribute__((packed)) {
     uint16_t rdatalen; // record data length
     uint8_t  rdataptr[]; // record data pointer, sizeof=0
 } dns_record_t;
+
+/* check if a dns query packet is valid */
+bool dns_query_is_valid(const void *data, size_t len);
+
+/* check if a dns reply packet is valid */
+bool dns_reply_is_valid(const void *data, size_t len);
 
 #endif
