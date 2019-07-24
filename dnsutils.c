@@ -55,13 +55,13 @@ static inline bool dns_reply_header_check(const void *data) {
     return true;
 }
 
-/* check if a dns query packet is valid */
+/* check a dns query is valid, nameptr used to get relevant domain name */
 bool dns_query_is_valid(const void *data, size_t len, const char **nameptr) {
     // TODO
     return false;
 }
 
-/* check if a dns reply packet is valid */
+/* check a dns reply is valid, nameptr used to get relevant domain name */
 bool dns_reply_is_valid(const void *data, size_t len, const char **nameptr) {
     // TODO
     return false;
