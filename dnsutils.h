@@ -7,6 +7,9 @@
 #include <stdbool.h>
 #undef _GNU_SOURCE
 
+/* dns packet max size (in bytes) */
+#define DNS_PACKET_MAXSIZE 512
+
 /* dns header structure (fixed length) */
 typedef struct __attribute__((packed)) {
     uint16_t id; // id of message

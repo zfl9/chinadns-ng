@@ -14,7 +14,6 @@
 /* netfilter and ipset constants definition */
 #define NFNETLINK_V0 0
 #define NFNL_SUBSYS_IPSET 6
-#define IPSET_MAXNAMELEN 32
 #define IPSET_CMD_TEST 11
 #define IPSET_PROTOCOL 7
 #define IPSET_ATTR_PROTOCOL 1

@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #undef _GNU_SOURCE
 
+#define IPSET_MAXNAMELEN 32
+
 /* ipv4 binary addr typedef */
 typedef uint32_t ipv4_addr_t;
 
