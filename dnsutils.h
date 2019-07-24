@@ -41,7 +41,7 @@ typedef struct __attribute__((packed)) {
     uint16_t rclass; // record class: internet=0x0001
     uint32_t rttl; // record ttl value (in seconds)
     uint16_t rdatalen; // record data length
-    uint8_t  rdataptr[]; // record data pointer, sizeof=0
+    // field rdata; variable length
 } dns_record_t;
 
 /* check a dns query is valid, `name_buf` used to get relevant domain name */
