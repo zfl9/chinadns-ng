@@ -99,13 +99,13 @@ void build_ipv6_addr(struct sockaddr_in6 *addr, const char *host, uint16_t port)
 
 /* parse ipv4 address structure */
 void parse_ipv4_addr(const struct sockaddr_in *addr, char *host, uint16_t *port) {
-	inet_ntop(AF_INET, &addr->sin_addr, host, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &addr->sin_addr, host, INET_ADDRSTRLEN);
     *port = ntohs(addr->sin_port);
 }
 
 /* parse ipv6 address structure */
 void parse_ipv6_addr(const struct sockaddr_in6 *addr, char *host, uint16_t *port) {
-	inet_ntop(AF_INET6, &addr->sin6_addr, host, INET6_ADDRSTRLEN);
+    inet_ntop(AF_INET6, &addr->sin6_addr, host, INET6_ADDRSTRLEN);
     *port = ntohs(addr->sin6_port);
 }
 
