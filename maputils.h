@@ -19,15 +19,15 @@ typedef struct {
 hashmap_t* hashmap_new(void);
 
 /* put key and value to hashmap */
-void hashmap_put(hashmap_t *hashmap, uint16_t unique_msgid, uint16_t origin_msgid, const struct sockaddr_in6 *source_addr);
+hashentry_t* hashmap_put(hashmap_t *hashmap, uint16_t unique_msgid, uint16_t origin_msgid, const struct sockaddr_in6 *source_addr);
 
 /* get entry_ptr by unique_msgid */
 const hashentry_t* hashmap_get(const hashmap_t *hashmap, uint16_t unique_msgid);
 
-/* delete and free entry by unique_msgid */
-void hashmap_del(hashmap_t *hashmap, uint16_t unique_msgid);
+/* delete and free the entry from hashmap */
+void hashmap_del(hashmap_t *hashmap, hashentry_t *hashentry);
 
-/* delete and free all entries in hashmap */
+/* delete and free all entries from hashmap */
 void hashmap_free(hashmap_t *hashmap);
 
 #endif
