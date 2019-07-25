@@ -39,17 +39,17 @@ struct nfgenmsg {
 #define MSGBUFFER_MAXLEN 512
 
 /* static global variable declaration */
-static int          g_ipset_nlsocket = -1;
-static __u32        g_ipset_nlmsg_seq = 1;
-static char         g_ipset_setname4[IPSET_MAXNAMELEN] = {0};
-static char         g_ipset_setname6[IPSET_MAXNAMELEN] = {0};
-static char         g_ipset_sendbuffer4[MSGBUFFER_MAXLEN] = {0};
-static char         g_ipset_sendbuffer6[MSGBUFFER_MAXLEN] = {0};
-static char         g_ipset_recvbuffer[MSGBUFFER_MAXLEN] = {0};
-static void        *g_ipset_ipv4addr_ptr = NULL;
-static void        *g_ipset_ipv6addr_ptr = NULL;
-static __u32       *g_ipset_nlmsg4_seq_ptr = NULL;
-static __u32       *g_ipset_nlmsg6_seq_ptr = NULL;
+static int    g_ipset_nlsocket                      = -1;
+static __u32  g_ipset_nlmsg_seq                     = 1;
+static char   g_ipset_setname4[IPSET_MAXNAMELEN]    = {0};
+static char   g_ipset_setname6[IPSET_MAXNAMELEN]    = {0};
+static char   g_ipset_sendbuffer4[MSGBUFFER_MAXLEN] = {0};
+static char   g_ipset_sendbuffer6[MSGBUFFER_MAXLEN] = {0};
+static char   g_ipset_recvbuffer[MSGBUFFER_MAXLEN]  = {0};
+static void  *g_ipset_ipv4addr_ptr                  = NULL;
+static void  *g_ipset_ipv6addr_ptr                  = NULL;
+static __u32 *g_ipset_nlmsg4_seq_ptr                = NULL;
+static __u32 *g_ipset_nlmsg6_seq_ptr                = NULL;
 
 /* create a udp socket (AF_INET) */
 int new_udp4_socket(void) {
