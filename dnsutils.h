@@ -10,6 +10,10 @@
 /* dns packet max size (in bytes) */
 #define DNS_PACKET_MAXSIZE 512
 
+/* domain name max len (including the label separator '.') */
+/* example: "www.example.com", length = 15 (excluding '\0') */
+#define DNS_DOMAIN_NAME_MAXLEN 253
+
 /* dns header structure (fixed length) */
 typedef struct __attribute__((packed)) {
     uint16_t id; // id of message

@@ -85,18 +85,18 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
         LOGERR("[dns_packet_check] the length of the domain name is zero");
         return false;
     }
-    if (*q_ptr >= DNS_DNAME_COMPRESSION_MINVAL) {
-        LOGERR("[dns_packet_check] the first domain name should not use compression");
-        return false;
-    }
-    if (*q_ptr > DNS_DNAME_LABEL_MAXLEN) {
-        LOGERR("[dns_packet_check] the length of the domain name label is too long");
-        return false;
-    }
 
     /* check domain name */
     bool is_valid = false;
     while (true) {
+        if (*q_ptr >= DNS_DNAME_COMPRESSION_MINVAL) {
+            LOGERR("[dns_packet_check] the first domain name should not use compression");
+            return false;
+        }
+        if (*q_ptr > DNS_DNAME_LABEL_MAXLEN) {
+            LOGERR("[dns_packet_check] the length of the domain name label is too long");
+            return false;
+        }
         if (*q_ptr == 0) {
             is_valid = true;
             ++q_ptr;
