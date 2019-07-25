@@ -81,10 +81,6 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
     packet_len -= sizeof(dns_header_t);
     const uint8_t *q_ptr = packet_buf;
     ssize_t q_len = packet_len;
-    if (*q_ptr == 0) {
-        LOGERR("[dns_packet_check] the length of the domain name is zero");
-        return false;
-    }
 
     /* check domain name */
     bool is_valid = false;
@@ -111,6 +107,14 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
     }
     if (!is_valid) {
         LOGERR("[dns_packet_check] the format of the dns packet is incorrect");
+        return false;
+    }
+    if (packet_len - q_len == 1) {
+        LOGERR("[dns_packet_check] the length of the domain name is too small");
+        return false;
+    }
+    if (strlen((char *)packet_buf + 1) > DNS_DOMAIN_NAME_MAXLEN) {
+        LOGERR("[dns_packet_check] the length of the domain name is too long");
         return false;
     }
 
