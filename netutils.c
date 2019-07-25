@@ -11,6 +11,10 @@
 #include <linux/netlink.h>
 #undef _GNU_SOURCE
 
+#ifndef SO_REUSEPORT
+#define SO_REUSEPORT 15
+#endif
+
 /* netfilter and ipset constants definition */
 #define NFNETLINK_V0 0
 #define NFNL_SUBSYS_IPSET 6
