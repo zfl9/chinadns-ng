@@ -101,7 +101,7 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
         }
         q_ptr += *q_ptr + 1;
         q_len -= *q_ptr + 1;
-        if (q_len <= 0) {
+        if (q_len < 1) {
             break;
         }
     }
@@ -120,7 +120,7 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
 
     /* get domain name */
     if (name_buf) {
-        strcpy(name_buf, (char *)packet_buf + 1);
+        memcpy(name_buf, packet_buf + 1, packet_len - q_len - 1);
         name_buf += *(uint8_t *)packet_buf;
         while (*name_buf != 0) {
             uint8_t step = *name_buf;
@@ -152,13 +152,13 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
 static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t ans_len) {
     /* check header and length */
     const dns_header_t *header = packet_ptr;
+    if (header->rcode != DNS_RCODE_NOERROR) return false;
     uint16_t answer_count = ntohs(header->answer_count);
     if (answer_count == 0) return false;
     if (ans_len < answer_count * ((ssize_t)sizeof(dns_record_t) + 2)) {
         LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
         return false;
     }
-    if (header->rcode != DNS_RCODE_NOERROR) return false;
 
     /* only filter A/AAAA reply */
     uint16_t qtype = ntohs(((dns_query_t *)(ans_ptr - sizeof(dns_query_t)))->qtype);
@@ -166,6 +166,10 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
 
     /* find the first A/AAAA record */
     for (uint16_t i = 0; i < answer_count; ++i) {
+        if (*(uint8_t *)ans_ptr == 0) {
+            LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
+            return false;
+        }
         while (true) {
             uint8_t step = *(uint8_t *)ans_ptr;
             if (step >= DNS_DNAME_COMPRESSION_MINVAL) {
@@ -192,19 +196,24 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
             }
             ans_ptr += step + 1;
             ans_len -= step + 1;
-            if (ans_len < (ssize_t)sizeof(dns_record_t) + 1) {
+            if (ans_len < (ssize_t)sizeof(dns_record_t) + 2) {
                 LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                 return false;
             }
         }
-        const dns_record_t *record_ptr = ans_ptr;
-        if (ntohs(record_ptr->rclass) != DNS_CLASS_INTERNET) {
+        const dns_record_t *record = ans_ptr;
+        if (ntohs(record->rclass) != DNS_CLASS_INTERNET) {
             LOGERR("[dns_ipset_check] only supports standard internet query class");
             return false;
         }
-        switch (ntohs(record_ptr->rtype)) {
+        uint16_t rdatalen = ntohs(record->rdatalen);
+        if (rdatalen < 1) {
+            LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
+            return false;
+        }
+        switch (ntohs(record->rtype)) {
             case DNS_RECORD_TYPE_A:
-                if (ntohs(record_ptr->rdatalen) != sizeof(ipv4_addr_t)) {
+                if (rdatalen != sizeof(ipv4_addr_t)) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
@@ -212,9 +221,9 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
-                return ipset_addr4_is_exists((void *)record_ptr->rdataptr);
+                return ipset_addr4_is_exists((void *)record->rdataptr);
             case DNS_RECORD_TYPE_AAAA:
-                if (ntohs(record_ptr->rdatalen) != sizeof(ipv6_addr_t)) {
+                if (rdatalen != sizeof(ipv6_addr_t)) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
@@ -222,10 +231,17 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
-                return ipset_addr6_is_exists((void *)record_ptr->rdataptr);
+                return ipset_addr6_is_exists((void *)record->rdataptr);
+            default:
+                ans_ptr += sizeof(dns_record_t) + rdatalen;
+                ans_len -= sizeof(dns_record_t) + rdatalen;
+                if (ans_len < 1 && i != answer_count - 1) {
+                    LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
+                    return false;
+                }
         }
     }
-    return true; /* unachievable */
+    return true; /* not found A/AAAA record */
 }
 
 /* check a dns query is valid, `name_buf` used to get relevant domain name */
