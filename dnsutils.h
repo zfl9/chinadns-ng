@@ -41,13 +41,13 @@ typedef struct __attribute__((packed)) {
     uint16_t rclass; // record class: internet=0x0001
     uint32_t rttl; // record ttl value (in seconds)
     uint16_t rdatalen; // record data length
-    // field rdata; variable length
+    uint8_t  rdataptr[]; // record data pointer (sizeof=0)
 } dns_record_t;
 
 /* check a dns query is valid, `name_buf` used to get relevant domain name */
-bool dns_query_is_valid(const void *data, ssize_t len, char *name_buf);
+bool dns_query_is_valid(const void *packet_buf, ssize_t packet_len, char *name_buf);
 
 /* check a dns reply is valid, `name_buf` used to get relevant domain name */
-bool dns_reply_is_valid(const void *data, ssize_t len, char *name_buf, bool is_trusted);
+bool dns_reply_is_valid(const void *packet_buf, ssize_t packet_len, char *name_buf, bool is_trusted);
 
 #endif
