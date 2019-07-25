@@ -207,7 +207,7 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
             return false;
         }
         uint16_t rdatalen = ntohs(record->rdatalen);
-        if (rdatalen < 1) {
+        if (rdatalen < 1 || ans_len < (ssize_t)sizeof(dns_record_t) + rdatalen) {
             LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
             return false;
         }
@@ -217,17 +217,9 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
-                if (ans_len < (ssize_t)sizeof(dns_record_t) + (ssize_t)sizeof(ipv4_addr_t)) {
-                    LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
-                    return false;
-                }
                 return ipset_addr4_is_exists((void *)record->rdataptr);
             case DNS_RECORD_TYPE_AAAA:
                 if (rdatalen != sizeof(ipv6_addr_t)) {
-                    LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
-                    return false;
-                }
-                if (ans_len < (ssize_t)sizeof(dns_record_t) + (ssize_t)sizeof(ipv6_addr_t)) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
@@ -235,7 +227,7 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
             default:
                 ans_ptr += sizeof(dns_record_t) + rdatalen;
                 ans_len -= sizeof(dns_record_t) + rdatalen;
-                if (ans_len < 1 && i != answer_count - 1) {
+                if (i != answer_count - 1 && ans_len < (ssize_t)sizeof(dns_record_t) + 2) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
