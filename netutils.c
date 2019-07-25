@@ -35,15 +35,15 @@ struct nfgenmsg {
 #define MSGBUFFER_MAXLEN 512
 
 /* static global variable declaration */
-static int          g_ipset_socket = -1;
+static int          g_ipset_nlsocket = -1;
 static __u32        g_ipset_nlmsg_seq = 1;
 static char         g_ipset_setname4[IPSET_MAXNAMELEN] = {0};
 static char         g_ipset_setname6[IPSET_MAXNAMELEN] = {0};
 static char         g_ipset_sendbuffer4[MSGBUFFER_MAXLEN] = {0};
 static char         g_ipset_sendbuffer6[MSGBUFFER_MAXLEN] = {0};
 static char         g_ipset_recvbuffer[MSGBUFFER_MAXLEN] = {0};
-static ipv4_addr_t *g_ipset_ipv4addr_ptr = NULL;
-static ipv6_addr_t *g_ipset_ipv6addr_ptr = NULL;
+static void        *g_ipset_ipv4addr_ptr = NULL;
+static void        *g_ipset_ipv6addr_ptr = NULL;
 static __u32       *g_ipset_nlmsg4_seq_ptr = NULL;
 static __u32       *g_ipset_nlmsg6_seq_ptr = NULL;
 
@@ -72,7 +72,7 @@ int get_addrstr_family(const char *addrstr) {
     if (!addrstr || strlen(addrstr) == 0) {
         return -1;
     }
-    ipv6_addr_t addrbin; /* char [16] array */
+    ipv6_addr_t addrbin; /* save ipv4 and ipv6 addr */
     if (inet_pton(AF_INET, addrstr, &addrbin) == 1) {
         return AF_INET;
     } else if (inet_pton(AF_INET6, addrstr, &addrbin) == 1) {
@@ -83,27 +83,27 @@ int get_addrstr_family(const char *addrstr) {
 }
 
 /* build ipv4 address structure */
-void build_ipv4_addr(struct sockaddr_in *addr, const char *host, uint16_t port) {
+void build_ipv4_addr(struct sockaddr_in *addr, const char *host, sock_port_t port) {
     addr->sin_family = AF_INET;
     inet_pton(AF_INET, host, &addr->sin_addr);
     addr->sin_port = htons(port);
 }
 
 /* build ipv6 address structure */
-void build_ipv6_addr(struct sockaddr_in6 *addr, const char *host, uint16_t port) {
+void build_ipv6_addr(struct sockaddr_in6 *addr, const char *host, sock_port_t port) {
     addr->sin6_family = AF_INET6;
     inet_pton(AF_INET6, host, &addr->sin6_addr);
     addr->sin6_port = htons(port);
 }
 
 /* parse ipv4 address structure */
-void parse_ipv4_addr(const struct sockaddr_in *addr, char *host, uint16_t *port) {
+void parse_ipv4_addr(const struct sockaddr_in *addr, char *host, sock_port_t *port) {
     inet_ntop(AF_INET, &addr->sin_addr, host, INET_ADDRSTRLEN);
     *port = ntohs(addr->sin_port);
 }
 
 /* parse ipv6 address structure */
-void parse_ipv6_addr(const struct sockaddr_in6 *addr, char *host, uint16_t *port) {
+void parse_ipv6_addr(const struct sockaddr_in6 *addr, char *host, sock_port_t *port) {
     inet_ntop(AF_INET6, &addr->sin6_addr, host, INET6_ADDRSTRLEN);
     *port = ntohs(addr->sin6_port);
 }
@@ -111,22 +111,22 @@ void parse_ipv6_addr(const struct sockaddr_in6 *addr, char *host, uint16_t *port
 /* create ipset netlink socket */
 static void ipset_create_nlsocket(void) {
     /* create netlink socket */
-    g_ipset_socket = socket(AF_NETLINK, SOCK_DGRAM, NETLINK_NETFILTER);
-    if (g_ipset_socket < 0) {
+    g_ipset_nlsocket = socket(AF_NETLINK, SOCK_DGRAM, NETLINK_NETFILTER);
+    if (g_ipset_nlsocket < 0) {
         LOGERR("[ipset_create_nlsocket] failed to create netlink socket: (%d) %s", errno, strerror(errno));
         exit(errno);
     }
 
     /* bind netlink address */
     struct sockaddr_nl self_addr = {.nl_family = AF_NETLINK, .nl_pid = getpid(), .nl_groups = 0};
-    if (bind(g_ipset_socket, (void *)&self_addr, sizeof(self_addr))) {
+    if (bind(g_ipset_nlsocket, (void *)&self_addr, sizeof(self_addr))) {
         LOGERR("[ipset_create_nlsocket] failed to bind address to socket: (%d) %s", errno, strerror(errno));
         exit(errno);
     }
 
     /* connect to kernel */
-    struct sockaddr_nl dest_addr = {.nl_family = AF_NETLINK, .nl_pid = 0, .nl_groups = 0};
-    if (connect(g_ipset_socket, (void *)&dest_addr, sizeof(dest_addr))) {
+    struct sockaddr_nl kernel_addr = {.nl_family = AF_NETLINK, .nl_pid = 0, .nl_groups = 0};
+    if (connect(g_ipset_nlsocket, (void *)&kernel_addr, sizeof(kernel_addr))) {
         LOGERR("[ipset_create_nlsocket] failed to connect to kernel: (%d) %s", errno, strerror(errno));
         exit(errno);
     }
@@ -217,14 +217,14 @@ void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6) {
 }
 
 /* check given ipaddr is exists in ipset */
-bool ipset_addr4_is_exists(ipv4_addr_t addr) {
-    *g_ipset_ipv4addr_ptr = addr;
+bool ipset_addr4_is_exists(const ipv4_addr_t *addr_ptr) {
+    memcpy(g_ipset_ipv4addr_ptr, addr_ptr, sizeof(ipv4_addr_t));
     *g_ipset_nlmsg4_seq_ptr = g_ipset_nlmsg_seq++;
-    if (send(g_ipset_socket, g_ipset_sendbuffer4, ((struct nlmsghdr *)g_ipset_sendbuffer4)->nlmsg_len, 0) < 0) {
+    if (send(g_ipset_nlsocket, g_ipset_sendbuffer4, ((struct nlmsghdr *)g_ipset_sendbuffer4)->nlmsg_len, 0) < 0) {
         LOGERR("[ipset_addr4_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
-    if (recv(g_ipset_socket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
+    if (recv(g_ipset_nlsocket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
         LOGERR("[ipset_addr4_is_exists] failed to recv netlink msg from kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
@@ -242,14 +242,14 @@ bool ipset_addr4_is_exists(ipv4_addr_t addr) {
 }
 
 /* check given ipaddr is exists in ipset */
-bool ipset_addr6_is_exists(const ipv6_addr_t addr) {
-    memcpy(g_ipset_ipv6addr_ptr, addr, sizeof(ipv6_addr_t));
+bool ipset_addr6_is_exists(const ipv6_addr_t *addr_ptr) {
+    memcpy(g_ipset_ipv6addr_ptr, addr_ptr, sizeof(ipv6_addr_t));
     *g_ipset_nlmsg6_seq_ptr = g_ipset_nlmsg_seq++;
-    if (send(g_ipset_socket, g_ipset_sendbuffer6, ((struct nlmsghdr *)g_ipset_sendbuffer6)->nlmsg_len, 0) < 0) {
+    if (send(g_ipset_nlsocket, g_ipset_sendbuffer6, ((struct nlmsghdr *)g_ipset_sendbuffer6)->nlmsg_len, 0) < 0) {
         LOGERR("[ipset_addr6_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
-    if (recv(g_ipset_socket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
+    if (recv(g_ipset_nlsocket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
         LOGERR("[ipset_addr6_is_exists] failed to recv netlink msg from kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
