@@ -67,6 +67,33 @@ int new_udp6_socket(void) {
     return sockfd;
 }
 
+/* setsockopt(IPV6_V6ONLY) */
+void set_ipv6_only(int sockfd) {
+    const int optval = 1;
+    if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &optval, sizeof(optval))) {
+        LOGERR("[set_ipv6_only] setsockopt(%d, IPV6_V6ONLY): (%d) %s", sockfd, errno, strerror(errno));
+        exit(errno);
+    }
+}
+
+/* setsockopt(SO_REUSEADDR) */
+void set_reuse_addr(int sockfd) {
+    const int optval = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval))) {
+        LOGERR("[set_reuse_addr] setsockopt(%d, SO_REUSEADDR): (%d) %s", sockfd, errno, strerror(errno));
+        exit(errno);
+    }
+}
+
+/* setsockopt(SO_REUSEPORT) */
+void set_reuse_port(int sockfd) {
+    const int optval = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval))) {
+        LOGERR("[set_reuse_port] setsockopt(%d, SO_REUSEPORT): (%d) %s", sockfd, errno, strerror(errno));
+        exit(errno);
+    }
+}
+
 /* AF_INET or AF_INET6 or -1(invalid) */
 int get_addrstr_family(const char *addrstr) {
     if (!addrstr || strlen(addrstr) == 0) {

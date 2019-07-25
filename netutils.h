@@ -29,6 +29,15 @@ int new_udp4_socket(void);
 /* create a udp socket (AF_INET6) */
 int new_udp6_socket(void);
 
+/* setsockopt(IPV6_V6ONLY) */
+void set_ipv6_only(int sockfd);
+
+/* setsockopt(SO_REUSEADDR) */
+void set_reuse_addr(int sockfd);
+
+/* setsockopt(SO_REUSEPORT) */
+void set_reuse_port(int sockfd);
+
 /* AF_INET or AF_INET6 or -1(invalid) */
 int get_addrstr_family(const char *addrstr);
 
