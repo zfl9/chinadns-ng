@@ -113,7 +113,7 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
         LOGERR("[dns_packet_check] the length of the domain name is too small");
         return false;
     }
-    if (strlen((char *)packet_buf + 1) > DNS_DOMAIN_NAME_MAXLEN) {
+    if (packet_len - q_len - 2 > DNS_DOMAIN_NAME_MAXLEN) {
         LOGERR("[dns_packet_check] the length of the domain name is too long");
         return false;
     }
@@ -151,14 +151,14 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
 /* check the ipaddr of the first A/AAAA record is in `chnroute` ipset */
 static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t ans_len) {
     /* check header and length */
-    const dns_header_t *header_ptr = packet_ptr;
-    uint16_t answer_count = ntohs(header_ptr->answer_count);
+    const dns_header_t *header = packet_ptr;
+    uint16_t answer_count = ntohs(header->answer_count);
     if (answer_count == 0) return false;
-    if (ans_len <= answer_count * ((ssize_t)sizeof(dns_record_t) + 2)) {
+    if (ans_len < answer_count * ((ssize_t)sizeof(dns_record_t) + 2)) {
         LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
         return false;
     }
-    if (header_ptr->rcode != DNS_RCODE_NOERROR) return false;
+    if (header->rcode != DNS_RCODE_NOERROR) return false;
 
     /* only filter A/AAAA reply */
     uint16_t qtype = ntohs(((dns_query_t *)(ans_ptr - sizeof(dns_query_t)))->qtype);
@@ -166,27 +166,35 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
 
     /* find the first A/AAAA record */
     for (uint16_t i = 0; i < answer_count; ++i) {
-        if (*(uint8_t *)ans_ptr >= DNS_DNAME_COMPRESSION_MINVAL) {
-            ans_ptr += 2;
-            ans_len -= 2;
-            if (ans_len < (ssize_t)sizeof(dns_record_t)) {
-                LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
-                return false;
-            }
-        } else {
-            while (true) {
-                uint8_t step = *(uint8_t *)ans_ptr;
-                if (step == 0) {
-                    ++ans_ptr;
-                    --ans_len;
-                    break;
-                }
-                ans_ptr += step + 1;
-                ans_len -= step + 1;
+        while (true) {
+            uint8_t step = *(uint8_t *)ans_ptr;
+            if (step >= DNS_DNAME_COMPRESSION_MINVAL) {
+                ans_ptr += 2;
+                ans_len -= 2;
                 if (ans_len < (ssize_t)sizeof(dns_record_t) + 1) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
+                break;
+            }
+            if (step > DNS_DNAME_LABEL_MAXLEN) {
+                LOGERR("[dns_ipset_check] the length of the domain name label is too long");
+                return false;
+            }
+            if (step == 0) {
+                ++ans_ptr;
+                --ans_len;
+                if (ans_len < (ssize_t)sizeof(dns_record_t) + 1) {
+                    LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
+                    return false;
+                }
+                break;
+            }
+            ans_ptr += step + 1;
+            ans_len -= step + 1;
+            if (ans_len < (ssize_t)sizeof(dns_record_t) + 1) {
+                LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
+                return false;
             }
         }
         const dns_record_t *record_ptr = ans_ptr;
