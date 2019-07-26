@@ -38,6 +38,9 @@ void set_reuse_addr(int sockfd);
 /* setsockopt(SO_REUSEPORT) */
 void set_reuse_port(int sockfd);
 
+/* create a timer fd (in seconds) */
+int new_once_timerfd(time_t second);
+
 /* AF_INET or AF_INET6 or -1(invalid) */
 int get_addrstr_family(const char *addrstr);
 

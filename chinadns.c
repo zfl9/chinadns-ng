@@ -155,11 +155,70 @@ static void parse_command_args(int argc, char *argv[]) {
                 exit(1);
         }
     }
-    const char *delimiters = ",";
     if (chinadns_optarg) {
+        size_t server_cnt = 0;
+        char *server_str = NULL;
+        for (char *server_str = strtok(chinadns_optarg, ","); server_str; server_str = strtok(NULL, ",")) {
+            if (++server_cnt > 2) {
+                printf("china-dns max count is 2\n");
+                print_command_help();
+                exit(1);
+            }
+            char *colon_ptr = strchr(server_str, '@');
+            sock_port_t server_port = 53;
+            if (colon_ptr) {
+                *colon_ptr = 0;
+                server_port = strtol(++colon_ptr, NULL, 10);
+                if (server_port == 0) {
+                    printf("invalid server port: %s\n", colon_ptr);
+                    print_command_help();
+                    exit(1);
+                }
+            }
+            if (strlen(server_str) + 1 > INET6_ADDRSTRLEN) {
+                printf("ipaddr max len is 45: %zu\n", strlen(server_str));
+                print_command_help();
+                exit(1);
+            }
+            if (get_addrstr_family(server_str) == -1) {
+                printf("invalid server addr: %s\n", server_str);
+                print_command_help();
+                exit(1);
+            }
+            sprintf(g_remote_names[server_cnt - 1], "%s:%hu", server_str, server_port);
+        }
     }
     if (trustdns_optarg) {
-        // TODO
+        size_t server_cnt = 0;
+        for (char *server_str = strtok(trustdns_optarg, ","); server_str; server_str = strtok(NULL, ",")) {
+            if (++server_cnt > 2) {
+                printf("china-dns max count is 2\n");
+                print_command_help();
+                exit(1);
+            }
+            char *colon_ptr = strchr(server_str, '@');
+            sock_port_t server_port = 53;
+            if (colon_ptr) {
+                *colon_ptr = 0;
+                server_port = strtol(++colon_ptr, NULL, 10);
+                if (server_port == 0) {
+                    printf("invalid server port: %s\n", colon_ptr);
+                    print_command_help();
+                    exit(1);
+                }
+            }
+            if (strlen(server_str) + 1 > INET6_ADDRSTRLEN) {
+                printf("ipaddr max len is 45: %zu\n", strlen(server_str));
+                print_command_help();
+                exit(1);
+            }
+            if (get_addrstr_family(server_str) == -1) {
+                printf("invalid server addr: %s\n", server_str);
+                print_command_help();
+                exit(1);
+            }
+            sprintf(g_remote_names[server_cnt + 1], "%s:%hu", server_str, server_port);
+        }
     }
 }
 
@@ -174,6 +233,9 @@ static void handle_remote_packet(int index) {
 }
 
 int main(int argc, char *argv[]) {
-    print_command_help();
+    parse_command_args(argc, argv);
+    for (int i = 0; i < UPSTREAM_MAXCOUNT; ++i) {
+        printf("dns server: %s\n", g_remote_names[i]);
+    }
     return 0;
 }

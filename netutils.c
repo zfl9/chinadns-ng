@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/timerfd.h>
 #include <linux/netlink.h>
 #undef _GNU_SOURCE
 
@@ -96,6 +97,21 @@ void set_reuse_port(int sockfd) {
         LOGERR("[set_reuse_port] setsockopt(%d, SO_REUSEPORT): (%d) %s", sockfd, errno, strerror(errno));
         exit(errno);
     }
+}
+
+/* create a timer fd (in seconds) */
+int new_once_timerfd(time_t second) {
+    int timerfd = timerfd_create(CLOCK_MONOTONIC, 0);
+    if (timerfd < 0) {
+        LOGERR("[new_once_timerfd] failed to create timer fd: (%d) %s", errno, strerror(errno));
+        exit(errno);
+    }
+    struct itimerspec time_value = {.it_value.tv_sec = second};
+    if (timerfd_settime(timerfd, 0, &time_value, NULL)) {
+        LOGERR("[new_once_timerfd] failed to settime for timer fd: (%d) %s", errno, strerror(errno));
+        exit(errno);
+    }
+    return timerfd;
 }
 
 /* AF_INET or AF_INET6 or -1(invalid) */
