@@ -289,8 +289,11 @@ static void handle_remote_packet(int index) {
 }
 
 /* handle upstream reply timeout event */
-static void handle_timeout_event(uint16_t msgid) {
-    // TODO
+static void handle_timeout_event(uint16_t msg_id) {
+    LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique_msgid: %hu", msg_id);
+    hashentry_t *entry = hashmap_get(g_message_id_hashmap, msg_id);
+    close(entry->query_timerfd); /* epoll will automatically remove the associated event */
+    hashmap_del(g_message_id_hashmap, entry); /* delete and free the associated hash entry */
 }
 
 int main(int argc, char *argv[]) {
