@@ -285,6 +285,19 @@ static void handle_local_packet(void) {
 
 /* handle remote socket readable event */
 static void handle_remote_packet(int index) {
+    int remote_socket = g_remote_sockets[index];
+    const char *remote_servers = g_remote_servers[index];
+    ssize_t packet_len = recv(remote_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0);
+
+    if (packet_len < 0) {
+        if (errno == EAGAIN || errno == EINTR) return;
+        LOGERR("[handle_remote_packet] failed to recv data from remote socket: (%d) %s", errno, strerror(errno));
+        return;
+    }
+
+    bool is_trusted = false;
+    if (index == TRUSTDNS1_IDX || index == TRUSTDNS2_IDX) is_trusted = true;
+    bool is_valid = dns_reply_is_valid(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, is_trusted);
     // TODO
 }
 
