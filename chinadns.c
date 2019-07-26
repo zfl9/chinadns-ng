@@ -97,7 +97,7 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
             }
         }
         if (strlen(server_str) + 1 > INET6_ADDRSTRLEN) {
-            printf("[parse_dns_server_opt] ip address max length is 45: %zu\n", strlen(server_str));
+            printf("[parse_dns_server_opt] ip address max length is 45: %s\n", server_str);
             goto PRINT_HELP_AND_EXIT;
         }
         if (get_addrstr_family(server_str) == -1) {
@@ -114,7 +114,7 @@ PRINT_HELP_AND_EXIT:
 
 /* parse and check command arguments */
 static void parse_command_args(int argc, char *argv[]) {
-    const char *optstr = ":b:l:c:t:4:6:rvVh";
+    const char *optstr = ":b:l:c:t:4:6:o:rvVh";
     const struct option options[] = {
         {"bind-addr",   required_argument, NULL, 'b'},
         {"bind-port",   required_argument, NULL, 'l'},
@@ -137,19 +137,23 @@ static void parse_command_args(int argc, char *argv[]) {
         switch (shortopt) {
             case 'b':
                 if (strlen(optarg) + 1 > INET6_ADDRSTRLEN) {
-                    printf("ipaddr max len is 45: %zu\n", strlen(optarg));
+                    printf("[parse_command_args] ip address max length is 45: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
                 if (get_addrstr_family(optarg) == -1) {
-                    printf("invalid bind addr: %s\n", optarg);
+                    printf("[parse_command_args] invalid listen ip address: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
                 strcpy(g_bind_addr, optarg);
                 break;
             case 'l':
+                if (strlen(optarg) > PORTSTR_MAXLEN) {
+                    printf("[parse_command_args] port number max length is 5: %s\n", optarg);
+                    goto PRINT_HELP_AND_EXIT;
+                }
                 g_bind_port = strtol(optarg, NULL, 10);
                 if (g_bind_port == 0) {
-                    printf("invalid bind port: %s\n", optarg);
+                    printf("[parse_command_args] invalid listen port number: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
                 break;
@@ -161,14 +165,14 @@ static void parse_command_args(int argc, char *argv[]) {
                 break;
             case '4':
                 if (strlen(optarg) + 1 > IPSET_MAXNAMELEN) {
-                    printf("setname max len is 31: %zu\n", strlen(optarg));
+                    printf("[parse_command_args] ipset setname max length is 31: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
                 strcpy(g_setname4, optarg);
                 break;
             case '6':
                 if (strlen(optarg) + 1 > IPSET_MAXNAMELEN) {
-                    printf("setname max len is 31: %zu\n", strlen(optarg));
+                    printf("[parse_command_args] ipset setname max length is 31: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
                 strcpy(g_setname6, optarg);
@@ -176,7 +180,7 @@ static void parse_command_args(int argc, char *argv[]) {
             case 'o':
                 g_upstream_timeout_sec = strtol(optarg, NULL, 10);
                 if (g_upstream_timeout_sec <= 0) {
-                    printf("invalid timeout sec: %s\n", optarg);
+                    printf("[parse_command_args] invalid upstream timeout sec: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
                 break;
@@ -193,16 +197,16 @@ static void parse_command_args(int argc, char *argv[]) {
                 print_command_help();
                 exit(0);
             case ':':
-                printf("missing optarg: '%s'\n", argv[optind - 1]);
+                printf("[parse_command_args] missing optarg: '%s'\n", argv[optind - 1]);
                 goto PRINT_HELP_AND_EXIT;
             case '?':
                 if (optopt) {
-                    printf("unknown option: '-%c'\n", optopt);
+                    printf("[parse_command_args] unknown option: '-%c'\n", optopt);
                 } else {
                     char *longopt = argv[optind - 1];
                     char *equalsign = strchr(longopt, '=');
                     if (equalsign) *equalsign = 0;
-                    printf("unknown option: '%s'\n", longopt);
+                    printf("[parse_command_args] unknown option: '%s'\n", longopt);
                 }
                 goto PRINT_HELP_AND_EXIT;
         }
@@ -225,10 +229,12 @@ static void handle_remote_packet(int index) {
     // TODO
 }
 
+/* handle upstream reply timeout event */
+static void handle_timeout_event(uint16_t msgid) {
+    // TODO
+}
+
 int main(int argc, char *argv[]) {
     parse_command_args(argc, argv);
-    for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
-        printf("dns server: %s\n", g_remote_servers[i]);
-    }
     return 0;
 }
