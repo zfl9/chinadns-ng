@@ -20,17 +20,18 @@
 #include <netinet/in.h>
 #undef _GNU_SOURCE
 
-/* left-16-bit:IDX/MARK; right-16-bit:MSGID/0 */
+/* left-16-bit:MSGID; right-16-bit:IDX/MARK */
 #define CHINADNS1_IDX 0
 #define CHINADNS2_IDX 1
 #define TRUSTDNS1_IDX 2
 #define TRUSTDNS2_IDX 3
 #define BINDSOCK_MARK 4
 #define TIMER_FD_MARK 5
-#define RIGHT_SHIFT_N 16
-#define DNSMSGID_MASK 0xffff
+#define BIT_SHIFT_LEN 16
+#define IDX_MARK_MASK 0xffff
 
 /* constant macro definition */
+#define EPOLL_MAXEVENTS 64
 #define SERVER_MAXCOUNT 4
 #define SOCKBUFF_MAXSIZE 1024
 #define PORTSTR_MAXLEN 5 /* "65535" (excluding '\0') */
@@ -300,7 +301,34 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // TODO
+    /* create epoll fd */
+    int epoll_fd = -1;
+    if ((epoll_fd = epoll_create1(0)) < 0) {
+        LOGERR("[main] failed to create epoll fd: (%d) %s", errno, strerror(errno));
+        return errno;
+    }
+
+    /* register epoll event */
+    struct epoll_event ev, events[EPOLL_MAXEVENTS];
+
+    /* listen socket readable event */
+    ev.events = EPOLLIN;
+    ev.data.u32 = BINDSOCK_MARK; /* don't care about msg id */
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, g_bind_socket, &ev)) {
+        LOGERR("[main] failed to register epoll event: (%d) %s", errno, strerror(errno));
+        return errno;
+    }
+
+    /* remote socket readable event */
+    for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
+        if (g_remote_sockets[i] < 0) continue;
+        ev.events = EPOLLIN;
+        ev.data.u32 = i; /* don't care about msg id */
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, g_remote_sockets[i], &ev)) {
+            LOGERR("[main] failed to register epoll event: (%d) %s", errno, strerror(errno));
+            return errno;
+        }
+    }
 
     return 0;
 }
