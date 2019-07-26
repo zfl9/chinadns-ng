@@ -19,10 +19,6 @@
 #include <netinet/in.h>
 #undef _GNU_SOURCE
 
-#define CHINADNS_VERSION "chinadns-ng v1.0.0"
-#define SOCKBUFF_MAXSIZE 1024
-#define UPSTREAM_MAXCOUNT 4
-
 /* left-16-bit:IDX/MARK; right-16-bit:MSGID/0 */
 #define CHINADNS1_IDX 0
 #define CHINADNS2_IDX 1
@@ -33,21 +29,30 @@
 #define RIGHT_SHIFT_N 16
 #define DNSMSGID_MASK 0xffff
 
+/* constant macro definition */
+#define SERVER_MAXCOUNT 4
+#define SOCKBUFF_MAXSIZE 1024
+#define PORTSTR_MAXLEN 5 /* "65535" (excluding '\0') */
+#define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN + 1) /* "addr:port\0" */
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.1 <https://github.com/zfl9/chinadns-ng>"
+
+/* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
 
-static bool        g_verbose                                               = false;
-static bool        g_reuse_port                                            = false;
-static char        g_setname4[IPSET_MAXNAMELEN]                            = "chnroute";
-static char        g_setname6[IPSET_MAXNAMELEN]                            = "chnroute6";
-static char        g_bind_addr[INET6_ADDRSTRLEN]                           = "127.0.0.1";
-static sock_port_t g_bind_port                                             = 65353;
-static int         g_local_socket                                          = -1;
-static int         g_remote_sockets[UPSTREAM_MAXCOUNT]                     = {-1, -1, -1, -1};
-static char        g_remote_names[UPSTREAM_MAXCOUNT][INET6_ADDRSTRLEN + 6] = {"114.114.114.114", "", "8.8.8.8", ""};
-static char        g_socket_buffer[SOCKBUFF_MAXSIZE]                       = {0};
-static time_t      g_upstream_timeout_sec                                  = 5;
-static uint16_t    g_current_message_id                                    = 0;
-static hashmap_t  *g_message_id_hashmap                                    = NULL;
+/* static global variable declaration */
+static bool        g_verbose                                          = false;
+static bool        g_reuse_port                                       = false;
+static char        g_setname4[IPSET_MAXNAMELEN]                       = "chnroute";
+static char        g_setname6[IPSET_MAXNAMELEN]                       = "chnroute6";
+static char        g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
+static sock_port_t g_bind_port                                        = 65353;
+static int         g_local_socket                                     = -1;
+static int         g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
+static char        g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114:53", "", "8.8.8.8:53", ""};
+static char        g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
+static time_t      g_upstream_timeout_sec                             = 5;
+static uint16_t    g_current_message_id                               = 0;
+static hashmap_t  *g_message_id_hashmap                               = NULL;
 
 /* print command help information */
 static void print_command_help(void) {
@@ -67,18 +72,19 @@ static void print_command_help(void) {
     );
 }
 
+/* parse and check dns server option */
 static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
     size_t server_cnt = 0;
-    char *server_str = NULL;
     for (char *server_str = strtok(option_argval, ","); server_str; server_str = strtok(NULL, ",")) {
         if (++server_cnt > 2) {
-            printf("china-dns max count is 2\n");
+            LOGERR("[parse_command_args] allow up to two %s upstream dns servers", is_chinadns ? "china" : "trust");
             goto PRINT_HELP_AND_EXIT;
         }
-        char *colon_ptr = strchr(server_str, '@');
         sock_port_t server_port = 53;
+        char *colon_ptr = strchr(server_str, '@');
         if (colon_ptr) {
             *colon_ptr = 0;
+            if (strlen(colon_ptr))
             server_port = strtol(++colon_ptr, NULL, 10);
             if (server_port == 0) {
                 printf("invalid server port: %s\n", colon_ptr);
@@ -93,7 +99,7 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
             printf("invalid server addr: %s\n", server_str);
             goto PRINT_HELP_AND_EXIT;
         }
-        sprintf(g_remote_names[is_chinadns ? server_cnt - 1 : server_cnt + 1], "%s:%hu", server_str, server_port);
+        sprintf(g_remote_servers[is_chinadns ? server_cnt - 1 : server_cnt + 1], "%s:%hu", server_str, server_port);
     }
     return;
 PRINT_HELP_AND_EXIT:
@@ -216,8 +222,8 @@ static void handle_remote_packet(int index) {
 
 int main(int argc, char *argv[]) {
     parse_command_args(argc, argv);
-    for (int i = 0; i < UPSTREAM_MAXCOUNT; ++i) {
-        printf("dns server: %s\n", g_remote_names[i]);
+    for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
+        printf("dns server: %s\n", g_remote_servers[i]);
     }
     return 0;
 }
