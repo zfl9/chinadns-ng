@@ -139,8 +139,8 @@ static void parse_command_args(int argc, char *argv[]) {
     opterr = 0;
     int optindex = -1;
     int shortopt = -1;
-    char *chinadns_optarg = NULL;
-    char *trustdns_optarg = NULL;
+    char *chinadns_optarg = "114.114.114.114";
+    char *trustdns_optarg = "8.8.8.8";
     while ((shortopt = getopt_long(argc, argv, optstr, options, &optindex)) != -1) {
         switch (shortopt) {
             case 'b':
@@ -219,8 +219,8 @@ static void parse_command_args(int argc, char *argv[]) {
                 goto PRINT_HELP_AND_EXIT;
         }
     }
-    if (chinadns_optarg) parse_dns_server_opt(chinadns_optarg, true);
-    if (trustdns_optarg) parse_dns_server_opt(trustdns_optarg, false);
+    parse_dns_server_opt(chinadns_optarg, true);
+    parse_dns_server_opt(trustdns_optarg, false);
     if (get_addrstr_family(g_bind_addr) == AF_INET) {
         build_ipv4_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
     } else {
