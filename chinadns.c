@@ -100,11 +100,19 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
             printf("[parse_dns_server_opt] ip address max length is 45: %s\n", server_str);
             goto PRINT_HELP_AND_EXIT;
         }
-        if (get_addrstr_family(server_str) == -1) {
-            printf("[parse_dns_server_opt] invalid server ip address: %s\n", server_str);
-            goto PRINT_HELP_AND_EXIT;
+        int index = is_chinadns ? server_cnt - 1 : server_cnt + 1;
+        switch (get_addrstr_family(server_str)) {
+            case AF_INET:
+                build_ipv4_addr((void *)&g_remote_skaddrs[index], server_str, server_port);
+                break;
+            case AF_INET6:
+                build_ipv6_addr((void *)&g_remote_skaddrs[index], server_str, server_port);
+                break;
+            default:
+                printf("[parse_dns_server_opt] invalid server ip address: %s\n", server_str);
+                goto PRINT_HELP_AND_EXIT;
         }
-        sprintf(g_remote_servers[is_chinadns ? server_cnt - 1 : server_cnt + 1], "%s:%hu", server_str, server_port);
+        sprintf(g_remote_servers[index], "%s:%hu", server_str, server_port);
     }
     return;
 PRINT_HELP_AND_EXIT:
@@ -213,6 +221,11 @@ static void parse_command_args(int argc, char *argv[]) {
     }
     if (chinadns_optarg) parse_dns_server_opt(chinadns_optarg, true);
     if (trustdns_optarg) parse_dns_server_opt(trustdns_optarg, false);
+    if (get_addrstr_family(g_bind_addr) == AF_INET) {
+        build_ipv4_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
+    } else {
+        build_ipv6_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
+    }
     return;
 PRINT_HELP_AND_EXIT:
     print_command_help();
