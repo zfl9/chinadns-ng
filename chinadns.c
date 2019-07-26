@@ -42,6 +42,7 @@
 #define IF_VERBOSE if (g_verbose)
 
 /* static global variable declaration */
+static int             g_epollfd                                          = -1;
 static bool            g_verbose                                          = false;
 static bool            g_reuse_port                                       = false;
 static char            g_setname4[IPSET_MAXNAMELEN]                       = "chnroute";
@@ -57,6 +58,8 @@ static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
 static time_t          g_upstream_timeout_sec                             = 5;
 static uint16_t        g_current_message_id                               = 0;
 static hashmap_t      *g_message_id_hashmap                               = NULL;
+static char            g_domain_name_buffer[DNS_DOMAIN_NAME_MAXLEN + 1]   = {0};
+static char            g_ipaddrstring_buffer[INET6_ADDRSTRLEN]            = {0};
 
 /* print command help information */
 static void print_command_help(void) {
@@ -236,7 +239,48 @@ PRINT_HELP_AND_EXIT:
 
 /* handle local socket readable event */
 static void handle_local_packet(void) {
-    // TODO
+    struct sockaddr_in6 source_addr = {0};
+    socklen_t source_addrlen = sizeof(struct sockaddr_in6);
+    ssize_t packet_len = recvfrom(g_bind_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, (void *)&source_addr, &source_addrlen);
+
+    if (packet_len < 0) {
+        if (errno == EAGAIN || errno == EINTR) return;
+        LOGERR("[handle_local_packet] failed to recv data from bind socket: (%d) %s", errno, strerror(errno));
+        return;
+    }
+
+    if (!dns_query_is_valid(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL)) return;
+
+    IF_VERBOSE {
+        sock_port_t source_port = 0;
+        if (source_addr.sin6_family == AF_INET) {
+            parse_ipv4_addr((void *)&source_addr, g_ipaddrstring_buffer, &source_port);
+        } else {
+            parse_ipv6_addr((void *)&source_addr, g_ipaddrstring_buffer, &source_port);
+        }
+        LOGINF("[handle_local_packet] query [%s] from %s:%hu", g_domain_name_buffer, g_ipaddrstring_buffer, ntohs(source_port));
+    }
+
+    for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
+        if (g_remote_sockets[i] < 0) continue;
+        if (send(g_remote_sockets[i], g_socket_buffer, packet_len, 0) < 0) {
+            LOGERR("[handle_local_packet] failed to send query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
+            return;
+        }
+    }
+
+    uint16_t unique_msgid = g_current_message_id++;
+    uint16_t origin_msgid = ((dns_header_t *)g_socket_buffer)->id;
+    int query_timerfd = new_once_timerfd(g_upstream_timeout_sec);
+
+    struct epoll_event ev = {.events = EPOLLIN, .data.u32 = (unique_msgid << BIT_SHIFT_LEN) | TIMER_FD_MARK};
+    if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, query_timerfd, &ev)) {
+        LOGERR("[handle_local_packet] failed to register timeout event: (%d) %s", errno, strerror(errno));
+        close(query_timerfd);
+        return;
+    }
+
+    hashmap_put(g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, (void *)&source_addr);
 }
 
 /* handle remote socket readable event */
@@ -302,8 +346,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* create epoll fd */
-    int epoll_fd = -1;
-    if ((epoll_fd = epoll_create1(0)) < 0) {
+    int g_epollfd = -1;
+    if ((g_epollfd = epoll_create1(0)) < 0) {
         LOGERR("[main] failed to create epoll fd: (%d) %s", errno, strerror(errno));
         return errno;
     }
@@ -314,7 +358,7 @@ int main(int argc, char *argv[]) {
     /* listen socket readable event */
     ev.events = EPOLLIN;
     ev.data.u32 = BINDSOCK_MARK; /* don't care about msg id */
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, g_bind_socket, &ev)) {
+    if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, g_bind_socket, &ev)) {
         LOGERR("[main] failed to register epoll event: (%d) %s", errno, strerror(errno));
         return errno;
     }
@@ -324,7 +368,7 @@ int main(int argc, char *argv[]) {
         if (g_remote_sockets[i] < 0) continue;
         ev.events = EPOLLIN;
         ev.data.u32 = i; /* don't care about msg id */
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, g_remote_sockets[i], &ev)) {
+        if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, g_remote_sockets[i], &ev)) {
             LOGERR("[main] failed to register epoll event: (%d) %s", errno, strerror(errno));
             return errno;
         }
@@ -332,7 +376,7 @@ int main(int argc, char *argv[]) {
 
     /* run event loop (blocking here) */
     while (true) {
-        int event_count = epoll_wait(epoll_fd, events, EPOLL_MAXEVENTS, -1);
+        int event_count = epoll_wait(g_epollfd, events, EPOLL_MAXEVENTS, -1);
 
         if (event_count < 0) {
             LOGERR("[main] epoll_wait() reported an error: (%d) %s", errno, strerror(errno));
