@@ -261,18 +261,19 @@ static void handle_local_packet(void) {
         LOGINF("[handle_local_packet] query [%s] from %s:%hu", g_domain_name_buffer, g_ipaddrstring_buffer, ntohs(source_port));
     }
 
+    uint16_t unique_msgid = g_current_message_id++;
+    uint16_t origin_msgid = ((dns_header_t *)g_socket_buffer)->id;
+    ((dns_header_t *)g_socket_buffer)->id = unique_msgid; /* replace with new msgid */
+
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (g_remote_sockets[i] < 0) continue;
         if (send(g_remote_sockets[i], g_socket_buffer, packet_len, 0) < 0) {
-            LOGERR("[handle_local_packet] failed to send query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
+            LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
             return;
         }
     }
 
-    uint16_t unique_msgid = g_current_message_id++;
-    uint16_t origin_msgid = ((dns_header_t *)g_socket_buffer)->id;
     int query_timerfd = new_once_timerfd(g_upstream_timeout_sec);
-
     struct epoll_event ev = {.events = EPOLLIN, .data.u32 = (unique_msgid << BIT_SHIFT_LEN) | TIMER_FD_MARK};
     if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, query_timerfd, &ev)) {
         LOGERR("[handle_local_packet] failed to register timeout event: (%d) %s", errno, strerror(errno));
@@ -291,19 +292,41 @@ static void handle_remote_packet(int index) {
 
     if (packet_len < 0) {
         if (errno == EAGAIN || errno == EINTR) return;
-        LOGERR("[handle_remote_packet] failed to recv data from remote socket: (%d) %s", errno, strerror(errno));
+        LOGERR("[handle_remote_packet] failed to recv data from %s: (%d) %s", remote_servers, errno, strerror(errno));
         return;
     }
 
     bool is_trusted = false;
     if (index == TRUSTDNS1_IDX || index == TRUSTDNS2_IDX) is_trusted = true;
     bool is_valid = dns_reply_is_valid(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, is_trusted);
-    // TODO
+    IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: %s", g_domain_name_buffer, remote_servers, is_valid ? "pass" : "drop");
+    if (!is_valid) return; /* let subsequent reply be processed */
+
+    dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
+    uint16_t unique_msgid = dns_header->id;
+    hashentry_t *entry = hashmap_get(g_message_id_hashmap, unique_msgid);
+    if (!entry) return; /* indicate that the request has been processed */
+    dns_header->id = entry->origin_msgid; /* replace with old msgid */
+
+    socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+    if (sendto(g_bind_socket, g_socket_buffer, packet_len, 0, (void *)&entry->source_addr, source_addrlen) < 0) {
+        sock_port_t source_port = 0;
+        if (entry->source_addr.sin6_family == AF_INET) {
+            parse_ipv4_addr((void *)&entry->source_addr, g_ipaddrstring_buffer, &source_port);
+        } else {
+            parse_ipv6_addr((void *)&entry->source_addr, g_ipaddrstring_buffer, &source_port);
+        }
+        LOGERR("[handle_remote_packet] failed to send dns reply packet to %s:%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
+    }
+
+    /* query is processed, clean up */
+    close(entry->query_timerfd);
+    hashmap_del(g_message_id_hashmap, entry);
 }
 
 /* handle upstream reply timeout event */
 static void handle_timeout_event(uint16_t msg_id) {
-    LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique_msgid: %hu", msg_id);
+    LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, msg_id);
     close(entry->query_timerfd); /* epoll will automatically remove the associated event */
     hashmap_del(g_message_id_hashmap, entry); /* delete and free the associated hash entry */
