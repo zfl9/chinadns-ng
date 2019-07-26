@@ -11,6 +11,7 @@
 #include <time.h>
 #include <errno.h>
 #include <unistd.h>
+#include <signal.h>
 #include <getopt.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -248,6 +249,26 @@ static void handle_timeout_event(uint16_t msgid) {
 }
 
 int main(int argc, char *argv[]) {
+    signal(SIGPIPE, SIG_IGN);
+    setvbuf(stdout, NULL, _IOLBF, 512);
     parse_command_args(argc, argv);
+
+    /* show startup information */
+    LOGINF("[main] local listen addr: %s:%hu", g_bind_addr, g_bind_port);
+    if (strlen(g_remote_servers[CHINADNS1_IDX])) LOGINF("[main] chinadns server#1: %s", g_remote_servers[CHINADNS1_IDX]);
+    if (strlen(g_remote_servers[CHINADNS2_IDX])) LOGINF("[main] chinadns server#2: %s", g_remote_servers[CHINADNS2_IDX]);
+    if (strlen(g_remote_servers[TRUSTDNS1_IDX])) LOGINF("[main] trustdns server#1: %s", g_remote_servers[TRUSTDNS1_IDX]);
+    if (strlen(g_remote_servers[TRUSTDNS2_IDX])) LOGINF("[main] trustdns server#2: %s", g_remote_servers[TRUSTDNS2_IDX]);
+    LOGINF("[main] ipset ip4 setname: %s", g_setname4);
+    LOGINF("[main] ipset ip6 setname: %s", g_setname6);
+    LOGINF("[main] dns query timeout: %ld seconds", g_upstream_timeout_sec);
+    if (g_reuse_port) LOGINF("[main] enable `SO_REUSEPORT` feature");
+    if (g_verbose) LOGINF("[main] print the verbose running log");
+
+    /* create udp msg_id hashmap */
+    g_message_id_hashmap = hashmap_new();
+
+    // TODO
+
     return 0;
 }
