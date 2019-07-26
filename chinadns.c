@@ -372,7 +372,26 @@ int main(int argc, char *argv[]) {
             if (!(curr_event & EPOLLIN)) continue;
 
             /* handle readable event */
-            // TODO
+            switch (curr_data & IDX_MARK_MASK) {
+                case CHINADNS1_IDX:
+                    handle_remote_packet(CHINADNS1_IDX);
+                    break;
+                case CHINADNS2_IDX:
+                    handle_remote_packet(CHINADNS2_IDX);
+                    break;
+                case TRUSTDNS1_IDX:
+                    handle_remote_packet(TRUSTDNS1_IDX);
+                    break;
+                case TRUSTDNS2_IDX:
+                    handle_remote_packet(TRUSTDNS2_IDX);
+                    break;
+                case BINDSOCK_MARK:
+                    handle_local_packet();
+                    break;
+                case TIMER_FD_MARK:
+                    handle_timeout_event(curr_data >> BIT_SHIFT_LEN);
+                    break;
+            }
         }
     }
 
