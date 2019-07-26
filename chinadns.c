@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <time.h>
 #include <errno.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -19,15 +20,18 @@
 #undef _GNU_SOURCE
 
 #define CHINADNS_VERSION "chinadns-ng v1.0.0"
-
-#define UPSTREAM_MAXCOUNT 4
 #define SOCKBUFF_MAXSIZE 1024
+#define UPSTREAM_MAXCOUNT 4
 
-#define BINDSOCK_INDEX -1 /* for marking only */
-#define CHINADNS_INDEX1 0
-#define CHINADNS_INDEX2 1
-#define TRUSTDNS_INDEX1 2
-#define TRUSTDNS_INDEX2 3
+/* left-16-bit:IDX/MARK; right-16-bit:MSGID/0 */
+#define CHINADNS1_IDX 0
+#define CHINADNS2_IDX 1
+#define TRUSTDNS1_IDX 2
+#define TRUSTDNS2_IDX 3
+#define BINDSOCK_MARK 4
+#define TIMER_FD_MARK 5
+#define RIGHT_SHIFT_N 16
+#define DNSMSGID_MASK 0xffff
 
 #define IF_VERBOSE if (g_verbose)
 
@@ -41,24 +45,60 @@ static int         g_local_socket                                          = -1;
 static int         g_remote_sockets[UPSTREAM_MAXCOUNT]                     = {-1, -1, -1, -1};
 static char        g_remote_names[UPSTREAM_MAXCOUNT][INET6_ADDRSTRLEN + 6] = {"114.114.114.114", "", "8.8.8.8", ""};
 static char        g_socket_buffer[SOCKBUFF_MAXSIZE]                       = {0};
-static uint16_t    g_current_message_id                                    = 1;
+static time_t      g_upstream_timeout_sec                                  = 5;
+static uint16_t    g_current_message_id                                    = 0;
 static hashmap_t  *g_message_id_hashmap                                    = NULL;
 
 /* print command help information */
 static void print_command_help(void) {
     printf("usage: chinadns-ng <options...>. the existing options are as follows:\n"
-           " -b, --bind-addr <addr>               listen address, default: 127.0.0.1\n" 
-           " -l, --bind-port <port>               listen port number, default: 65353\n"
-           " -c, --china-dns <ip:port[,ip:port]>  china dns server, default: <114DNS>\n"
-           " -t, --trust-dns <ip:port[,ip:port]>  trust dns server, default: <GoogleDNS>\n"
-           " -4, --ipset-name4 <ipset-setname4>   ipset ipv4 set name, default: chnroute\n"
-           " -6, --ipset-name6 <ipset-setname6>   ipset ipv6 set name, default: chnroute6\n"
+           " -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1\n" 
+           " -l, --bind-port <port-number>        listen port number, default: 65353\n"
+           " -c, --china-dns <ip[@port],...>      china dns server, default: <114DNS>\n"
+           " -t, --trust-dns <ip[@port],...>      trust dns server, default: <GoogleDNS>\n"
+           " -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute\n"
+           " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
+           " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
            " -v, --verbose                        print the verbose log, default: <disabled>\n"
            " -V, --version                        print `chinadns-ng` version number and exit\n"
            " -h, --help                           print `chinadns-ng` help information and exit\n"
            "bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)\n"
     );
+}
+
+static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
+    size_t server_cnt = 0;
+    char *server_str = NULL;
+    for (char *server_str = strtok(option_argval, ","); server_str; server_str = strtok(NULL, ",")) {
+        if (++server_cnt > 2) {
+            printf("china-dns max count is 2\n");
+            goto PRINT_HELP_AND_EXIT;
+        }
+        char *colon_ptr = strchr(server_str, '@');
+        sock_port_t server_port = 53;
+        if (colon_ptr) {
+            *colon_ptr = 0;
+            server_port = strtol(++colon_ptr, NULL, 10);
+            if (server_port == 0) {
+                printf("invalid server port: %s\n", colon_ptr);
+                goto PRINT_HELP_AND_EXIT;
+            }
+        }
+        if (strlen(server_str) + 1 > INET6_ADDRSTRLEN) {
+            printf("ipaddr max len is 45: %zu\n", strlen(server_str));
+            goto PRINT_HELP_AND_EXIT;
+        }
+        if (get_addrstr_family(server_str) == -1) {
+            printf("invalid server addr: %s\n", server_str);
+            goto PRINT_HELP_AND_EXIT;
+        }
+        sprintf(g_remote_names[is_chinadns ? server_cnt - 1 : server_cnt + 1], "%s:%hu", server_str, server_port);
+    }
+    return;
+PRINT_HELP_AND_EXIT:
+    print_command_help();
+    exit(1);
 }
 
 /* parse and check command arguments */
@@ -71,6 +111,7 @@ static void parse_command_args(int argc, char *argv[]) {
         {"trust-dns",   required_argument, NULL, 't'},
         {"ipset-name4", required_argument, NULL, '4'},
         {"ipset-name6", required_argument, NULL, '6'},
+        {"timeout-sec", required_argument, NULL, 'o'},
         {"reuse-port",  no_argument,       NULL, 'r'},
         {"verbose",     no_argument,       NULL, 'v'},
         {"version",     no_argument,       NULL, 'V'},
@@ -86,13 +127,11 @@ static void parse_command_args(int argc, char *argv[]) {
             case 'b':
                 if (strlen(optarg) + 1 > INET6_ADDRSTRLEN) {
                     printf("ipaddr max len is 45: %zu\n", strlen(optarg));
-                    print_command_help();
-                    exit(1);
+                    goto PRINT_HELP_AND_EXIT;
                 }
                 if (get_addrstr_family(optarg) == -1) {
                     printf("invalid bind addr: %s\n", optarg);
-                    print_command_help();
-                    exit(1);
+                    goto PRINT_HELP_AND_EXIT;
                 }
                 strcpy(g_bind_addr, optarg);
                 break;
@@ -100,8 +139,7 @@ static void parse_command_args(int argc, char *argv[]) {
                 g_bind_port = strtol(optarg, NULL, 10);
                 if (g_bind_port == 0) {
                     printf("invalid bind port: %s\n", optarg);
-                    print_command_help();
-                    exit(1);
+                    goto PRINT_HELP_AND_EXIT;
                 }
                 break;
             case 'c':
@@ -113,18 +151,23 @@ static void parse_command_args(int argc, char *argv[]) {
             case '4':
                 if (strlen(optarg) + 1 > IPSET_MAXNAMELEN) {
                     printf("setname max len is 31: %zu\n", strlen(optarg));
-                    print_command_help();
-                    exit(1);
+                    goto PRINT_HELP_AND_EXIT;
                 }
                 strcpy(g_setname4, optarg);
                 break;
             case '6':
                 if (strlen(optarg) + 1 > IPSET_MAXNAMELEN) {
                     printf("setname max len is 31: %zu\n", strlen(optarg));
-                    print_command_help();
-                    exit(1);
+                    goto PRINT_HELP_AND_EXIT;
                 }
                 strcpy(g_setname6, optarg);
+                break;
+            case 'o':
+                g_upstream_timeout_sec = strtol(optarg, NULL, 10);
+                if (g_upstream_timeout_sec <= 0) {
+                    printf("invalid timeout sec: %s\n", optarg);
+                    goto PRINT_HELP_AND_EXIT;
+                }
                 break;
             case 'r':
                 g_reuse_port = true;
@@ -140,8 +183,7 @@ static void parse_command_args(int argc, char *argv[]) {
                 exit(0);
             case ':':
                 printf("missing optarg: '%s'\n", argv[optind - 1]);
-                print_command_help();
-                exit(1);
+                goto PRINT_HELP_AND_EXIT;
             case '?':
                 if (optopt) {
                     printf("unknown option: '-%c'\n", optopt);
@@ -151,75 +193,15 @@ static void parse_command_args(int argc, char *argv[]) {
                     if (equalsign) *equalsign = 0;
                     printf("unknown option: '%s'\n", longopt);
                 }
-                print_command_help();
-                exit(1);
+                goto PRINT_HELP_AND_EXIT;
         }
     }
-    if (chinadns_optarg) {
-        size_t server_cnt = 0;
-        char *server_str = NULL;
-        for (char *server_str = strtok(chinadns_optarg, ","); server_str; server_str = strtok(NULL, ",")) {
-            if (++server_cnt > 2) {
-                printf("china-dns max count is 2\n");
-                print_command_help();
-                exit(1);
-            }
-            char *colon_ptr = strchr(server_str, '@');
-            sock_port_t server_port = 53;
-            if (colon_ptr) {
-                *colon_ptr = 0;
-                server_port = strtol(++colon_ptr, NULL, 10);
-                if (server_port == 0) {
-                    printf("invalid server port: %s\n", colon_ptr);
-                    print_command_help();
-                    exit(1);
-                }
-            }
-            if (strlen(server_str) + 1 > INET6_ADDRSTRLEN) {
-                printf("ipaddr max len is 45: %zu\n", strlen(server_str));
-                print_command_help();
-                exit(1);
-            }
-            if (get_addrstr_family(server_str) == -1) {
-                printf("invalid server addr: %s\n", server_str);
-                print_command_help();
-                exit(1);
-            }
-            sprintf(g_remote_names[server_cnt - 1], "%s:%hu", server_str, server_port);
-        }
-    }
-    if (trustdns_optarg) {
-        size_t server_cnt = 0;
-        for (char *server_str = strtok(trustdns_optarg, ","); server_str; server_str = strtok(NULL, ",")) {
-            if (++server_cnt > 2) {
-                printf("china-dns max count is 2\n");
-                print_command_help();
-                exit(1);
-            }
-            char *colon_ptr = strchr(server_str, '@');
-            sock_port_t server_port = 53;
-            if (colon_ptr) {
-                *colon_ptr = 0;
-                server_port = strtol(++colon_ptr, NULL, 10);
-                if (server_port == 0) {
-                    printf("invalid server port: %s\n", colon_ptr);
-                    print_command_help();
-                    exit(1);
-                }
-            }
-            if (strlen(server_str) + 1 > INET6_ADDRSTRLEN) {
-                printf("ipaddr max len is 45: %zu\n", strlen(server_str));
-                print_command_help();
-                exit(1);
-            }
-            if (get_addrstr_family(server_str) == -1) {
-                printf("invalid server addr: %s\n", server_str);
-                print_command_help();
-                exit(1);
-            }
-            sprintf(g_remote_names[server_cnt + 1], "%s:%hu", server_str, server_port);
-        }
-    }
+    if (chinadns_optarg) parse_dns_server_opt(chinadns_optarg, true);
+    if (trustdns_optarg) parse_dns_server_opt(trustdns_optarg, false);
+    return;
+PRINT_HELP_AND_EXIT:
+    print_command_help();
+    exit(1);
 }
 
 /* handle local socket readable event */

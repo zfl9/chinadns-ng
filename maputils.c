@@ -14,13 +14,14 @@ hashmap_t* hashmap_new(void) {
 }
 
 /* put key and value to hashmap */
-hashentry_t* hashmap_put(hashmap_t *hashmap, uint16_t unique_msgid, uint16_t origin_msgid, const struct sockaddr_in6 *source_addr) {
+hashentry_t* hashmap_put(hashmap_t *hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, const struct sockaddr_in6 *source_addr) {
     hashentry_t *hashentry = NULL;
     HASH_FIND(hh, hashmap, &unique_msgid, sizeof(uint16_t), hashentry);
     if (!hashentry) {
         hashentry = malloc(sizeof(hashentry_t));
         hashentry->unique_msgid = unique_msgid;
         hashentry->origin_msgid = origin_msgid;
+        hashentry->query_timerfd = query_timerfd;
         memcpy(&hashentry->source_addr, source_addr, sizeof(struct sockaddr_in6));
         HASH_ADD(hh, hashmap, unique_msgid, sizeof(uint16_t), hashentry);
     } else {
@@ -31,8 +32,8 @@ hashentry_t* hashmap_put(hashmap_t *hashmap, uint16_t unique_msgid, uint16_t ori
 }
 
 /* get entry_ptr by unique_msgid */
-const hashentry_t* hashmap_get(const hashmap_t *hashmap, uint16_t unique_msgid) {
-    const hashentry_t *hashentry = NULL;
+hashentry_t* hashmap_get(hashmap_t *hashmap, uint16_t unique_msgid) {
+    hashentry_t *hashentry = NULL;
     HASH_FIND(hh, hashmap, &unique_msgid, sizeof(uint16_t), hashentry);
     return hashentry;
 }
