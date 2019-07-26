@@ -330,5 +330,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* run event loop (blocking here) */
+    while (true) {
+        int event_count = epoll_wait(epoll_fd, events, EPOLL_MAXEVENTS, -1);
+        if (event_count < 0) {
+            LOGERR("[main] epoll_wait() reported an error: (%d) %s", errno, strerror(errno));
+            continue;
+        }
+        for (int i = 0; i < event_count; ++i) {
+            // TODO
+        }
+    }
+
     return 0;
 }
