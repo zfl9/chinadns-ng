@@ -280,7 +280,7 @@ static void handle_local_packet(void) {
         return;
     }
 
-    hashmap_put(g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, (void *)&source_addr);
+    hashmap_put(g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, &source_addr);
 }
 
 /* handle remote socket readable event */
