@@ -385,7 +385,6 @@ int main(int argc, char *argv[]) {
     }
 
     /* create epoll fd */
-    int g_epollfd = -1;
     if ((g_epollfd = epoll_create1(0)) < 0) {
         LOGERR("[main] failed to create epoll fd: (%d) %s", errno, strerror(errno));
         return errno;
