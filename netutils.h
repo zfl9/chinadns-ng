@@ -20,6 +20,9 @@ typedef struct __attribute__((packed)) {
     uint8_t addr[16];
 } ipv6_addr_t;
 
+/* all_sockaddr_t for save ipv4/ipv6 sockaddr */
+typedef struct sockaddr_storage all_sockaddr_t;
+
 /* socket port number typedef */
 typedef uint16_t sock_port_t;
 

@@ -40,19 +40,21 @@
 #define IF_VERBOSE if (g_verbose)
 
 /* static global variable declaration */
-static bool        g_verbose                                          = false;
-static bool        g_reuse_port                                       = false;
-static char        g_setname4[IPSET_MAXNAMELEN]                       = "chnroute";
-static char        g_setname6[IPSET_MAXNAMELEN]                       = "chnroute6";
-static char        g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
-static sock_port_t g_bind_port                                        = 65353;
-static int         g_local_socket                                     = -1;
-static int         g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
-static char        g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114:53", "", "8.8.8.8:53", ""};
-static char        g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
-static time_t      g_upstream_timeout_sec                             = 5;
-static uint16_t    g_current_message_id                               = 0;
-static hashmap_t  *g_message_id_hashmap                               = NULL;
+static bool            g_verbose                                          = false;
+static bool            g_reuse_port                                       = false;
+static char            g_setname4[IPSET_MAXNAMELEN]                       = "chnroute";
+static char            g_setname6[IPSET_MAXNAMELEN]                       = "chnroute6";
+static char            g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
+static sock_port_t     g_bind_port                                        = 65353;
+static all_sockaddr_t  g_bind_skaddr                                      = {0};
+static int             g_local_socket                                     = -1;
+static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
+static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114:53", "", "8.8.8.8:53", ""};
+static all_sockaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {0};
+static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
+static time_t          g_upstream_timeout_sec                             = 5;
+static uint16_t        g_current_message_id                               = 0;
+static hashmap_t      *g_message_id_hashmap                               = NULL;
 
 /* print command help information */
 static void print_command_help(void) {
@@ -77,26 +79,29 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
     size_t server_cnt = 0;
     for (char *server_str = strtok(option_argval, ","); server_str; server_str = strtok(NULL, ",")) {
         if (++server_cnt > 2) {
-            LOGERR("[parse_command_args] allow up to two %s upstream dns servers", is_chinadns ? "china" : "trust");
+            printf("[parse_dns_server_opt] %s dns servers max count is 2\n", is_chinadns ? "china" : "trust");
             goto PRINT_HELP_AND_EXIT;
         }
         sock_port_t server_port = 53;
-        char *colon_ptr = strchr(server_str, '@');
-        if (colon_ptr) {
-            *colon_ptr = 0;
-            if (strlen(colon_ptr))
-            server_port = strtol(++colon_ptr, NULL, 10);
+        char *atsign_ptr = strchr(server_str, '@');
+        if (atsign_ptr) {
+            *atsign_ptr = 0; ++atsign_ptr;
+            if (strlen(atsign_ptr) > PORTSTR_MAXLEN) {
+                printf("[parse_dns_server_opt] port number max length is 5: %s\n", atsign_ptr);
+                goto PRINT_HELP_AND_EXIT;
+            }
+            server_port = strtol(atsign_ptr, NULL, 10);
             if (server_port == 0) {
-                printf("invalid server port: %s\n", colon_ptr);
+                printf("[parse_dns_server_opt] invalid server port number: %s\n", atsign_ptr);
                 goto PRINT_HELP_AND_EXIT;
             }
         }
         if (strlen(server_str) + 1 > INET6_ADDRSTRLEN) {
-            printf("ipaddr max len is 45: %zu\n", strlen(server_str));
+            printf("[parse_dns_server_opt] ip address max length is 45: %zu\n", strlen(server_str));
             goto PRINT_HELP_AND_EXIT;
         }
         if (get_addrstr_family(server_str) == -1) {
-            printf("invalid server addr: %s\n", server_str);
+            printf("[parse_dns_server_opt] invalid server ip address: %s\n", server_str);
             goto PRINT_HELP_AND_EXIT;
         }
         sprintf(g_remote_servers[is_chinadns ? server_cnt - 1 : server_cnt + 1], "%s:%hu", server_str, server_port);
