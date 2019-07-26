@@ -333,11 +333,45 @@ int main(int argc, char *argv[]) {
     /* run event loop (blocking here) */
     while (true) {
         int event_count = epoll_wait(epoll_fd, events, EPOLL_MAXEVENTS, -1);
+
         if (event_count < 0) {
             LOGERR("[main] epoll_wait() reported an error: (%d) %s", errno, strerror(errno));
             continue;
         }
+
         for (int i = 0; i < event_count; ++i) {
+            uint32_t curr_event = events[i].events;
+            uint32_t curr_data = events[i].data.u32;
+
+            /* an error occurred */
+            if (curr_event & EPOLLERR) {
+                switch (curr_data & IDX_MARK_MASK) {
+                    case CHINADNS1_IDX:
+                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[CHINADNS1_IDX], errno, strerror(errno));
+                        break;
+                    case CHINADNS2_IDX:
+                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[CHINADNS2_IDX], errno, strerror(errno));
+                        break;
+                    case TRUSTDNS1_IDX:
+                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[TRUSTDNS1_IDX], errno, strerror(errno));
+                        break;
+                    case TRUSTDNS2_IDX:
+                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[TRUSTDNS2_IDX], errno, strerror(errno));
+                        break;
+                    case BINDSOCK_MARK:
+                        LOGERR("[main] local udp listen socket error: (%d) %s", errno, strerror(errno));
+                        break;
+                    case TIMER_FD_MARK:
+                        LOGERR("[main] query timeout timer fd error: (%d) %s", errno, strerror(errno));
+                        break;
+                }
+                continue;
+            }
+
+            /* ignore other events */
+            if (!(curr_event & EPOLLIN)) continue;
+
+            /* handle readable event */
             // TODO
         }
     }
