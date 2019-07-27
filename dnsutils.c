@@ -213,13 +213,13 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
         }
         switch (ntohs(record->rtype)) {
             case DNS_RECORD_TYPE_A:
-                if (rdatalen != sizeof(ipv4_addr_t)) {
+                if (rdatalen != sizeof(inet4_ipaddr_t)) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
                 return ipset_addr4_is_exists((void *)record->rdataptr);
             case DNS_RECORD_TYPE_AAAA:
-                if (rdatalen != sizeof(ipv6_addr_t)) {
+                if (rdatalen != sizeof(inet6_ipaddr_t)) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }

@@ -49,11 +49,11 @@ static char            g_setname4[IPSET_MAXNAMELEN]                       = "chn
 static char            g_setname6[IPSET_MAXNAMELEN]                       = "chnroute6";
 static char            g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
 static sock_port_t     g_bind_port                                        = 65353;
-static all_sockaddr_t  g_bind_skaddr                                      = {0};
+static inet6_skaddr_t  g_bind_skaddr                                      = {0};
 static int             g_bind_socket                                      = -1;
 static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
 static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114:53", "", "8.8.8.8:53", ""};
-static all_sockaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {0};
+static inet6_skaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {0};
 static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
 static time_t          g_upstream_timeout_sec                             = 5;
 static uint16_t        g_current_message_id                               = 0;
@@ -356,21 +356,21 @@ int main(int argc, char *argv[]) {
     ipset_init_nlsocket(g_setname4, g_setname6);
 
     /* create listen socket */
-    g_bind_socket = (g_bind_skaddr.ss_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
-    if (g_bind_skaddr.ss_family == AF_INET6) set_ipv6_only(g_bind_socket);
+    g_bind_socket = (g_bind_skaddr.sin6_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
+    if (g_bind_skaddr.sin6_family == AF_INET6) set_ipv6_only(g_bind_socket);
     if (g_reuse_port) set_reuse_port(g_bind_socket);
     set_reuse_addr(g_bind_socket);
 
     /* create remote socket */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (!strlen(g_remote_servers[i])) continue;
-        g_remote_sockets[i] = (g_remote_skaddrs[i].ss_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
-        if (g_remote_skaddrs[i].ss_family == AF_INET6) set_ipv6_only(g_remote_sockets[i]);
+        g_remote_sockets[i] = (g_remote_skaddrs[i].sin6_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
+        if (g_remote_skaddrs[i].sin6_family == AF_INET6) set_ipv6_only(g_remote_sockets[i]);
         set_reuse_addr(g_remote_sockets[i]);
     }
 
     /* bind address to listen socket */
-    if (bind(g_bind_socket, (void *)&g_bind_skaddr, (g_bind_skaddr.ss_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) {
+    if (bind(g_bind_socket, (void *)&g_bind_skaddr, (g_bind_skaddr.sin6_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) {
         LOGERR("[main] failed to bind address to socket: (%d) %s", errno, strerror(errno));
         return errno;
     }
@@ -378,7 +378,7 @@ int main(int argc, char *argv[]) {
     /* connect to remote dns servers */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (g_remote_sockets[i] < 0) continue;
-        if (connect(g_remote_sockets[i], (void *)&g_remote_skaddrs[i], (g_remote_skaddrs[i].ss_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) {
+        if (connect(g_remote_sockets[i], (void *)&g_remote_skaddrs[i], (g_remote_skaddrs[i].sin6_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) {
             LOGERR("[main] failed to connect to upstream(%s): (%d) %s", g_remote_servers[i], errno, strerror(errno));
             return errno;
         }
