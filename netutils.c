@@ -27,7 +27,26 @@
 #define IPSET_ATTR_IP 1
 #define IPSET_ATTR_IPADDR_IPV4 1
 #define IPSET_ATTR_IPADDR_IPV6 2
+
+/* ipset error code constants definition */
+#define IPSET_ERR_PROTOCOL -4097
+#define IPSET_ERR_FIND_TYPE -4098
+#define IPSET_ERR_MAX_SETS -4099
+#define IPSET_ERR_BUSY -4100
+#define IPSET_ERR_EXIST_SETNAME2 -4101
+#define IPSET_ERR_TYPE_MISMATCH -4102
 #define IPSET_ERR_EXIST -4103
+#define IPSET_ERR_INVALID_CIDR -4104
+#define IPSET_ERR_INVALID_NETMASK -4105
+#define IPSET_ERR_INVALID_FAMILY -4106
+#define IPSET_ERR_TIMEOUT -4107
+#define IPSET_ERR_REFERENCED -4108
+#define IPSET_ERR_IPADDR_IPV4 -4109
+#define IPSET_ERR_IPADDR_IPV6 -4110
+#define IPSET_ERR_COUNTER -4111
+#define IPSET_ERR_COMMENT -4112
+#define IPSET_ERR_INVALID_MARKMASK -4113
+#define IPSET_ERR_SKBINFO -4114
 
 /* netfilter's general netlink message structure */
 struct nfgenmsg {
@@ -252,6 +271,31 @@ void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6) {
     ipset_prebuild_nlmsg(false); /* prebuild ipv6 nlmsg */
 }
 
+/* get a string description of the ipset error code */
+static inline const char* ipset_error_tostr(int errcode) {
+    switch (errcode) {
+        case IPSET_ERR_PROTOCOL: return "IPSET_ERR_PROTOCOL";
+        case IPSET_ERR_FIND_TYPE: return "IPSET_ERR_FIND_TYPE";
+        case IPSET_ERR_MAX_SETS: return "IPSET_ERR_MAX_SETS";
+        case IPSET_ERR_BUSY: return "IPSET_ERR_BUSY";
+        case IPSET_ERR_EXIST_SETNAME2: return "IPSET_ERR_EXIST_SETNAME2";
+        case IPSET_ERR_TYPE_MISMATCH: return "IPSET_ERR_TYPE_MISMATCH";
+        case IPSET_ERR_EXIST: return "IPSET_ERR_EXIST";
+        case IPSET_ERR_INVALID_CIDR: return "IPSET_ERR_INVALID_CIDR";
+        case IPSET_ERR_INVALID_NETMASK: return "IPSET_ERR_INVALID_NETMASK";
+        case IPSET_ERR_INVALID_FAMILY: return "IPSET_ERR_INVALID_FAMILY";
+        case IPSET_ERR_INVALID_MARKMASK: return "IPSET_ERR_INVALID_MARKMASK";
+        case IPSET_ERR_TIMEOUT: return "IPSET_ERR_TIMEOUT";
+        case IPSET_ERR_REFERENCED: return "IPSET_ERR_REFERENCED";
+        case IPSET_ERR_IPADDR_IPV4: return "IPSET_ERR_IPADDR_IPV4";
+        case IPSET_ERR_IPADDR_IPV6: return "IPSET_ERR_IPADDR_IPV6";
+        case IPSET_ERR_COUNTER: return "IPSET_ERR_COUNTER";
+        case IPSET_ERR_COMMENT: return "IPSET_ERR_COMMENT";
+        case IPSET_ERR_SKBINFO: return "IPSET_ERR_SKBINFO";
+        default: return "IPSET_ERR_UNKNOWN";
+    }
+}
+
 /* check given ipaddr is exists in ipset */
 bool ipset_addr4_is_exists(const inet4_ipaddr_t *addr_ptr) {
     memcpy(g_ipset_ipv4addr_ptr, addr_ptr, sizeof(inet4_ipaddr_t));
@@ -271,7 +315,7 @@ bool ipset_addr4_is_exists(const inet4_ipaddr_t *addr_ptr) {
         case IPSET_ERR_EXIST:
             return false; // not exist
         default:
-            LOGERR("[ipset_addr4_is_exists] received unknown error code from kernel: %d", netlink_errmsg->error);
+            LOGERR("[ipset_addr4_is_exists] received an error code from kernel: (%d) %s", netlink_errmsg->error, ipset_error_tostr(netlink_errmsg->error));
             return false; // error occurred
     }
     return false; // unachievable
@@ -296,7 +340,7 @@ bool ipset_addr6_is_exists(const inet6_ipaddr_t *addr_ptr) {
         case IPSET_ERR_EXIST:
             return false; // not exist
         default:
-            LOGERR("[ipset_addr6_is_exists] received unknown error code from kernel: %d", netlink_errmsg->error);
+            LOGERR("[ipset_addr6_is_exists] received an error code from kernel: (%d) %s", netlink_errmsg->error, ipset_error_tostr(netlink_errmsg->error));
             return false; // error occurred
     }
     return false; // unachievable
