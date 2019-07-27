@@ -20,7 +20,7 @@ typedef struct __attribute__((packed)) {
     uint8_t addr[16];
 } inet6_ipaddr_t;
 
-/* inet6_skaddr_t for save ipv4/ipv6 sockaddr */
+/* uniform struct sockaddr_* name */
 typedef struct sockaddr_in  inet4_skaddr_t;
 typedef struct sockaddr_in6 inet6_skaddr_t;
 
@@ -49,12 +49,12 @@ int new_once_timerfd(time_t second);
 int get_addrstr_family(const char *addrstr);
 
 /* build ipv4/ipv6 address structure */
-void build_ipv4_addr(struct sockaddr_in *addr, const char *host, sock_port_t port);
-void build_ipv6_addr(struct sockaddr_in6 *addr, const char *host, sock_port_t port);
+void build_ipv4_addr(inet4_skaddr_t *addr, const char *host, sock_port_t port);
+void build_ipv6_addr(inet6_skaddr_t *addr, const char *host, sock_port_t port);
 
 /* parse ipv4/ipv6 address structure */
-void parse_ipv4_addr(const struct sockaddr_in *addr, char *host, sock_port_t *port);
-void parse_ipv6_addr(const struct sockaddr_in6 *addr, char *host, sock_port_t *port);
+void parse_ipv4_addr(const inet4_skaddr_t *addr, char *host, sock_port_t *port);
+void parse_ipv6_addr(const inet6_skaddr_t *addr, char *host, sock_port_t *port);
 
 /* init netlink socket for ipset query */
 void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6);
