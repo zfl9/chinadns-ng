@@ -10,9 +10,9 @@
 /* dns packet max size (in bytes) */
 #define DNS_PACKET_MAXSIZE 512
 
-/* domain name max len (including the label separator '.') */
-/* example: "www.example.com", length = 15 (excluding '\0') */
-#define DNS_DOMAIN_NAME_MAXLEN 253
+/* domain name max len (including separator '.' and '\0') */
+/* example: "www.example.com", length = 16 (including '\0') */
+#define DNS_DOMAIN_NAME_MAXLEN 254 /* eg: char namebuf[DNS_DOMAIN_NAME_MAXLEN] */
 
 /* dns header structure (fixed length) */
 typedef struct __attribute__((packed)) {
