@@ -122,7 +122,11 @@ int new_once_timerfd(time_t second) {
         LOGERR("[new_once_timerfd] failed to create timer fd: (%d) %s", errno, strerror(errno));
         exit(errno);
     }
-    struct itimerspec time_value = {.it_value.tv_sec = second};
+    struct itimerspec time_value;
+    time_value.it_value.tv_sec = second;
+    time_value.it_value.tv_nsec = 0;
+    time_value.it_interval.tv_sec = 0;
+    time_value.it_interval.tv_nsec = 0;
     if (timerfd_settime(timerfd, 0, &time_value, NULL)) {
         LOGERR("[new_once_timerfd] failed to settime for timer fd: (%d) %s", errno, strerror(errno));
         exit(errno);
@@ -312,7 +316,8 @@ static inline const char* ipset_error_tostr(int errcode) {
 bool ipset_addr4_is_exists(const inet4_ipaddr_t *addr_ptr) {
     memcpy(g_ipset_ipv4addr_ptr, addr_ptr, sizeof(inet4_ipaddr_t));
     *g_ipset_nlmsg4_seq_ptr = g_ipset_nlmsg_seq++;
-    if (send(g_ipset_nlsocket, g_ipset_sendbuffer4, ((struct nlmsghdr *)g_ipset_sendbuffer4)->nlmsg_len, 0) < 0) {
+    size_t ipset_msglen = ((struct nlmsghdr *)g_ipset_sendbuffer4)->nlmsg_len;
+    if (send(g_ipset_nlsocket, g_ipset_sendbuffer4, ipset_msglen, 0) < 0) {
         LOGERR("[ipset_addr4_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
@@ -337,7 +342,8 @@ bool ipset_addr4_is_exists(const inet4_ipaddr_t *addr_ptr) {
 bool ipset_addr6_is_exists(const inet6_ipaddr_t *addr_ptr) {
     memcpy(g_ipset_ipv6addr_ptr, addr_ptr, sizeof(inet6_ipaddr_t));
     *g_ipset_nlmsg6_seq_ptr = g_ipset_nlmsg_seq++;
-    if (send(g_ipset_nlsocket, g_ipset_sendbuffer6, ((struct nlmsghdr *)g_ipset_sendbuffer6)->nlmsg_len, 0) < 0) {
+    size_t ipset_msglen = ((struct nlmsghdr *)g_ipset_sendbuffer6)->nlmsg_len;
+    if (send(g_ipset_nlsocket, g_ipset_sendbuffer6, ipset_msglen, 0) < 0) {
         LOGERR("[ipset_addr6_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
         return false;
     }
