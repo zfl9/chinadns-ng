@@ -17,6 +17,7 @@
 /* dns header structure (fixed length) */
 typedef struct __attribute__((packed)) {
     uint16_t id; // id of message
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     uint8_t  qr:1; // query=0; response=1
     uint8_t  opcode:4; // standard-query=0, etc.
     uint8_t  aa:1; // is authoritative answer, set by server
@@ -25,6 +26,18 @@ typedef struct __attribute__((packed)) {
     uint8_t  ra:1; // is recursion available, set by server
     uint8_t  z:3; // reserved bits set to zero
     uint8_t  rcode:4; // response code: no-error=0, etc.
+#elif __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    uint8_t  rd:1; // is recursion desired, set by client
+    uint8_t  tc:1; // message is truncated, set by server
+    uint8_t  aa:1; // is authoritative answer, set by server
+    uint8_t  opcode:4; // standard-query=0, etc.
+    uint8_t  qr:1; // query=0; response=1
+    uint8_t  rcode:4; // response code: no-error=0, etc.
+    uint8_t  z:3; // reserved bits set to zero
+    uint8_t  ra:1; // is recursion available, set by server
+#else
+#   error "only supports big endian and little endian"
+#endif
     uint16_t question_count; // question count
     uint16_t answer_count; // answer record count
     uint16_t authority_count; // authority record count
