@@ -8,7 +8,7 @@
 #undef _GNU_SOURCE
 
 /* dns packet max size (in bytes) */
-#define DNS_PACKET_MAXSIZE 512
+#define DNS_PACKET_MAXSIZE 1472 /* compatible with edns */
 
 /* domain name max len (including separator '.' and '\0') */
 /* example: "www.example.com", length = 16 (including '\0') */
