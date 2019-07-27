@@ -35,7 +35,7 @@
 #define SERVER_MAXCOUNT 4
 #define SOCKBUFF_MAXSIZE 1024
 #define PORTSTR_MAXLEN 5 /* "65535" (excluding '\0') */
-#define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN + 1) /* "addr:port\0" */
+#define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN + 1) /* "addr#port\0" */
 #define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.1 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
@@ -52,13 +52,13 @@ static sock_port_t     g_bind_port                                        = 6535
 static inet6_skaddr_t  g_bind_skaddr                                      = {0};
 static int             g_bind_socket                                      = -1;
 static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
-static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114:53", "", "8.8.8.8:53", ""};
+static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"", "", "", ""};
 static inet6_skaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {0};
 static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
 static time_t          g_upstream_timeout_sec                             = 5;
 static uint16_t        g_current_message_id                               = 0;
 static hashmap_t      *g_message_id_hashmap                               = NULL;
-static char            g_domain_name_buffer[DNS_DOMAIN_NAME_MAXLEN + 1]   = {0};
+static char            g_domain_name_buffer[DNS_DOMAIN_NAME_MAXLEN]       = {0};
 static char            g_ipaddrstring_buffer[INET6_ADDRSTRLEN]            = {0};
 
 /* print command help information */
@@ -66,8 +66,8 @@ static void print_command_help(void) {
     printf("usage: chinadns-ng <options...>. the existing options are as follows:\n"
            " -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1\n" 
            " -l, --bind-port <port-number>        listen port number, default: 65353\n"
-           " -c, --china-dns <ip[@port],...>      china dns server, default: <114DNS>\n"
-           " -t, --trust-dns <ip[@port],...>      trust dns server, default: <GoogleDNS>\n"
+           " -c, --china-dns <ip[#port],...>      china dns server, default: <114DNS>\n"
+           " -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>\n"
            " -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute\n"
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
@@ -88,16 +88,16 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
             goto PRINT_HELP_AND_EXIT;
         }
         sock_port_t server_port = 53;
-        char *atsign_ptr = strchr(server_str, '@');
-        if (atsign_ptr) {
-            *atsign_ptr = 0; ++atsign_ptr;
-            if (strlen(atsign_ptr) > PORTSTR_MAXLEN) {
-                printf("[parse_dns_server_opt] port number max length is 5: %s\n", atsign_ptr);
+        char *hashsign_ptr = strchr(server_str, '#');
+        if (hashsign_ptr) {
+            *hashsign_ptr = 0; ++hashsign_ptr;
+            if (strlen(hashsign_ptr) > PORTSTR_MAXLEN) {
+                printf("[parse_dns_server_opt] port number max length is 5: %s\n", hashsign_ptr);
                 goto PRINT_HELP_AND_EXIT;
             }
-            server_port = strtol(atsign_ptr, NULL, 10);
+            server_port = strtol(hashsign_ptr, NULL, 10);
             if (server_port == 0) {
-                printf("[parse_dns_server_opt] invalid server port number: %s\n", atsign_ptr);
+                printf("[parse_dns_server_opt] invalid server port number: %s\n", hashsign_ptr);
                 goto PRINT_HELP_AND_EXIT;
             }
         }
@@ -117,7 +117,7 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
                 printf("[parse_dns_server_opt] invalid server ip address: %s\n", server_str);
                 goto PRINT_HELP_AND_EXIT;
         }
-        sprintf(g_remote_servers[index], "%s:%hu", server_str, server_port);
+        sprintf(g_remote_servers[index], "%s#%hu", server_str, server_port);
     }
     return;
 PRINT_HELP_AND_EXIT:
@@ -239,8 +239,8 @@ PRINT_HELP_AND_EXIT:
 
 /* handle local socket readable event */
 static void handle_local_packet(void) {
-    struct sockaddr_in6 source_addr = {0};
-    socklen_t source_addrlen = sizeof(struct sockaddr_in6);
+    inet6_skaddr_t source_addr = {0};
+    socklen_t source_addrlen = sizeof(inet6_skaddr_t);
     ssize_t packet_len = recvfrom(g_bind_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, (void *)&source_addr, &source_addrlen);
 
     if (packet_len < 0) {
@@ -258,7 +258,7 @@ static void handle_local_packet(void) {
         } else {
             parse_ipv6_addr((void *)&source_addr, g_ipaddrstring_buffer, &source_port);
         }
-        LOGINF("[handle_local_packet] query [%s] from %s:%hu", g_domain_name_buffer, g_ipaddrstring_buffer, ntohs(source_port));
+        LOGINF("[handle_local_packet] query [%s] from %s#%hu", g_domain_name_buffer, g_ipaddrstring_buffer, ntohs(source_port));
     }
 
     uint16_t unique_msgid = g_current_message_id++;
@@ -281,7 +281,7 @@ static void handle_local_packet(void) {
         return;
     }
 
-    hashmap_put(g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, &source_addr);
+    hashmap_put(&g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, &source_addr);
 }
 
 /* handle remote socket readable event */
@@ -308,7 +308,7 @@ static void handle_remote_packet(int index) {
     if (!entry) return; /* indicate that the request has been processed */
     dns_header->id = entry->origin_msgid; /* replace with old msgid */
 
-    socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+    socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
     if (sendto(g_bind_socket, g_socket_buffer, packet_len, 0, (void *)&entry->source_addr, source_addrlen) < 0) {
         sock_port_t source_port = 0;
         if (entry->source_addr.sin6_family == AF_INET) {
@@ -316,12 +316,12 @@ static void handle_remote_packet(int index) {
         } else {
             parse_ipv6_addr((void *)&entry->source_addr, g_ipaddrstring_buffer, &source_port);
         }
-        LOGERR("[handle_remote_packet] failed to send dns reply packet to %s:%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
+        LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
     }
 
     /* query is processed, clean up */
     close(entry->query_timerfd);
-    hashmap_del(g_message_id_hashmap, entry);
+    hashmap_del(&g_message_id_hashmap, entry);
 }
 
 /* handle upstream reply timeout event */
@@ -329,7 +329,7 @@ static void handle_timeout_event(uint16_t msg_id) {
     LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, msg_id);
     close(entry->query_timerfd); /* epoll will automatically remove the associated event */
-    hashmap_del(g_message_id_hashmap, entry); /* delete and free the associated hash entry */
+    hashmap_del(&g_message_id_hashmap, entry); /* delete and free the associated hash entry */
 }
 
 int main(int argc, char *argv[]) {
@@ -338,7 +338,7 @@ int main(int argc, char *argv[]) {
     parse_command_args(argc, argv);
 
     /* show startup information */
-    LOGINF("[main] local listen addr: %s:%hu", g_bind_addr, g_bind_port);
+    LOGINF("[main] local listen addr: %s#%hu", g_bind_addr, g_bind_port);
     if (strlen(g_remote_servers[CHINADNS1_IDX])) LOGINF("[main] chinadns server#1: %s", g_remote_servers[CHINADNS1_IDX]);
     if (strlen(g_remote_servers[CHINADNS2_IDX])) LOGINF("[main] chinadns server#2: %s", g_remote_servers[CHINADNS2_IDX]);
     if (strlen(g_remote_servers[TRUSTDNS1_IDX])) LOGINF("[main] trustdns server#1: %s", g_remote_servers[TRUSTDNS1_IDX]);
@@ -348,9 +348,6 @@ int main(int argc, char *argv[]) {
     LOGINF("[main] dns query timeout: %ld seconds", g_upstream_timeout_sec);
     if (g_reuse_port) LOGINF("[main] enable `SO_REUSEPORT` feature");
     if (g_verbose) LOGINF("[main] print the verbose running log");
-
-    /* create udp msg_id hashmap */
-    g_message_id_hashmap = hashmap_new();
 
     /* init ipset netlink socket */
     ipset_init_nlsocket(g_setname4, g_setname6);
@@ -370,7 +367,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* bind address to listen socket */
-    if (bind(g_bind_socket, (void *)&g_bind_skaddr, (g_bind_skaddr.sin6_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) {
+    if (bind(g_bind_socket, (void *)&g_bind_skaddr, (g_bind_skaddr.sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t))) {
         LOGERR("[main] failed to bind address to socket: (%d) %s", errno, strerror(errno));
         return errno;
     }
@@ -378,7 +375,7 @@ int main(int argc, char *argv[]) {
     /* connect to remote dns servers */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (g_remote_sockets[i] < 0) continue;
-        if (connect(g_remote_sockets[i], (void *)&g_remote_skaddrs[i], (g_remote_skaddrs[i].sin6_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) {
+        if (connect(g_remote_sockets[i], (void *)&g_remote_skaddrs[i], (g_remote_skaddrs[i].sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t))) {
             LOGERR("[main] failed to connect to upstream(%s): (%d) %s", g_remote_servers[i], errno, strerror(errno));
             return errno;
         }
