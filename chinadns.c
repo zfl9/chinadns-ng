@@ -53,7 +53,7 @@ static inet6_skaddr_t  g_bind_skaddr                                      = {0};
 static int             g_bind_socket                                      = -1;
 static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
 static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
-static inet6_skaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {0};
+static inet6_skaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
 static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
 static time_t          g_upstream_timeout_sec                             = 5;
 static uint16_t        g_current_message_id                               = 0;
@@ -270,8 +270,9 @@ static void handle_local_packet(void) {
     }
 
     uint16_t unique_msgid = g_current_message_id++;
-    uint16_t origin_msgid = ((dns_header_t *)g_socket_buffer)->id;
-    ((dns_header_t *)g_socket_buffer)->id = unique_msgid; /* replace with new msgid */
+    dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
+    uint16_t origin_msgid = dns_header->id;
+    dns_header->id = unique_msgid; /* replace with new msgid */
 
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (g_remote_sockets[i] < 0) continue;
