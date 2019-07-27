@@ -52,7 +52,7 @@ static sock_port_t     g_bind_port                                        = 6535
 static inet6_skaddr_t  g_bind_skaddr                                      = {0};
 static int             g_bind_socket                                      = -1;
 static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
-static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"", "", "", ""};
+static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
 static inet6_skaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {0};
 static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
 static time_t          g_upstream_timeout_sec                             = 5;
@@ -144,8 +144,8 @@ static void parse_command_args(int argc, char *argv[]) {
     opterr = 0;
     int optindex = -1;
     int shortopt = -1;
-    char *chinadns_optarg = "114.114.114.114";
-    char *trustdns_optarg = "8.8.8.8";
+    char *chinadns_optarg = NULL;
+    char *trustdns_optarg = NULL;
     while ((shortopt = getopt_long(argc, argv, optstr, options, &optindex)) != -1) {
         switch (shortopt) {
             case 'b':
@@ -224,12 +224,20 @@ static void parse_command_args(int argc, char *argv[]) {
                 goto PRINT_HELP_AND_EXIT;
         }
     }
-    parse_dns_server_opt(chinadns_optarg, true);
-    parse_dns_server_opt(trustdns_optarg, false);
     if (get_addrstr_family(g_bind_addr) == AF_INET) {
         build_ipv4_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
     } else {
         build_ipv6_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
+    }
+    if (chinadns_optarg) {
+        parse_dns_server_opt(chinadns_optarg, true);
+    } else {
+        build_ipv4_addr((void *)&g_remote_skaddrs[CHINADNS1_IDX], "114.114.114.114", 53);
+    }
+    if (trustdns_optarg) {
+        parse_dns_server_opt(trustdns_optarg, false);
+    } else {
+        build_ipv4_addr((void *)&g_remote_skaddrs[TRUSTDNS1_IDX], "8.8.8.8", 53);
     }
     return;
 PRINT_HELP_AND_EXIT:
@@ -267,7 +275,8 @@ static void handle_local_packet(void) {
 
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (g_remote_sockets[i] < 0) continue;
-        if (send(g_remote_sockets[i], g_socket_buffer, packet_len, 0) < 0) {
+        socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
+        if (sendto(g_remote_sockets[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
             LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
             return;
         }
@@ -288,7 +297,7 @@ static void handle_local_packet(void) {
 static void handle_remote_packet(int index) {
     int remote_socket = g_remote_sockets[index];
     const char *remote_servers = g_remote_servers[index];
-    ssize_t packet_len = recv(remote_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0);
+    ssize_t packet_len = recvfrom(remote_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, NULL, NULL);
 
     if (packet_len < 0) {
         if (errno == EAGAIN || errno == EINTR) return;
@@ -356,29 +365,18 @@ int main(int argc, char *argv[]) {
     g_bind_socket = (g_bind_skaddr.sin6_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
     if (g_bind_skaddr.sin6_family == AF_INET6) set_ipv6_only(g_bind_socket);
     if (g_reuse_port) set_reuse_port(g_bind_socket);
-    set_reuse_addr(g_bind_socket);
 
     /* create remote socket */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (!strlen(g_remote_servers[i])) continue;
         g_remote_sockets[i] = (g_remote_skaddrs[i].sin6_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
         if (g_remote_skaddrs[i].sin6_family == AF_INET6) set_ipv6_only(g_remote_sockets[i]);
-        set_reuse_addr(g_remote_sockets[i]);
     }
 
     /* bind address to listen socket */
     if (bind(g_bind_socket, (void *)&g_bind_skaddr, (g_bind_skaddr.sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t))) {
         LOGERR("[main] failed to bind address to socket: (%d) %s", errno, strerror(errno));
         return errno;
-    }
-
-    /* connect to remote dns servers */
-    for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
-        if (g_remote_sockets[i] < 0) continue;
-        if (connect(g_remote_sockets[i], (void *)&g_remote_skaddrs[i], (g_remote_skaddrs[i].sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t))) {
-            LOGERR("[main] failed to connect to upstream(%s): (%d) %s", g_remote_servers[i], errno, strerror(errno));
-            return errno;
-        }
     }
 
     /* create epoll fd */
@@ -427,22 +425,22 @@ int main(int argc, char *argv[]) {
                 switch (curr_data & IDX_MARK_MASK) {
                     case CHINADNS1_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[CHINADNS1_IDX], errno, strerror(errno));
-                        break;
+                        return errno ? errno : 1;
                     case CHINADNS2_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[CHINADNS2_IDX], errno, strerror(errno));
-                        break;
+                        return errno ? errno : 1;
                     case TRUSTDNS1_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[TRUSTDNS1_IDX], errno, strerror(errno));
-                        break;
+                        return errno ? errno : 1;
                     case TRUSTDNS2_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[TRUSTDNS2_IDX], errno, strerror(errno));
-                        break;
+                        return errno ? errno : 1;
                     case BINDSOCK_MARK:
                         LOGERR("[main] local udp listen socket error: (%d) %s", errno, strerror(errno));
-                        break;
+                        return errno ? errno : 1;
                     case TIMER_FD_MARK:
                         LOGERR("[main] query timeout timer fd error: (%d) %s", errno, strerror(errno));
-                        break;
+                        return errno ? errno : 1;
                 }
                 continue;
             }

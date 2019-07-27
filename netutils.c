@@ -81,15 +81,6 @@ void set_ipv6_only(int sockfd) {
     }
 }
 
-/* setsockopt(SO_REUSEADDR) */
-void set_reuse_addr(int sockfd) {
-    const int optval = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval))) {
-        LOGERR("[set_reuse_addr] setsockopt(%d, SO_REUSEADDR): (%d) %s", sockfd, errno, strerror(errno));
-        exit(errno);
-    }
-}
-
 /* setsockopt(SO_REUSEPORT) */
 void set_reuse_port(int sockfd) {
     const int optval = 1;
