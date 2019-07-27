@@ -19,4 +19,4 @@ reserved_ipaddrs=(
     255.255.255.255/32
 )
 for reserved_ipaddr in "${reserved_ipaddrs[@]}"; do echo "add chnroute $reserved_ipaddr" >>chnroute.ipset; done
-curl 'http://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest' | grep CN | grep ipv4 | awk -F'|' '{printf("add chnroute %s/%d\n", $4, 32-log($5)/log(2))}' >>chnroute.ipset
+curl -sSkL 'http://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest' | grep CN | grep ipv4 | awk -F'|' '{printf("add chnroute %s/%d\n", $4, 32-log($5)/log(2))}' >>chnroute.ipset

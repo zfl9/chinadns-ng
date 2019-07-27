@@ -16,4 +16,4 @@ reserved_ipaddrs=(
     ff00::/8
 )
 for reserved_ipaddr in "${reserved_ipaddrs[@]}"; do echo "add chnroute6 $reserved_ipaddr" >>chnroute6.ipset; done
-curl 'http://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest' | grep CN | grep ipv6 | awk -F'|' '{printf("add chnroute6 %s/%d\n", $4, $5)}' >>chnroute6.ipset
+curl -sSkL 'http://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest' | grep CN | grep ipv6 | awk -F'|' '{printf("add chnroute6 %s/%d\n", $4, $5)}' >>chnroute6.ipset
