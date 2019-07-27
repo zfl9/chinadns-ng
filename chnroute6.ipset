@@ -1,4 +1,18 @@
 create chnroute6 hash:net family inet6
+add chnroute6 ::/0
+add chnroute6 ::/128
+add chnroute6 ::1/128
+add chnroute6 ::ffff:0:0/96
+add chnroute6 ::ffff:0:0:0/96
+add chnroute6 64:ff9b::/96
+add chnroute6 100::/64
+add chnroute6 2001::/32
+add chnroute6 2001:20::/28
+add chnroute6 2001:db8::/32
+add chnroute6 2002::/16
+add chnroute6 fc00::/7
+add chnroute6 fe80::/10
+add chnroute6 ff00::/8
 add chnroute6 2001:250::/35
 add chnroute6 2001:250:2000::/35
 add chnroute6 2001:250:4000::/34
