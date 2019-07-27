@@ -47,6 +47,12 @@
 #define IPSET_ERR_COMMENT -4112
 #define IPSET_ERR_INVALID_MARKMASK -4113
 #define IPSET_ERR_SKBINFO -4114
+#define IPSET_ERR_HASH_FULL -4352
+#define IPSET_ERR_HASH_ELEM -4353
+#define IPSET_ERR_INVALID_PROTO -4354
+#define IPSET_ERR_MISSING_PROTO -4355
+#define IPSET_ERR_HASH_RANGE_UNSUPPORTED -4356
+#define IPSET_ERR_HASH_RANGE -4357
 
 /* netfilter's general netlink message structure */
 struct nfgenmsg {
@@ -292,7 +298,13 @@ static inline const char* ipset_error_tostr(int errcode) {
         case IPSET_ERR_COUNTER: return "IPSET_ERR_COUNTER";
         case IPSET_ERR_COMMENT: return "IPSET_ERR_COMMENT";
         case IPSET_ERR_SKBINFO: return "IPSET_ERR_SKBINFO";
-        default: return "IPSET_ERR_UNKNOWN";
+        case IPSET_ERR_HASH_FULL: return "IPSET_ERR_HASH_FULL";
+        case IPSET_ERR_HASH_ELEM: return "IPSET_ERR_HASH_ELEM";
+        case IPSET_ERR_INVALID_PROTO: return "IPSET_ERR_INVALID_PROTO";
+        case IPSET_ERR_MISSING_PROTO: return "IPSET_ERR_MISSING_PROTO";
+        case IPSET_ERR_HASH_RANGE_UNSUPPORTED: return "IPSET_ERR_HASH_RANGE_UNSUPPORTED";
+        case IPSET_ERR_HASH_RANGE: return "IPSET_ERR_HASH_RANGE";
+        default: return strerror(-errcode);
     }
 }
 
