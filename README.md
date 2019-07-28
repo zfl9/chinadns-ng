@@ -31,5 +31,9 @@ usage: chinadns-ng <options...>. the existing options are as follows:
 bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
 ```
 
-- `china-dns` supports up to two upstream settings, and `trust-dns` is the same.
 - The default port number of the upstream dns server is `53`.
+- `china-dns` supports up to two upstream settings, and `trust-dns` is the same.
+- `ipset-name4` is used to specify the ipv4 address/net of China.
+- `ipset-name6` is used to specify the ipv6 address/net of China.
+- `reuse-port` can be used to implement multi-process load balancing.
+- `verbose` is disabled by default because it is faster.
