@@ -14,7 +14,7 @@ Enter to the source directory, execute `make && sudo make install`, the default 
 
 # Options
 ```
-$ ./chinadns-ng --help
+$ chinadns-ng --help
 usage: chinadns-ng <options...>. the existing options are as follows:
  -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1
  -l, --bind-port <port-number>        listen port number, default: 65353
@@ -38,4 +38,4 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `verbose` is disabled by default because it is faster.
 
 # Run it
-Enter the shell and execute: `./chinadns-ng`
+Enter the shell and execute: `chinadns-ng`
