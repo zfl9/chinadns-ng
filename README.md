@@ -208,4 +208,6 @@ ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
 ```
 
+Also see [ss-tproxy](https://github.com/zfl9/ss-tproxy).
+
 Enjoy it!
