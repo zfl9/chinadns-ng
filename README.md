@@ -7,6 +7,8 @@ A new version of [ChinaDNS](https://github.com/shadowsocks/ChinaDNS), refactorin
 - Can handle the reserved ip address correctly.
 - Finally, it works better with [ss-tproxy](https://github.com/zfl9/ss-tproxy).
 
+> Although there have been many changes, the core judgment mechanism has not changed.
+
 # Compile
 Go to the source directory, execute `make`, or execute the shell command:
 ```bash
