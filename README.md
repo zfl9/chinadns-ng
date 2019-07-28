@@ -152,7 +152,7 @@ www.google.com.     3437    IN  A   74.125.24.99
 www.google.com.     3437    IN  A   74.125.24.103
 www.google.com.     3437    IN  A   74.125.24.104
 
-;; Query time: 13 msec
+;; Query time: 60 msec
 ;; SERVER: 127.0.0.1#65353(127.0.0.1)
 ;; WHEN: Sun Jul 28 09:31:24 CST 2019
 ;; MSG SIZE  rcvd: 139
