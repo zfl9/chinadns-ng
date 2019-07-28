@@ -10,7 +10,7 @@ A new version of [ChinaDNS](https://github.com/shadowsocks/ChinaDNS), refactorin
 > Although there have been many changes, the core judgment mechanism has not changed.
 
 # Compile
-Go to the source directory, execute `make && sudo make install`, the default installation path is `/usr/local/bin`, you can also install to other directories, such as `sudo make install DESTDIR=/opt/local/bin`.
+Enter to the source directory, execute `make && sudo make install`, the default installation path is `/usr/local/bin`, you can also install to other directories, such as `sudo make install DESTDIR=/opt/local/bin`.
 
 # Options
 ```
