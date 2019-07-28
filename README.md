@@ -37,5 +37,5 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `reuse-port` can be used to implement multi-process load balancing.
 - `verbose` is disabled by default because it is faster.
 
-# Run it
-Enter the shell and execute: `chinadns-ng`
+# Principle
+// TODO
