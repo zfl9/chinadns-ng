@@ -93,7 +93,8 @@ www.a.shifen.com.	3577	IN	A	183.232.231.174
 ;; SERVER: 127.0.0.1#65353(127.0.0.1)
 ;; WHEN: Sun Jul 28 09:31:11 CST 2019
 ;; MSG SIZE  rcvd: 104
-
+```
+```bash
 # query AAAA record for ipv6.baidu.com
 $ dig @127.0.0.1 -p65353 ipv6.baidu.com AAAA
 
@@ -155,7 +156,8 @@ www.google.com.     3437    IN  A   74.125.24.104
 ;; SERVER: 127.0.0.1#65353(127.0.0.1)
 ;; WHEN: Sun Jul 28 09:31:24 CST 2019
 ;; MSG SIZE  rcvd: 139
-
+```
+```bash
 # query AAAA record for ipv6.google.com
 $ dig @127.0.0.1 -p65353 ipv6.google.com AAAA
 
