@@ -38,4 +38,12 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `verbose` is disabled by default because it is faster.
 
 # Principle
-// TODO
+- After `chinadns-ng` starts, it will create a `listening socket`, N `upstream sockets` (N: number of upstream servers).
+- The `listening socket` is used to receive the `dns query` of the local client and send the verified upstream `dns reply`.
+- The `upstream socket` is used for data interaction with the upstream server. ie send `dns query` and receive `dns reply`.
+- When the `listening socket` receives the `dns query`, it performs a basic check and sends it to all upstream servers.
+- When receiving a `dns reply` from the upstream of the `china-dns`, it checks whether the ipv4/ipv6 address contained in it is in `chnroute/chnroute6`. If it matches, the check passes and sends it to the requesting client. If it does not match , discard it directly, and then wait for the `dns reply` of the `trust-dns`.
+- When receiving a `dns reply` from the upstream of the `trust-dns`, perform a simple dns header check and then send it directly to the requesting client.
+- So here are a few things to pay special attention to:
+  - The `dns reply` of the `trust-dns` must be sufficiently trusted. Since the domestic network environment is too complicated, it is recommended to always let the `trust-dns` pass the `proxy`. If you are using `ss-tproxy`, then there is no problem, `ss-tproxy` will do it for you.
+  - In addition, if you need to make `chinadns` and `chinadns-ng` work properly, you need to make sure that the response upstream of `china-dns` always arrives earlier than the response upstream of `trust-dns`. This is usually not a problem because the `trust-dns` through the network proxy is slower than the direct access to `china-dns`.
