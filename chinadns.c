@@ -140,6 +140,7 @@ static void parse_command_args(int argc, char *argv[]) {
         {"verbose",     no_argument,       NULL, 'v'},
         {"version",     no_argument,       NULL, 'V'},
         {"help",        no_argument,       NULL, 'h'},
+        {NULL,          0,                 NULL,  0 },
     };
     opterr = 0;
     int optindex = -1;
