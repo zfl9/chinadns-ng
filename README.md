@@ -191,3 +191,21 @@ ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
 2019-07-28 09:31:34 INF: [handle_remote_packet] reply [ipv6.google.com] from 114.114.114.114#53, result: drop
 2019-07-28 09:31:34 INF: [handle_remote_packet] reply [ipv6.google.com] from 8.8.8.8#53, result: pass
 ```
+
+# FAQ
+1. How to run `chinadns-ng` as a daemon?
+```bash
+(chinadns-ng </dev/null &>>/var/log/chinadns-ng.log &)
+```
+
+2. How to update the list of `chnroute` and `chnroute6`?
+```bash
+./update-chnroute.sh
+./update-chnroute6.sh
+ipset destroy chnroute
+ipset destroy chnroute6
+ipset -R <chnroute.ipset
+ipset -R <chnroute6.ipset
+```
+
+Enjoy it!
