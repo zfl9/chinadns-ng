@@ -10,10 +10,7 @@ A new version of [ChinaDNS](https://github.com/shadowsocks/ChinaDNS), refactorin
 > Although there have been many changes, the core judgment mechanism has not changed.
 
 # Compile
-Go to the source directory, execute `make`, or execute the shell command:
-```bash
-gcc -std=c99 -Wall -Wextra -O3 -s -o chinadns-ng *.c
-```
+Go to the source directory, execute `make && sudo make install`, the installation path defaults to `/usr/local/bin/chinadns-ng`, you can also install to other directories, such as `sudo make install DESTDIR=/opt/local/bin`.
 
 # Options
 ```
@@ -39,3 +36,6 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `ipset-name6` is used to specify the ipv6 address/net of China.
 - `reuse-port` can be used to implement multi-process load balancing.
 - `verbose` is disabled by default because it is faster.
+
+# Run it
+Enter the shell and execute: `./chinadns-ng`
