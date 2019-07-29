@@ -267,7 +267,7 @@ static void handle_local_packet(void) {
         } else {
             parse_ipv6_addr((void *)&source_addr, g_ipaddrstring_buffer, &source_port);
         }
-        LOGINF("[handle_local_packet] query [%s] from %s#%hu", g_domain_name_buffer, g_ipaddrstring_buffer, ntohs(source_port));
+        LOGINF("[handle_local_packet] query [%s] from %s#%hu", g_domain_name_buffer, g_ipaddrstring_buffer, source_port);
     }
 
     uint16_t unique_msgid = g_current_message_id++;
