@@ -36,7 +36,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 5 /* "65535" (excluding '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN + 1) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.3 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.4 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
