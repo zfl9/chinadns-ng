@@ -280,7 +280,6 @@ static void handle_local_packet(void) {
         socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
         if (sendto(g_remote_sockets[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
             LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
-            return;
         }
     }
 
