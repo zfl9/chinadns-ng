@@ -199,13 +199,13 @@ ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
 
 可以看到，对于国内 DNS 返回非国内 IP 的响应都正常过滤了，无论是 A 记录响应还是 AAAA 记录响应。
 
-# FAQ
-1. How to run `chinadns-ng` as a daemon?
+# 常见问题
+1. 如何以守护进程形式在后台运行 chinadns-ng？
 ```bash
 (chinadns-ng </dev/null &>>/var/log/chinadns-ng.log &)
 ```
 
-2. How to update the list of `chnroute` and `chnroute6`?
+2. 如何更新 chnroute.ipset 和 chnroute6.ipset？
 ```bash
 ./update-chnroute.sh
 ./update-chnroute6.sh
@@ -215,6 +215,4 @@ ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
 ```
 
-Also see [ss-tproxy](https://github.com/zfl9/ss-tproxy).
-
-Enjoy it!
+另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.0 编写的，欢迎使用。
