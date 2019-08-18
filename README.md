@@ -41,6 +41,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
+> 可信 DNS 必须经过代理来访问，否则会导致 chinadns-ng 的判断完全失效。
+
 # 工作原理
 - chinadns-ng 启动后会创建一个监听套接字，N 个上游套接字，N 为上游 DNS 数量。
 - 监听套接字用于处理本地请求客户端的 DNS 请求，以及向请求客户端发送 DNS 响应。
@@ -49,7 +51,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 当收到上游 DNS 服务器的响应包后，首先会判断该上游 DNS 是国内 DNS 还是可信 DNS：
   - 国内 DNS：检查结果 IP 是否为大陆地址（查询 ipset），如果是则检查通过，返回给请求客户端，关联的请求处理完毕，不再考虑其它上游的结果；如果不是，则丢弃该回复，继续等待其它上游的响应。
   - 可信 DNS：进行基本的 DNS 包结构检查，只要不是坏包就算检查通过，返回给请求客户端，关联的请求处理完毕，不再考虑其它上游的结果；如果检查不通过，则丢弃该回复，继续等待其它上游的响应。
-- 这实际上是 DNS 抢答模式，正常情况下，肯定是国内 DNS 先返回的，没啥问题；非正常情况是可信 DNS 先返回，这就有问题了，如果始终都是可信 DNS 先返回那么 ipset 判断就完全没参与进来，这会导致正常的分流失效；当然实际使用中并不会出现可信 DNS 先返回的情况，因为可信 DNS 是强烈建议经过代理来访问的，否则你在国内网络直接访问 8.8.8.8 还是会被 GFW 污染的，而经过代理后，肯定会比直连 DNS 响应慢，这是毫无疑问的。因此绝大多数情况下你不用考虑这个问题。
+- 这实际上是 DNS 抢答模式，正常情况下，肯定是国内 DNS 先返回的，因为经过代理的可信 DNS 响应肯定比直连访问的国内 DNS 慢，这是没问题的，判断正常生效。而非正常情况是可信 DNS 先返回，这就有问题了，这会导致请求客户端收到的查询结果都是可信 DNS 返回的，这样国内 CDN 就全失效了，解析出来的 IP 都是国外的 IP，绕了一大圈，出现这种情况的原因可能是你错误的给可信 DNS 配置了 DNS 缓存。
 
 # Running and testing
 First, install the `ipset` and import the `chnroute` and `chnroute6` lists:
