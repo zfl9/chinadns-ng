@@ -34,8 +34,8 @@
 #define EPOLL_MAXEVENTS 64
 #define SERVER_MAXCOUNT 4
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
-#define PORTSTR_MAXLEN 5 /* "65535" (excluding '\0') */
-#define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN + 1) /* "addr#port\0" */
+#define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
+#define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
 #define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.4 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
@@ -91,7 +91,7 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
         char *hashsign_ptr = strchr(server_str, '#');
         if (hashsign_ptr) {
             *hashsign_ptr = 0; ++hashsign_ptr;
-            if (strlen(hashsign_ptr) > PORTSTR_MAXLEN) {
+            if (strlen(hashsign_ptr) + 1 > PORTSTR_MAXLEN) {
                 printf("[parse_dns_server_opt] port number max length is 5: %s\n", hashsign_ptr);
                 goto PRINT_HELP_AND_EXIT;
             }
@@ -161,7 +161,7 @@ static void parse_command_args(int argc, char *argv[]) {
                 strcpy(g_bind_addr, optarg);
                 break;
             case 'l':
-                if (strlen(optarg) > PORTSTR_MAXLEN) {
+                if (strlen(optarg) + 1 > PORTSTR_MAXLEN) {
                     printf("[parse_command_args] port number max length is 5: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
