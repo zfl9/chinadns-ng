@@ -13,7 +13,7 @@ cd chinadns-ng
 make
 sudo make install
 ```
-chinadns-ng 二进制文件默认安装到 `/usr/local/bin`，可安装到其它目录，如 `sudo make install DESTDIR=/opt/local/bin`。
+chinadns-ng 默认安装到 `/usr/local/bin` 目录，可安装到其它目录，如 `sudo make install DESTDIR=/opt/local/bin`。
 
 # Options
 ```
