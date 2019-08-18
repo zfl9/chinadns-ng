@@ -6,8 +6,14 @@
 - 修复原版对保留地址的处理问题，去除过时特性，只留核心功能。
 - 当然，最关键的一点，ChinaDNS-NG 可以更好的与 ss-tproxy 工作。
 
-# Compile
-Enter to the source directory, execute `make && sudo make install`, the default installation path is `/usr/local/bin`, you can also install to other directories, such as `sudo make install DESTDIR=/opt/local/bin`.
+# 快速编译
+```bash
+git clone https://github.com/zfl9/chinadns-ng
+cd chinadns-ng
+make
+sudo make install
+```
+chinadns-ng 二进制文件默认安装到 `/usr/local/bin`，可安装到其它目录，如 `sudo make install DESTDIR=/opt/local/bin`。
 
 # Options
 ```
