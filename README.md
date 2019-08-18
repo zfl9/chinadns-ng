@@ -1,13 +1,10 @@
 # ChinaDNS-NG
-A new version of [ChinaDNS](https://github.com/shadowsocks/ChinaDNS), refactoring with `epoll` and `ipset(netlink)`.
-- It is much faster than the original version.
-- Full support for ipv4 and ipv6.
-- Compatible with EDNS requests and responses.
-- Manually specify upstream dns instead of automatic identification.
-- Can handle the reserved ip address correctly.
-- Finally, it works better with [ss-tproxy](https://github.com/zfl9/ss-tproxy).
-
-> Although there have been many changes, the core judgment mechanism has not changed.
+[ChinaDNS](https://github.com/shadowsocks/ChinaDNS) 的个人重构版本，特点：
+- 使用 epoll 和 ipset(netlink) 实现，性能更强。
+- 完整支持 IPv4 和 IPv6 协议，兼容 EDNS 请求和响应。
+- 手动指定国内 DNS 和可信 DNS，而非自动识别，更加可控。
+- 修复原版对保留地址的处理问题，去除过时特性，只留核心功能。
+- 当然，最关键的一点，ChinaDNS-NG 可以更好的与 ss-tproxy 工作。
 
 # Compile
 Enter to the source directory, execute `make && sudo make install`, the default installation path is `/usr/local/bin`, you can also install to other directories, such as `sudo make install DESTDIR=/opt/local/bin`.
