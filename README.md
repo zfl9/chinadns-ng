@@ -15,7 +15,7 @@ sudo make install
 ```
 chinadns-ng 默认安装到 `/usr/local/bin` 目录，可安装到其它目录，如 `sudo make install DESTDIR=/opt/local/bin`。
 
-# Options
+# 命令选项
 ```
 $ chinadns-ng --help
 usage: chinadns-ng <options...>. the existing options are as follows:
@@ -33,12 +33,13 @@ usage: chinadns-ng <options...>. the existing options are as follows:
 bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
 ```
 
-- The default port number of the upstream dns server is `53`.
-- `china-dns` supports up to two upstream settings, `trust-dns` is also.
-- `ipset-name4` is used to specify the ipv4 address/net of China.
-- `ipset-name6` is used to specify the ipv6 address/net of China.
-- `reuse-port` can be used to implement multi-process load balancing.
-- `verbose` is disabled by default because it is faster.
+- 上游 DNS 服务器的默认端口号为 `53`，可手动指定其它端口号。
+- `china-dns` 选项指定国内上游 DNS 服务器，最多两个，逗号隔开。
+- `trust-dns` 选项指定可信上游 DNS 服务器，最多两个，逗号隔开。
+- `ipset-name4` 选项指定一个 ipset，该 ipset 存储大陆 IPv4 地址。
+- `ipset-name6` 选项指定一个 ipset，该 ipset 存储大陆 IPv6 地址。
+- `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
+- `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 # Principle
 - After `chinadns-ng` starts, it will create a `listening socket`, N `upstream sockets` (N: number of upstream servers).
