@@ -41,16 +41,15 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
-# Principle
-- After `chinadns-ng` starts, it will create a `listening socket`, N `upstream sockets` (N: number of upstream servers).
-- The `listening socket` is used to receive the `dns query` of the local client and send the verified upstream `dns reply`.
-- The `upstream socket` is used for data interaction with the upstream server. ie send `dns query` and receive `dns reply`.
-- When the `listening socket` receives the `dns query`, it performs a basic check and sends it to all upstream servers.
-- When receiving a `dns reply` from the upstream of the `china-dns`, it checks whether the ipv4/ipv6 address contained in it is in `chnroute/chnroute6`. If it matches, the check passes and sends it to the requesting client. If it does not match , discard it directly, and then wait for the `dns reply` of the `trust-dns`.
-- When receiving a `dns reply` from the upstream of the `trust-dns`, perform a simple dns header check and then send it to the requesting client.
-- So here are a few things to pay special attention to:
-  - The `dns reply` of the `trust-dns` must be sufficiently trusted. Since the domestic network environment is too complicated, it is recommended to always let the `trust-dns` pass the `proxy`. If you are using `ss-tproxy`, then there is no problem, `ss-tproxy` will do it for you.
-  - In addition, if you need to make `chinadns` and `chinadns-ng` work properly, you need to make sure that the response upstream of `china-dns` always arrives earlier than the response upstream of `trust-dns`. This is usually not a problem because the `trust-dns` through the network proxy is slower than the direct access to `china-dns`.
+# 工作原理
+- chinadns-ng 启动后会创建一个监听套接字，N 个上游套接字，N 为上游 DNS 数量。
+- 监听套接字用于处理本地请求客户端的 DNS 请求，以及向请求客户端发送 DNS 响应。
+- 上游套接字用于向上游 DNS 服务器发送 DNS 请求，以及接收来自上游的 DNS 回复包。
+- 当监听套接字收到请求客户端的 DNS 查询后，会将该 DNS 查询包同时发送给所有上游。
+- 当收到上游 DNS 服务器的响应包后，首先会判断该上游 DNS 是国内 DNS 还是可信 DNS：
+  - 国内 DNS：检查结果 IP 是否为大陆地址（查询 ipset），如果是则检查通过，返回给请求客户端，请求处理完毕。
+  - 可信 DNS：那么只进行一些基本的 DNS 包结构检查，没什么问题就算检查通过，返回给请求客户端，请求处理完毕。
+- 这实际上是 DNS 抢答模式，正常情况下，肯定是国内 DNS 先返回的，没啥问题；非正常情况是可信 DNS 先返回，这就有问题了，如果始终都是可信 DNS 先返回那么 ipset 判断就完全没参与进来，这会导致正常的分流失效；当然实际使用中并不会出现可信 DNS 先返回的情况，因为可信 DNS 是强烈建议经过代理来访问的，否则你在国内网络直接访问 8.8.8.8 还是会被 GFW 污染的，而经过代理后，肯定会比直连 DNS 响应慢，这是毫无疑问的。因此绝大多数情况下你不用考虑这个问题。
 
 # Running and testing
 First, install the `ipset` and import the `chnroute` and `chnroute6` lists:
