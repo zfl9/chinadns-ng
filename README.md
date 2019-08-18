@@ -53,14 +53,14 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 可信 DNS：进行基本的 DNS 包结构检查，只要不是坏包就算检查通过，返回给请求客户端，关联的请求处理完毕，不再考虑其它上游的结果；如果检查不通过，则丢弃该回复，继续等待其它上游的响应。
 - 这实际上是 DNS 抢答模式，正常情况下，肯定是国内 DNS 先返回的，因为经过代理的可信 DNS 响应肯定比直连访问的国内 DNS 慢，这是没问题的，判断正常生效。而非正常情况是可信 DNS 先返回，这就有问题了，这会导致请求客户端收到的查询结果都是可信 DNS 返回的，这样国内 CDN 就全失效了，解析出来的 IP 都是国外的 IP，绕了一大圈，出现这种情况的原因可能是你错误的给可信 DNS 配置了 DNS 缓存。
 
-# Running and testing
-First, install the `ipset` and import the `chnroute` and `chnroute6` lists:
+# 简单测试
+安装 ipset 命令，导入根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
 ```bash
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
 ```
 
-Then, run `chinadns-ng` in the shell (note that you need to have the `trust-dns` pass the proxy):
+然后在 shell 中运行 chinadns-ng，注意你需要先确保可信 DNS 的访问会走代理：
 ```bash
 $ chinadns-ng -v
 2019-07-28 09:26:39 INF: [main] local listen addr: 127.0.0.1#65353
@@ -72,7 +72,7 @@ $ chinadns-ng -v
 2019-07-28 09:26:39 INF: [main] print the verbose running log
 ```
 
-Then, install the `dig` to test `chinadns-ng`, the simplest test is as follows
+然后安装 dig 命令，用于测试 chinadns-ng 的工作是否正常，当然其它 dns 工具也可以：
 ```bash
 # query A record for www.baidu.com
 $ dig @127.0.0.1 -p65353 www.baidu.com     
@@ -196,6 +196,8 @@ ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
 2019-07-28 09:31:34 INF: [handle_remote_packet] reply [ipv6.google.com] from 114.114.114.114#53, result: drop
 2019-07-28 09:31:34 INF: [handle_remote_packet] reply [ipv6.google.com] from 8.8.8.8#53, result: pass
 ```
+
+可以看到，对于国内 DNS 返回非国内 IP 的响应都正常过滤了，无论是 A 记录响应还是 AAAA 记录响应。
 
 # FAQ
 1. How to run `chinadns-ng` as a daemon?
