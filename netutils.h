@@ -2,6 +2,7 @@
 #define CHINADNS_NG_NETUTILS_H
 
 #define _GNU_SOURCE
+#include <time.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <netinet/in.h>
