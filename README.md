@@ -54,7 +54,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 这实际上是 DNS 抢答模式，正常情况下，肯定是国内 DNS 先返回的，因为经过代理的可信 DNS 响应肯定比直连访问的国内 DNS 慢，这是没问题的，判断正常生效。而非正常情况是可信 DNS 先返回，这就有问题了，这会导致请求客户端收到的查询结果都是可信 DNS 返回的，这样国内 CDN 就全失效了，解析出来的 IP 都是国外的 IP，绕了一大圈，出现这种情况的原因可能是你错误的给可信 DNS 配置了 DNS 缓存。
 
 # 简单测试
-安装 ipset 命令，导入根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
+安装 ipset 命令，导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
 ```bash
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
