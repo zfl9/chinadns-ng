@@ -10,8 +10,7 @@
 ```bash
 git clone https://github.com/zfl9/chinadns-ng
 cd chinadns-ng
-make
-sudo make install
+make && sudo make install
 ```
 chinadns-ng 默认安装到 `/usr/local/bin` 目录，可安装到其它目录，如 `sudo make install DESTDIR=/opt/local/bin`。
 
@@ -214,5 +213,7 @@ ipset destroy chnroute6
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
 ```
+
+3. chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset` 文件，启动时也不会检查这些 ipset 集合是否存在，它只是通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的列表。对于 `chnroute6.ipset`，你也可以不导入，这没什么大问题，只不过对于国内 DNS 返回 IPv6 地址的解析结果都会过滤罢了。
 
 另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.0 编写的，欢迎使用。
