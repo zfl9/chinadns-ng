@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "create chnroute6 hash:net family inet6" >chnroute6.ipset
+echo "create chnroute6 hash:net hashsize 64 family inet6" >chnroute6.ipset
 reserved_ipaddrs=(
     ::/128
     ::1/128

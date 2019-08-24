@@ -1,4 +1,4 @@
-create chnroute6 hash:net family inet6
+create chnroute6 hash:net hashsize 64 family inet6
 add chnroute6 ::/128
 add chnroute6 ::1/128
 add chnroute6 ::ffff:0:0/96

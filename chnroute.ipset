@@ -1,4 +1,4 @@
-create chnroute hash:net family inet
+create chnroute hash:net hashsize 64 family inet
 add chnroute 0.0.0.0/8
 add chnroute 10.0.0.0/8
 add chnroute 100.64.0.0/10
