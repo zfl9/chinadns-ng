@@ -205,12 +205,12 @@ ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
 可以看到，对于国内 DNS 返回非国内 IP 的响应都正常过滤了，无论是 A 记录响应还是 AAAA 记录响应。
 
 # 常见问题
-1. 如何以守护进程形式在后台运行 chinadns-ng？
+1、如何以守护进程形式在后台运行 chinadns-ng？
 ```bash
 (chinadns-ng </dev/null &>>/var/log/chinadns-ng.log &)
 ```
 
-2. 如何更新 chnroute.ipset 和 chnroute6.ipset？
+2、如何更新 chnroute.ipset 和 chnroute6.ipset？
 ```bash
 ./update-chnroute.sh
 ./update-chnroute6.sh
@@ -220,8 +220,8 @@ ipset -R -exist <chnroute.ipset
 ipset -R -exist <chnroute6.ipset
 ```
 
-3. chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset` 文件，启动时也不会检查这些 ipset 集合是否存在，它只是通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的列表。对于 `chnroute6.ipset`，你也可以不导入，这没什么大问题，只不过对于国内 DNS 返回 IPv6 地址的解析结果都会过滤罢了。
+3、chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset` 文件，启动时也不会检查这些 ipset 集合是否存在，它只是通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的列表。对于 `chnroute6.ipset`，你也可以不导入，这没什么大问题，只不过对于国内 DNS 返回 IPv6 地址的解析结果都会过滤罢了。
 
-4. 为什么默认的 chnroute/chnroute6.ipset 中包含保留地址？如果你的 china-dns 是国内公共 DNS（如 114），那么你可以去掉这些保留地址，仅剩下 APNIC 的 CN 地址段（建议这么做）。如果你的 china-dns 是组织内部的私有 DNS，且该 DNS 会返回某些特殊的解析记录（结果 IP 为保留地址），则不建议去掉这些保留地址，去掉了会导致这些特殊解析结果被 chinadns-ng 过滤，因为它们不存在于 chnroute ipset，当然你可以去掉那些用不到的保留地址（建议这么做）。
+4、为什么默认的 chnroute/chnroute6.ipset 中包含保留地址？如果你的 china-dns 是国内公共 DNS（如 114），那么你可以去掉这些保留地址，仅剩下 APNIC 的 CN 地址段（建议这么做）。如果你的 china-dns 是组织内部的私有 DNS，且该 DNS 会返回某些特殊的解析记录（结果 IP 为保留地址），则不建议去掉这些保留地址，去掉了会导致这些特殊解析结果被 chinadns-ng 过滤，因为它们不存在于 chnroute ipset，当然你可以去掉那些用不到的保留地址（建议这么做）。
 
 另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.0 编写的，欢迎使用。
