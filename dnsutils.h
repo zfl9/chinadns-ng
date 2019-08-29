@@ -61,10 +61,15 @@ typedef struct __attribute__((packed)) {
     uint8_t  rdataptr[]; // record data pointer (sizeof=0)
 } dns_record_t;
 
-/* check a dns query is valid, `name_buf` used to get relevant domain name */
-bool dns_query_is_valid(const void *packet_buf, ssize_t packet_len, char *name_buf);
+/* return value define */
+#define DNSRET_PASS 0 /* no error (is chnip) */
+#define DNSRET_ERROR 1 /* packet format error */
+#define DNSRET_NOTCHN 2 /* no error (not chnip) */
 
-/* check a dns reply is valid, `name_buf` used to get relevant domain name */
-bool dns_reply_is_valid(const void *packet_buf, ssize_t packet_len, char *name_buf, bool is_trusted);
+/* check a dns query, `name_buf` used to get domain name, ret: PASS/ERROR */
+uint8_t dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf);
+
+/* check a dns reply, `name_buf` used to get domain name, ret: PASS/ERROR/NOTCHN */
+uint8_t dns_reply_check(const void *packet_buf, ssize_t packet_len, char *name_buf);
 
 #endif
