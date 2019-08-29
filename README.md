@@ -15,7 +15,7 @@ make && sudo make install
 chinadns-ng 默认安装到 `/usr/local/bin` 目录，可安装到其它目录，如 `sudo make install DESTDIR=/opt/local/bin`。
 
 **交叉编译**
-```
+```bash
 # 指定 CC 环境变量即可，如
 make CC=aarch64-linux-gnu-gcc
 ```
