@@ -229,6 +229,6 @@ ipset -R -exist <chnroute6.ipset
 
 3、注意，chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset` 文件，启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。
 
-4、如果你指定的 china-dns 上游为个人、组织内部的 DNS 服务器，且该 DNS 服务器会返回某些特殊的解析记录（所谓特殊就是指结果 IP 为保留地址），且你希望 chinadns-ng 会接受此响应（即判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。
+4、如果你指定的 china-dns 上游为个人、组织内部的 DNS 服务器，且该 DNS 服务器会返回某些特殊的解析记录（即：包含保留 IP 地址的解析记录，对于内网 DNS 服务器来说，这非常常见），且你希望 chinadns-ng 会接受这些特殊的 DNS 响应（即将它们判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
 
 另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.0 编写的，欢迎使用。
