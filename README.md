@@ -41,8 +41,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 上游 DNS 服务器的默认端口号为 `53`，可手动指定其它端口号。
 - `china-dns` 选项指定国内上游 DNS 服务器，最多两个，逗号隔开。
 - `trust-dns` 选项指定可信上游 DNS 服务器，最多两个，逗号隔开。
-- `ipset-name4` 选项指定一个 ipset，该 ipset 存储中国大陆 IPv4 地址。
-- `ipset-name6` 选项指定一个 ipset，该 ipset 存储中国大陆 IPv6 地址。
+- `ipset-name4` 选项指定存储中国大陆 IPv4 地址的 ipset 集合名。
+- `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset 集合名。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
