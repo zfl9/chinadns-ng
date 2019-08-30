@@ -53,8 +53,16 @@ static inline bool dns_rheader_check(const void *packet_buf) {
         LOGERR("[dns_rheader_check] non-recursive reply is not supported");
         return false;
     }
+    if (header->rcode != DNS_RCODE_NOERROR) {
+        LOGERR("[dns_rheader_check] the response code not equal to RCODE_NOERROR");
+        return false;
+    }
     if (ntohs(header->question_count) != 1) {
         LOGERR("[dns_rheader_check] there should be one and only one question section");
+        return false;
+    }
+    if (ntohs(header->answer_count) == 0) {
+        LOGERR("[dns_rheader_check] no resource records found in the dns reply packet");
         return false;
     }
     return true;
@@ -141,18 +149,8 @@ static uint8_t dns_packet_check(const void *packet_buf, ssize_t packet_len, char
 static uint8_t dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t ans_len) {
     const dns_header_t *header = packet_ptr;
 
-    /* check response code */
-    if (header->rcode != DNS_RCODE_NOERROR) {
-        LOGERR("[dns_ipset_check] the response code not equal to RCODE_NOERROR");
-        return DNSRET_ERROR;
-    }
-
     /* count number of answers */
     uint16_t answer_count = ntohs(header->answer_count);
-    if (answer_count == 0) {
-        LOGERR("[dns_ipset_check] no resource records found int the dns reply");
-        return DNSRET_ERROR;
-    }
 
     /* check dns packet length */
     if (ans_len < answer_count * ((ssize_t)sizeof(dns_record_t) + 2)) {
