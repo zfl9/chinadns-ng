@@ -227,7 +227,7 @@ ipset -R -exist <chnroute.ipset
 ipset -R -exist <chnroute6.ipset
 ```
 
-3、注意，chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset` 文件，启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的列表。对于 `chnroute6.ipset`，你也可以不导入，这没什么大问题，只不过对于国内 DNS 返回 IPv6 地址的解析结果都会过滤罢了。
+3、注意，chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset` 文件，启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。
 
 4、为什么默认的 chnroute/chnroute6.ipset 中包含保留地址？如果你的 china-dns 是国内公共 DNS（如 114），那么你可以去掉这些保留地址，仅剩下 APNIC 的 CN 地址段（建议这么做）。如果你的 china-dns 是组织内部的私有 DNS，且该 DNS 会返回某些特殊的解析记录（结果 IP 为保留地址），则不建议去掉这些保留地址，去掉了会导致这些特殊解析结果被 chinadns-ng 过滤，因为它们不存在于 chnroute ipset，当然你可以去掉那些用不到的保留地址（建议这么做）。
 
