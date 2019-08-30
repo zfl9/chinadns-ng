@@ -306,6 +306,26 @@ static void handle_remote_packet(int index) {
         return;
     }
 
+    if (packet_len < (ssize_t)sizeof(dns_header_t)) {
+        LOGERR("[handle_remote_packet] received bad packet from %s, packet too small: %zd", remote_servers, packet_len);
+        return;
+    }
+
+    dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
+    hashentry_t *entry = hashmap_get(g_message_id_hashmap, dns_header->id);
+    if (!entry) {
+        IF_VERBOSE LOGINF("[handle_remote_packet] reply <previous-domain> from %s, result: ignore", remote_servers);
+        return;
+    }
+
+    /* used by `SEND_REPLY` */
+    void *reply_buffer = NULL;
+    size_t reply_length = 0;
+
+    /* whether it is chinadns */
+    bool is_chinadns = false;
+    if (index == CHINADNS1_IDX || index == CHINADNS2_IDX) is_chinadns = true;
+
     bool is_chnip;
     switch (dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL)) {
         case DNSRET_PASS:
@@ -315,24 +335,20 @@ static void handle_remote_packet(int index) {
             is_chnip = false;
             break;
         default:
-            /* DNSRET_ERROR */
+            LOGERR("[handle_remote_packet] received bad packet from %s, packet check failed", remote_servers);
+            if (is_chinadns) {
+                if (entry->trustdns_buf) {
+                    IF_VERBOSE LOGINF("[handle_remote_packet] reply <previous-domain> from <previous-trustdns>, result: accept");
+                    reply_buffer = entry->trustdns_buf + sizeof(uint16_t);
+                    reply_length = *(uint16_t *)entry->trustdns_buf;
+                    goto SEND_REPLY;
+                } else {
+                    entry->chinadns_got = true;
+                    return;
+                }
+            }
             return;
     }
-
-    dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
-    hashentry_t *entry = hashmap_get(g_message_id_hashmap, dns_header->id);
-    if (!entry) {
-        /* indicates that the query request has been processed, ignore it */
-        IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
-        return;
-    }
-
-    /* used by `SEND_REPLY` */
-    void *reply_buffer = NULL;
-    size_t reply_length = 0;
-
-    bool is_chinadns = false;
-    if (index == CHINADNS1_IDX || index == CHINADNS2_IDX) is_chinadns = true;
 
     if (is_chinadns) {
         /* china-dns upstream */
@@ -348,7 +364,7 @@ static void handle_remote_packet(int index) {
             if (entry->trustdns_buf) {
                 /* trust-dns returns first than china-dns */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns>, result: accept", g_domain_name_buffer);
-                reply_buffer = entry->trustdns_buf + 2;
+                reply_buffer = entry->trustdns_buf + sizeof(uint16_t);
                 reply_length = *(uint16_t *)entry->trustdns_buf;
                 goto SEND_REPLY;
             } else {
@@ -356,6 +372,7 @@ static void handle_remote_packet(int index) {
                 entry->chinadns_got = true;
                 return;
             }
+            return;
         }
     } else {
         /* trust-dns upstream */
@@ -378,6 +395,7 @@ static void handle_remote_packet(int index) {
                 memcpy(entry->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
                 return;
             }
+            return;
         }
     }
     return;
