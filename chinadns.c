@@ -337,12 +337,15 @@ static void handle_remote_packet(int index) {
         default:
             LOGERR("[handle_remote_packet] received bad packet from %s, packet check failed", remote_servers);
             if (is_chinadns) {
+                /* see as china-dns to return other-ip */
                 if (entry->trustdns_buf) {
+                    /* trust-dns returns first than china-dns */
                     IF_VERBOSE LOGINF("[handle_remote_packet] reply <previous-domain> from <previous-trustdns>, result: accept");
                     reply_buffer = entry->trustdns_buf + sizeof(uint16_t);
                     reply_length = *(uint16_t *)entry->trustdns_buf;
                     goto SEND_REPLY;
                 } else {
+                    /* china-dns returns first than trust-dns */
                     entry->chinadns_got = true;
                     return;
                 }
