@@ -231,4 +231,7 @@ ipset -R -exist <chnroute6.ipset
 
 4、如果你指定的 china-dns 上游为个人、组织内部的 DNS 服务器，且该 DNS 服务器会返回某些特殊的解析记录（即：包含保留地址的解析记录，比如使用内网 DNS 服务器作为国内上游 DNS），且你希望 chinadns-ng 会接受这些特殊的 DNS 响应（即将它们判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
 
+5、`received an error code from kernel: (-2) No such file or directory`<br>
+如果是 `[ipset_addr4_is_exists]` 函数提示此错误，说明没有导入 `chnroute` ipset（IPv4 地址集合）；如果是 `[ipset_addr6_is_exists]` 函数提示此错误，说明没有导入 `chnroute6` ipset（IPv6 地址集合）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 地址时（AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
+
 另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.0 编写的，欢迎使用。
