@@ -368,6 +368,7 @@ static void handle_remote_packet(int index) {
             goto SEND_REPLY;
         } else {
             if (entry->trustdns_buf) {
+                /* have received another reply from trustdns before, ignore it */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
                 return;
             }
