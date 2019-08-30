@@ -36,7 +36,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.6 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.7 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
@@ -55,7 +55,7 @@ static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1,
 static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
 static inet6_skaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
 static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
-static time_t          g_upstream_timeout_sec                             = 5;
+static time_t          g_upstream_timeout_sec                             = 3;
 static uint16_t        g_current_message_id                               = 0;
 static hashmap_t      *g_message_id_hashmap                               = NULL;
 static char            g_domain_name_buffer[DNS_DOMAIN_NAME_MAXLEN]       = {0};
@@ -70,7 +70,7 @@ static void print_command_help(void) {
            " -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>\n"
            " -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute\n"
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
-           " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
+           " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 3\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
            " -v, --verbose                        print the verbose log, default: <disabled>\n"
            " -V, --version                        print `chinadns-ng` version number and exit\n"
@@ -258,7 +258,7 @@ static void handle_local_packet(void) {
         return;
     }
 
-    if (!dns_query_is_valid(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL)) return;
+    if (dns_query_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL) == DNSRET_ERROR) return;
 
     IF_VERBOSE {
         sock_port_t source_port = 0;
@@ -306,20 +306,87 @@ static void handle_remote_packet(int index) {
         return;
     }
 
-    bool is_trusted = false;
-    if (index == TRUSTDNS1_IDX || index == TRUSTDNS2_IDX) is_trusted = true;
-    bool is_valid = dns_reply_is_valid(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, is_trusted);
-    IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: %s", g_domain_name_buffer, remote_servers, is_valid ? "pass" : "drop");
-    if (!is_valid) return; /* let subsequent reply be processed */
+    bool is_chnip;
+    switch (dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL)) {
+        case DNSRET_PASS:
+            is_chnip = true;
+            break;
+        case DNSRET_NOTCHN:
+            is_chnip = false;
+            break;
+        default:
+            /* DNSRET_ERROR */
+            return;
+    }
 
-    dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
-    uint16_t unique_msgid = dns_header->id;
+    uint16_t unique_msgid = ((dns_header_t *)g_socket_buffer)->id;
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, unique_msgid);
-    if (!entry) return; /* indicate that the request has been processed */
-    dns_header->id = entry->origin_msgid; /* replace with old msgid */
+    if (!entry) {
+        /* indicates that the query request has been processed, ignore it */
+        IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
+        return;
+    }
 
+    /* used by `SEND_REPLY` */
+    void *reply_buffer = NULL;
+    size_t reply_length = 0;
+
+    bool is_chinadns = false;
+    if (index == CHINADNS1_IDX || index == CHINADNS2_IDX) is_chinadns = true;
+
+    if (is_chinadns) {
+        /* china-dns upstream */
+        if (is_chnip) {
+            /* return the china-ip, accept it */
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_servers);
+            reply_buffer = g_socket_buffer;
+            reply_length = packet_len;
+            goto SEND_REPLY;
+        } else {
+            /* return the other-ip, filter it */
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: filter", g_domain_name_buffer, remote_servers);
+            if (entry->trustdns_buf) {
+                /* trust-dns returns first than china-dns */
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns>, result: accept", g_domain_name_buffer);
+                reply_buffer = entry->trustdns_buf + 2;
+                reply_length = *(uint16_t *)entry->trustdns_buf;
+                goto SEND_REPLY;
+            } else {
+                /* china-dns returns first than trust-dns */
+                entry->chinadns_got = true;
+                return;
+            }
+        }
+    } else {
+        /* trust-dns upstream */
+        if (is_chnip || entry->chinadns_got) {
+            /* return the china-ip, or china-dns returns first than trust-dns, accept it */
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_servers);
+            reply_buffer = g_socket_buffer;
+            reply_length = packet_len;
+            goto SEND_REPLY;
+        } else {
+            if (entry->trustdns_buf) {
+                /* have received another reply from trustdns before, ignore it */
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
+                return;
+            } else {
+                /* trust-dns returns first than china-dns, delay it */
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: delay", g_domain_name_buffer, remote_servers);
+                entry->trustdns_buf = malloc(packet_len + sizeof(uint16_t));
+                *(uint16_t *)entry->trustdns_buf = packet_len;
+                memcpy(entry->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
+                return;
+            }
+        }
+    }
+    return;
+
+SEND_REPLY:;
+    dns_header_t *dns_header = reply_buffer;
+    dns_header->id = entry->origin_msgid; /* replace with old msgid */
     socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
-    if (sendto(g_bind_socket, g_socket_buffer, packet_len, 0, (void *)&entry->source_addr, source_addrlen) < 0) {
+    if (sendto(g_bind_socket, reply_buffer, reply_length, 0, (void *)&entry->source_addr, source_addrlen) < 0) {
         sock_port_t source_port = 0;
         if (entry->source_addr.sin6_family == AF_INET) {
             parse_ipv4_addr((void *)&entry->source_addr, g_ipaddrstring_buffer, &source_port);
@@ -328,8 +395,7 @@ static void handle_remote_packet(int index) {
         }
         LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
     }
-
-    /* query is processed, clean up */
+    free(entry->trustdns_buf);
     close(entry->query_timerfd);
     hashmap_del(&g_message_id_hashmap, entry);
 }
@@ -338,6 +404,7 @@ static void handle_remote_packet(int index) {
 static void handle_timeout_event(uint16_t msg_id) {
     LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, msg_id);
+    free(entry->trustdns_buf); /* release the buffer that stores the trust-dns reply */
     close(entry->query_timerfd); /* epoll will automatically remove the associated event */
     hashmap_del(&g_message_id_hashmap, entry); /* delete and free the associated hash entry */
 }

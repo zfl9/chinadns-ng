@@ -10,6 +10,8 @@ hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t or
     hashentry->unique_msgid = unique_msgid;
     hashentry->origin_msgid = origin_msgid;
     hashentry->query_timerfd = query_timerfd;
+    hashentry->chinadns_got = false;
+    hashentry->trustdns_buf = NULL;
     memcpy(&hashentry->source_addr, source_addr, sizeof(inet6_skaddr_t));
     HASH_ADD(hh, *hashmap, unique_msgid, sizeof(uint16_t), hashentry);
     return hashentry;
