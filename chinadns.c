@@ -319,8 +319,7 @@ static void handle_remote_packet(int index) {
             return;
     }
 
-    dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
-    uint16_t unique_msgid = dns_header->id;
+    uint16_t unique_msgid = ((dns_header_t *)g_socket_buffer)->id;
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, unique_msgid);
     if (!entry) {
         /* indicates that the query request has been processed */
@@ -382,8 +381,8 @@ static void handle_remote_packet(int index) {
     }
     return;
 
-SEND_REPLY:
-    dns_header = reply_buffer;
+SEND_REPLY:;
+    dns_header_t *dns_header = reply_buffer;
     dns_header->id = entry->origin_msgid; /* replace with old msgid */
     socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
     if (sendto(g_bind_socket, reply_buffer, reply_length, 0, (void *)&entry->source_addr, source_addrlen) < 0) {
