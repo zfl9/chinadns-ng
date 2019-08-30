@@ -322,12 +322,12 @@ static void handle_remote_packet(int index) {
     uint16_t unique_msgid = ((dns_header_t *)g_socket_buffer)->id;
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, unique_msgid);
     if (!entry) {
-        /* indicates that the query request has been processed */
+        /* indicates that the query request has been processed, ignore it */
         IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
         return;
     }
 
-    /* used by SEND_REPLY */
+    /* used by `SEND_REPLY` */
     void *reply_buffer = NULL;
     size_t reply_length = 0;
 
@@ -370,13 +370,14 @@ static void handle_remote_packet(int index) {
                 /* have received another reply from trustdns before, ignore it */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
                 return;
+            } else {
+                /* trust-dns returns first than china-dns, delay it */
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: delay", g_domain_name_buffer, remote_servers);
+                entry->trustdns_buf = malloc(packet_len + sizeof(uint16_t));
+                *(uint16_t *)entry->trustdns_buf = packet_len;
+                memcpy(entry->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
+                return;
             }
-            /* trust-dns returns first than china-dns, delay it */
-            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: delay", g_domain_name_buffer, remote_servers);
-            entry->trustdns_buf = malloc(packet_len + sizeof(uint16_t));
-            *(uint16_t *)entry->trustdns_buf = packet_len;
-            memcpy(entry->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
-            return;
         }
     }
     return;
