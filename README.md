@@ -4,7 +4,7 @@
 - 完整支持 IPv4 和 IPv6 协议，兼容 EDNS 请求和响应。
 - 手动指定国内 DNS 和可信 DNS，而非自动识别，更加可控。
 - 修复原版对保留地址的处理问题，去除过时特性，只留核心功能。
-- 当然，最关键的一点，ChinaDNS-NG 可以更好的与 ss-tproxy 工作。
+- 修复原版对可信 DNS 先于国内 DNS 先返回而导致判断失效的问题。
 
 # 快速编译
 ```bash
@@ -30,7 +30,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>
  -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute
  -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6
- -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
+ -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 3
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
  -v, --verbose                        print the verbose log, default: <disabled>
  -V, --version                        print `chinadns-ng` version number and exit
