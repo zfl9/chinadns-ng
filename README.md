@@ -66,7 +66,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
         - 国外 IP：接受可信 DNS 的响应，移除相关上下文，不再考虑其它上游。
 
 # 简单测试
-安装 ipset 命令，导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
+使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
 ```bash
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
@@ -80,7 +80,7 @@ $ chinadns-ng -v
 2019-07-28 09:26:39 INF: [main] trustdns server#1: 8.8.8.8#53
 2019-07-28 09:26:39 INF: [main] ipset ip4 setname: chnroute
 2019-07-28 09:26:39 INF: [main] ipset ip6 setname: chnroute6
-2019-07-28 09:26:39 INF: [main] dns query timeout: 5 seconds
+2019-07-28 09:26:39 INF: [main] dns query timeout: 3 seconds
 2019-07-28 09:26:39 INF: [main] print the verbose running log
 ```
 
