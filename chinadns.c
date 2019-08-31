@@ -36,7 +36,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.7 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.8 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
@@ -311,10 +311,17 @@ static void handle_remote_packet(int index) {
         return;
     }
 
+    bool is_chnip;
+    if (dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL) == DNSRET_PASS) {
+        is_chnip = true;
+    } else {
+        is_chnip = false;
+    }
+
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, dns_header->id);
     if (!entry) {
-        IF_VERBOSE LOGINF("[handle_remote_packet] reply <previous-domain> from %s, result: ignore", remote_servers);
+        IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
         return;
     }
 
@@ -322,36 +329,8 @@ static void handle_remote_packet(int index) {
     void *reply_buffer = NULL;
     size_t reply_length = 0;
 
-    /* whether it is chinadns */
     bool is_chinadns = false;
     if (index == CHINADNS1_IDX || index == CHINADNS2_IDX) is_chinadns = true;
-
-    bool is_chnip;
-    switch (dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL)) {
-        case DNSRET_PASS:
-            is_chnip = true;
-            break;
-        case DNSRET_NOTCHN:
-            is_chnip = false;
-            break;
-        default:
-            LOGERR("[handle_remote_packet] received bad packet from %s, packet check failed", remote_servers);
-            if (is_chinadns) {
-                /* see as china-dns to return other-ip */
-                if (entry->trustdns_buf) {
-                    /* trust-dns returns first than china-dns */
-                    IF_VERBOSE LOGINF("[handle_remote_packet] reply <previous-domain> from <previous-trustdns>, result: accept");
-                    reply_buffer = entry->trustdns_buf + sizeof(uint16_t);
-                    reply_length = *(uint16_t *)entry->trustdns_buf;
-                    goto SEND_REPLY;
-                } else {
-                    /* china-dns returns first than trust-dns */
-                    entry->chinadns_got = true;
-                    return;
-                }
-            }
-            return;
-    }
 
     if (is_chinadns) {
         /* china-dns upstream */
