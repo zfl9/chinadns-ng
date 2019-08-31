@@ -234,4 +234,13 @@ ipset -R -exist <chnroute6.ipset
 5、`received an error code from kernel: (-2) No such file or directory`<br>
 意思是指定的 ipset 不存在；如果是 `[ipset_addr4_is_exists]` 函数提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 函数提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
 
+6、如果你想通过 TCP 协议来访问 trust-dns（如 UDP 代理隧道不稳定），可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具来将 chinadns-ng 向 trust-dns 发出的 dns 查询从 UDP 转换为 TCP，`dns2tcp` 是我利用业余时间写的一个 DNS 实用小工具，专门用于实现 dns udp2tcp 功能。比如你想通过 TCP 访问 8.8.8.8 而非 UDP（但无论如何，你都应该保证访问 trust-dns 会走代理），则：
+```bash
+# 运行 dns2tcp
+dns2tcp -L"127.0.0.1#5353" -R"8.8.8.8#53"
+
+# 运行 chinadns-ng
+chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
+```
+
 另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.0 编写的，欢迎使用。
