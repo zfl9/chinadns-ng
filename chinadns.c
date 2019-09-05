@@ -36,7 +36,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.8 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.9 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
@@ -45,6 +45,8 @@
 static int             g_epollfd                                          = -1;
 static bool            g_verbose                                          = false;
 static bool            g_reuse_port                                       = false;
+static bool            g_fair_mode                                        = false; /* default: fast-mode */
+static uint8_t         g_repeat_times                                     = 1; /* used by trust-dns only */
 static char            g_setname4[IPSET_MAXNAMELEN]                       = "chnroute";
 static char            g_setname6[IPSET_MAXNAMELEN]                       = "chnroute6";
 static char            g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
@@ -71,6 +73,8 @@ static void print_command_help(void) {
            " -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute\n"
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 3\n"
+           " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
+           " -f, --fair-mode                      enable `fair` mode, default: <fast-mode>\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
            " -v, --verbose                        print the verbose log, default: <disabled>\n"
            " -V, --version                        print `chinadns-ng` version number and exit\n"
@@ -127,20 +131,22 @@ PRINT_HELP_AND_EXIT:
 
 /* parse and check command arguments */
 static void parse_command_args(int argc, char *argv[]) {
-    const char *optstr = ":b:l:c:t:4:6:o:rvVh";
+    const char *optstr = ":b:l:c:t:4:6:o:p:frvVh";
     const struct option options[] = {
-        {"bind-addr",   required_argument, NULL, 'b'},
-        {"bind-port",   required_argument, NULL, 'l'},
-        {"china-dns",   required_argument, NULL, 'c'},
-        {"trust-dns",   required_argument, NULL, 't'},
-        {"ipset-name4", required_argument, NULL, '4'},
-        {"ipset-name6", required_argument, NULL, '6'},
-        {"timeout-sec", required_argument, NULL, 'o'},
-        {"reuse-port",  no_argument,       NULL, 'r'},
-        {"verbose",     no_argument,       NULL, 'v'},
-        {"version",     no_argument,       NULL, 'V'},
-        {"help",        no_argument,       NULL, 'h'},
-        {NULL,          0,                 NULL,  0 },
+        {"bind-addr",    required_argument, NULL, 'b'},
+        {"bind-port",    required_argument, NULL, 'l'},
+        {"china-dns",    required_argument, NULL, 'c'},
+        {"trust-dns",    required_argument, NULL, 't'},
+        {"ipset-name4",  required_argument, NULL, '4'},
+        {"ipset-name6",  required_argument, NULL, '6'},
+        {"timeout-sec",  required_argument, NULL, 'o'},
+        {"repeat-times", required_argument, NULL, 'p'},
+        {"fair-mode",    no_argument,       NULL, 'f'},
+        {"reuse-port",   no_argument,       NULL, 'r'},
+        {"verbose",      no_argument,       NULL, 'v'},
+        {"version",      no_argument,       NULL, 'V'},
+        {"help",         no_argument,       NULL, 'h'},
+        {NULL,           0,                 NULL,  0 },
     };
     opterr = 0;
     int optindex = -1;
@@ -197,6 +203,16 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] invalid upstream timeout sec: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
+                break;
+            case 'p':
+                g_repeat_times = strtol(optarg, NULL, 10);
+                if (g_repeat_times < 1) {
+                    printf("[parse_command_args] repeat times min value is 1: %s\n", optarg);
+                    goto PRINT_HELP_AND_EXIT;
+                }
+                break;
+            case 'f':
+                g_fair_mode = true;
                 break;
             case 'r':
                 g_reuse_port = true;
@@ -277,9 +293,13 @@ static void handle_local_packet(void) {
 
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (g_remote_sockets[i] < 0) continue;
+        uint8_t repeat_times = 1; /* default is 1 */
+        if (i == TRUSTDNS1_IDX || i == TRUSTDNS2_IDX) repeat_times = g_repeat_times;
         socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
-        if (sendto(g_remote_sockets[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
-            LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
+        for (int j = 0; j < repeat_times; ++j) {
+            if (sendto(g_remote_sockets[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
+                LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
+            }
         }
     }
 
@@ -331,6 +351,8 @@ static void handle_remote_packet(int index) {
 
     bool is_chinadns = false;
     if (index == CHINADNS1_IDX || index == CHINADNS2_IDX) is_chinadns = true;
+
+    if (!g_fair_mode && !is_chinadns) is_chnip = true;
 
     if (is_chinadns) {
         /* china-dns upstream */
@@ -423,6 +445,8 @@ int main(int argc, char *argv[]) {
     LOGINF("[main] ipset ip4 setname: %s", g_setname4);
     LOGINF("[main] ipset ip6 setname: %s", g_setname6);
     LOGINF("[main] dns query timeout: %ld seconds", g_upstream_timeout_sec);
+    if (g_repeat_times != 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
+    LOGINF("[main] core judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
     if (g_reuse_port) LOGINF("[main] enable `SO_REUSEPORT` feature");
     if (g_verbose) LOGINF("[main] print the verbose running log");
 
