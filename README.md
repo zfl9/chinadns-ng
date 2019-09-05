@@ -68,6 +68,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
       - 可信 DNS 先于国内 DNS 返回：此时不能立即接受此响应，需要将此响应暂时存起来，然后等待任意一个国内 DNS 返回；当某个国内 DNS 返回后，判断该国内 DNS 解析出来的 IP 是否为国内 IP：
         - 国内 IP：接受国内 DNS 的响应，移除相关上下文，不再考虑其它上游。
         - 国外 IP：接受可信 DNS 的响应，移除相关上下文，不再考虑其它上游。
+- 上述流程为 chinadns-ng 的"公平模式"，chinadns-ng 默认使用的是"抢答模式"，抢答模式与公平模式只有一点不同：当从可信 DNS 收到一个响应时，均将其结果 IP 视为国内 IP，不存在等待国内 DNS 上游的特殊情况。那么该如何选择这两种判断模式呢？绝大多数情况下，使用抢答模式即可，只有可信 DNS 比国内 DNS 先返回的情况下，才需要启用公平模式（比如使用深港专线 VPS 来代理 trust-dns 的访问）。
 
 # 简单测试
 使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
