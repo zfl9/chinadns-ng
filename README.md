@@ -31,6 +31,8 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute
  -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6
  -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 3
+ -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1
+ -f, --fair-mode                      enable `fair` mode, default: <fast-mode>
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
  -v, --verbose                        print the verbose log, default: <disabled>
  -V, --version                        print `chinadns-ng` version number and exit
@@ -44,6 +46,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `ipset-name4` 选项指定存储中国大陆 IPv4 地址的 ipset 集合的名称。
 - `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset 集合的名称。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
+- `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
+- `fair-mode` 选项表示启用"公平模式"而非默认的"抢答模式"，见后文。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 > 可信 DNS 必须经过代理来访问，否则会导致 chinadns-ng 的判断完全失效。
