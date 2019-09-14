@@ -47,6 +47,7 @@ static bool            g_verbose                                          = fals
 static bool            g_reuse_port                                       = false;
 static bool            g_fair_mode                                        = false; /* default: fast-mode */
 static uint8_t         g_repeat_times                                     = 1; /* used by trust-dns only */
+static bool            g_noip_as_chnip                                    = false; /* default: see as not-chnip */
 static char            g_setname4[IPSET_MAXNAMELEN]                       = "chnroute";
 static char            g_setname6[IPSET_MAXNAMELEN]                       = "chnroute6";
 static char            g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
@@ -76,6 +77,7 @@ static void print_command_help(void) {
            " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
            " -f, --fair-mode                      enable `fair` mode, default: <fast-mode>\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
+           " -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)\n"
            " -v, --verbose                        print the verbose log, default: <disabled>\n"
            " -V, --version                        print `chinadns-ng` version number and exit\n"
            " -h, --help                           print `chinadns-ng` help information and exit\n"
@@ -131,22 +133,23 @@ PRINT_HELP_AND_EXIT:
 
 /* parse and check command arguments */
 static void parse_command_args(int argc, char *argv[]) {
-    const char *optstr = ":b:l:c:t:4:6:o:p:frvVh";
+    const char *optstr = ":b:l:c:t:4:6:o:p:frnvVh";
     const struct option options[] = {
-        {"bind-addr",    required_argument, NULL, 'b'},
-        {"bind-port",    required_argument, NULL, 'l'},
-        {"china-dns",    required_argument, NULL, 'c'},
-        {"trust-dns",    required_argument, NULL, 't'},
-        {"ipset-name4",  required_argument, NULL, '4'},
-        {"ipset-name6",  required_argument, NULL, '6'},
-        {"timeout-sec",  required_argument, NULL, 'o'},
-        {"repeat-times", required_argument, NULL, 'p'},
-        {"fair-mode",    no_argument,       NULL, 'f'},
-        {"reuse-port",   no_argument,       NULL, 'r'},
-        {"verbose",      no_argument,       NULL, 'v'},
-        {"version",      no_argument,       NULL, 'V'},
-        {"help",         no_argument,       NULL, 'h'},
-        {NULL,           0,                 NULL,  0 },
+        {"bind-addr",     required_argument, NULL, 'b'},
+        {"bind-port",     required_argument, NULL, 'l'},
+        {"china-dns",     required_argument, NULL, 'c'},
+        {"trust-dns",     required_argument, NULL, 't'},
+        {"ipset-name4",   required_argument, NULL, '4'},
+        {"ipset-name6",   required_argument, NULL, '6'},
+        {"timeout-sec",   required_argument, NULL, 'o'},
+        {"repeat-times",  required_argument, NULL, 'p'},
+        {"fair-mode",     no_argument,       NULL, 'f'},
+        {"reuse-port",    no_argument,       NULL, 'r'},
+        {"noip-as-chnip", no_argument,       NULL, 'n'},
+        {"verbose",       no_argument,       NULL, 'v'},
+        {"version",       no_argument,       NULL, 'V'},
+        {"help",          no_argument,       NULL, 'h'},
+        {NULL,            0,                 NULL,  0 },
     };
     opterr = 0;
     int optindex = -1;
@@ -217,6 +220,9 @@ static void parse_command_args(int argc, char *argv[]) {
             case 'r':
                 g_reuse_port = true;
                 break;
+            case 'n':
+                g_noip_as_chnip = true;
+                break;
             case 'v':
                 g_verbose = true;
                 break;
@@ -274,7 +280,7 @@ static void handle_local_packet(void) {
         return;
     }
 
-    if (dns_query_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL) == DNSRET_ERROR) return;
+    if (!dns_query_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL)) return;
 
     IF_VERBOSE {
         sock_port_t source_port = 0;
@@ -331,12 +337,7 @@ static void handle_remote_packet(int index) {
         return;
     }
 
-    bool is_chnip;
-    if (dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL) == DNSRET_PASS) {
-        is_chnip = true;
-    } else {
-        is_chnip = false;
-    }
+    bool is_chnip = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, g_noip_as_chnip);
 
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, dns_header->id);
@@ -446,6 +447,7 @@ int main(int argc, char *argv[]) {
     LOGINF("[main] ipset ip6 setname: %s", g_setname6);
     LOGINF("[main] dns query timeout: %ld seconds", g_upstream_timeout_sec);
     if (g_repeat_times != 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
+    if (g_noip_as_chnip) LOGINF("[main] accept reply without ip addr");
     LOGINF("[main] core judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
     if (g_reuse_port) LOGINF("[main] enable `SO_REUSEPORT` feature");
     if (g_verbose) LOGINF("[main] print the verbose running log");
