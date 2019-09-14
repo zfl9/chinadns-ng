@@ -231,7 +231,7 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
                 }
         }
     }
-    return noip_as_chnip ? true : false; /* not found A/AAAA record */
+    return noip_as_chnip; /* not found A/AAAA record */
 }
 
 /* check a dns query packet, `name_buf` used to get domain name */
