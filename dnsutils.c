@@ -2,6 +2,7 @@
 #include "dnsutils.h"
 #include "netutils.h"
 #include "logutils.h"
+#include "chinadns.h"
 #include <string.h>
 #include <netinet/in.h>
 #undef _GNU_SOURCE
@@ -61,7 +62,7 @@ static inline bool dns_rheader_check(const void *packet_buf) {
         LOGERR("[dns_rheader_check] there should be one and only one question section");
         return false;
     }
-    if (ntohs(header->answer_count) == 0) {
+    if (!g_noip_as_chnip && ntohs(header->answer_count) == 0) {
         LOGERR("[dns_rheader_check] no resource records found in the dns reply packet");
         return false;
     }
@@ -146,7 +147,7 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
 }
 
 /* check the ipaddr of the first A/AAAA record is in `chnroute` ipset */
-static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t ans_len, bool noip_as_chnip) {
+static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t ans_len) {
     const dns_header_t *header = packet_ptr;
 
     /* count number of answers */
@@ -231,7 +232,7 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
                 }
         }
     }
-    return noip_as_chnip; /* not found A/AAAA record */
+    return g_noip_as_chnip; /* not found A/AAAA record */
 }
 
 /* check a dns query packet, `name_buf` used to get domain name */
@@ -240,8 +241,8 @@ bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf)
 }
 
 /* check a dns reply packet, `name_buf` used to get domain name */
-bool dns_reply_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool noip_as_chnip) {
+bool dns_reply_check(const void *packet_buf, ssize_t packet_len, char *name_buf) {
     const void *answer_ptr = NULL;
     if (!dns_packet_check(packet_buf, packet_len, name_buf, false, &answer_ptr)) return false;
-    return dns_ipset_check(packet_buf, answer_ptr, packet_len - (answer_ptr - packet_buf), noip_as_chnip);
+    return dns_ipset_check(packet_buf, answer_ptr, packet_len - (answer_ptr - packet_buf));
 }

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "netutils.h"
 #include "logutils.h"
+#include "chinadns.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -67,8 +68,6 @@ struct nfgenmsg {
 /* static global variable declaration */
 static int    g_ipset_nlsocket                      = -1;
 static __u32  g_ipset_nlmsg_seq                     = 1;
-static char   g_ipset_setname4[IPSET_MAXNAMELEN]    = {0};
-static char   g_ipset_setname6[IPSET_MAXNAMELEN]    = {0};
 static char   g_ipset_sendbuffer4[MSGBUFFER_MAXLEN] = {0};
 static char   g_ipset_sendbuffer6[MSGBUFFER_MAXLEN] = {0};
 static char   g_ipset_recvbuffer[MSGBUFFER_MAXLEN]  = {0};
@@ -259,24 +258,8 @@ static void ipset_prebuild_nlmsg(bool is_ipv4) {
 }
 
 /* init netlink socket for ipset query */
-void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6) {
-    if (ipset_name4) {
-        size_t namelen = strlen(ipset_name4) + 1;
-        if (namelen == 1 || namelen > IPSET_MAXNAMELEN) {
-            LOGERR("[ipset_init_nlsocket] length of ipset_setname4 is invalid: %zu", namelen);
-            exit(1);
-        }
-        strcpy(g_ipset_setname4, ipset_name4);
-    }
-    if (ipset_name6) {
-        size_t namelen = strlen(ipset_name6) + 1;
-        if (namelen == 1 || namelen > IPSET_MAXNAMELEN) {
-            LOGERR("[ipset_init_nlsocket] length of ipset_setname6 is invalid: %zu", namelen);
-            exit(1);
-        }
-        strcpy(g_ipset_setname6, ipset_name6);
-    }
-    ipset_create_nlsocket();
+void ipset_init_nlsocket(void) {
+    ipset_create_nlsocket(); /* create netlink socket */
     ipset_prebuild_nlmsg(true); /* prebuild ipv4 nlmsg */
     ipset_prebuild_nlmsg(false); /* prebuild ipv6 nlmsg */
 }

@@ -55,7 +55,7 @@ void parse_ipv4_addr(const inet4_skaddr_t *addr, char *host, sock_port_t *port);
 void parse_ipv6_addr(const inet6_skaddr_t *addr, char *host, sock_port_t *port);
 
 /* init netlink socket for ipset query */
-void ipset_init_nlsocket(const char *ipset_name4, const char *ipset_name6);
+void ipset_init_nlsocket(void);
 
 /* check given ipaddr is exists in ipset */
 bool ipset_addr4_is_exists(const inet4_ipaddr_t *addr_ptr);

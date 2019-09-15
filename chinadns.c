@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "chinadns.h"
 #include "logutils.h"
 #include "netutils.h"
 #include "dnsutils.h"
@@ -47,9 +48,9 @@ static bool            g_verbose                                          = fals
 static bool            g_reuse_port                                       = false;
 static bool            g_fair_mode                                        = false; /* default: fast-mode */
 static uint8_t         g_repeat_times                                     = 1; /* used by trust-dns only */
-static bool            g_noip_as_chnip                                    = false; /* default: see as not-chnip */
-static char            g_setname4[IPSET_MAXNAMELEN]                       = "chnroute";
-static char            g_setname6[IPSET_MAXNAMELEN]                       = "chnroute6";
+       bool            g_noip_as_chnip                                    = false; /* default: see as not-chnip */
+       char            g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
+       char            g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
 static char            g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
 static sock_port_t     g_bind_port                                        = 65353;
 static inet6_skaddr_t  g_bind_skaddr                                      = {0};
@@ -191,14 +192,14 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] ipset setname max length is 31: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
-                strcpy(g_setname4, optarg);
+                strcpy(g_ipset_setname4, optarg);
                 break;
             case '6':
                 if (strlen(optarg) + 1 > IPSET_MAXNAMELEN) {
                     printf("[parse_command_args] ipset setname max length is 31: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
-                strcpy(g_setname6, optarg);
+                strcpy(g_ipset_setname6, optarg);
                 break;
             case 'o':
                 g_upstream_timeout_sec = strtol(optarg, NULL, 10);
@@ -337,7 +338,7 @@ static void handle_remote_packet(int index) {
         return;
     }
 
-    bool is_chnip = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, g_noip_as_chnip);
+    bool is_chnip = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL);
 
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, dns_header->id);
@@ -443,8 +444,8 @@ int main(int argc, char *argv[]) {
     if (strlen(g_remote_servers[CHINADNS2_IDX])) LOGINF("[main] chinadns server#2: %s", g_remote_servers[CHINADNS2_IDX]);
     if (strlen(g_remote_servers[TRUSTDNS1_IDX])) LOGINF("[main] trustdns server#1: %s", g_remote_servers[TRUSTDNS1_IDX]);
     if (strlen(g_remote_servers[TRUSTDNS2_IDX])) LOGINF("[main] trustdns server#2: %s", g_remote_servers[TRUSTDNS2_IDX]);
-    LOGINF("[main] ipset ip4 setname: %s", g_setname4);
-    LOGINF("[main] ipset ip6 setname: %s", g_setname6);
+    LOGINF("[main] ipset ip4 setname: %s", g_ipset_setname4);
+    LOGINF("[main] ipset ip6 setname: %s", g_ipset_setname6);
     LOGINF("[main] dns query timeout: %ld seconds", g_upstream_timeout_sec);
     if (g_repeat_times != 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
     if (g_noip_as_chnip) LOGINF("[main] accept reply without ip addr");
@@ -453,7 +454,7 @@ int main(int argc, char *argv[]) {
     if (g_verbose) LOGINF("[main] print the verbose running log");
 
     /* init ipset netlink socket */
-    ipset_init_nlsocket(g_setname4, g_setname6);
+    ipset_init_nlsocket();
 
     /* create listen socket */
     g_bind_socket = (g_bind_skaddr.sin6_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
