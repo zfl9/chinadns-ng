@@ -435,7 +435,7 @@ static void handle_timeout_event(uint16_t msg_id) {
 
 int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
-    setvbuf(stdout, NULL, _IOLBF, 512);
+    setvbuf(stdout, NULL, _IOLBF, 256);
     parse_command_args(argc, argv);
 
     /* show startup information */
