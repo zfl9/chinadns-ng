@@ -11,8 +11,8 @@ typedef struct {
     uint16_t       unique_msgid;  /* [key]   globally unique msgid */
     uint16_t       origin_msgid;  /* [value] associated original msgid */
     int            query_timerfd; /* [value] dns query timeout timerfd */
-    bool           chinadns_got;  /* [value] received reply from china-dns */
     void          *trustdns_buf;  /* [value] storage reply from trust-dns */
+    bool           chinadns_got;  /* [value] received reply from china-dns */
     inet6_skaddr_t source_addr;   /* [value] associated client sockaddr */
     UT_hash_handle hh;            /* metadata, used internally by uthash */
 } hashmap_t, hashentry_t;
