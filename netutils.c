@@ -63,7 +63,7 @@ struct nfgenmsg {
 };
 
 /* ipset netlink msg buffer maxlen */
-#define MSGBUFFER_MAXLEN 512
+#define MSGBUFFER_MAXLEN 256
 
 /* static global variable declaration */
 static int    g_ipset_nlsocket                      = -1;
