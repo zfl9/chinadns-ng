@@ -32,7 +32,7 @@
 #define IDX_MARK_MASK 0xffff
 
 /* constant macro definition */
-#define EPOLL_MAXEVENTS 64
+#define EPOLL_MAXEVENTS 8
 #define SERVER_MAXCOUNT 4
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
