@@ -28,10 +28,6 @@ static inline bool dns_qheader_check(const void *packet_buf) {
         LOGERR("[dns_qheader_check] this is not a standard query, opcode: %hhu", header->opcode);
         return false;
     }
-    if (!header->rd) {
-        LOGERR("[dns_qheader_check] non-recursive query is not supported");
-        return false;
-    }
     if (ntohs(header->question_count) != 1) {
         LOGERR("[dns_qheader_check] there should be one and only one question section");
         return false;
@@ -48,14 +44,6 @@ static inline bool dns_rheader_check(const void *packet_buf) {
     }
     if (header->tc) {
         LOGERR("[dns_rheader_check] dns reply message has been truncated");
-        return false;
-    }
-    if (!header->ra) {
-        LOGERR("[dns_rheader_check] non-recursive reply is not supported");
-        return false;
-    }
-    if (header->rcode != DNS_RCODE_NOERROR) {
-        LOGERR("[dns_rheader_check] the response code not equal to RCODE_NOERROR");
         return false;
     }
     if (ntohs(header->question_count) != 1) {
