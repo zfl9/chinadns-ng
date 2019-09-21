@@ -17,7 +17,7 @@ clean:
 	$(RM) *.o $(MAIN)
 
 $(MAIN): $(OBJS) 
-	$(CC) $(CFLAGS) -s $(OBJS) -o $(MAIN)
+	$(CC) $(CFLAGS) -s -o $(MAIN) $(OBJS)
 
 .c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
