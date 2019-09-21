@@ -72,7 +72,7 @@ static inline bool dns_rheader_check(const void *packet_buf) {
 /* check dns packet */
 static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool is_query, const void **answer_ptr) {
     /* check packet length */ 
-    if (packet_len < (ssize_t)sizeof(dns_header_t) + (ssize_t)sizeof(dns_query_t) + 3) {
+    if (packet_len < (ssize_t)sizeof(dns_header_t) + (ssize_t)sizeof(dns_query_t) + 1) {
         LOGERR("[dns_packet_check] the dns packet is too small: %zd", packet_len);
         return false;
     }
@@ -95,10 +95,6 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
         LOGERR("[dns_packet_check] did not find the domain name to be queried");
         return false;
     }
-    if (dname_endptr == packet_buf) {
-        LOGERR("[dns_packet_check] the length of the domain name is too small");
-        return false;
-    }
     if (dname_endptr - packet_buf > DNS_DOMAIN_NAME_MAXLEN) {
         LOGERR("[dns_packet_check] the length of the domain name is too long");
         return false;
@@ -106,24 +102,28 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
 
     /* get and convert the domain name */
     if (name_buf) {
-        uint8_t label_len = *(uint8_t *)packet_buf;
-        if (label_len > DNS_DNAME_LABEL_MAXLEN || label_len + 1 > dname_endptr - packet_buf) {
-            LOGERR("[dns_packet_check] the length of the domain name label is too long");
-            return false;
-        }
-        strcpy(name_buf, packet_buf + 1); /* name_buf: "www\6google\3com\0" */
-        name_buf += label_len; /* move to '\6' pos */
-        label_len = *(uint8_t *)name_buf; /* label length is 6 */
-        size_t remain_len = strlen(name_buf); /* remaining length include '\6' */
-        while (label_len != 0) {
-            if (label_len > DNS_DNAME_LABEL_MAXLEN || label_len + 1 > (ssize_t)remain_len) {
+        if (dname_endptr == packet_buf) {
+            strcpy(name_buf, ".");
+        } else {
+            uint8_t label_len = *(uint8_t *)packet_buf;
+            if (label_len > DNS_DNAME_LABEL_MAXLEN || label_len + 1 > dname_endptr - packet_buf) {
                 LOGERR("[dns_packet_check] the length of the domain name label is too long");
                 return false;
             }
-            *name_buf = '.'; /* change '\6' to '.' */
-            name_buf += label_len + 1; /* move to next '\len' pos */
-            remain_len -= label_len + 1; /* reduce the remaining len */
-            label_len = *(uint8_t *)name_buf; /* update current label len */
+            strcpy(name_buf, packet_buf + 1); /* name_buf: "www\6google\3com\0" */
+            name_buf += label_len; /* move to '\6' pos */
+            label_len = *(uint8_t *)name_buf; /* label length is 6 */
+            size_t remain_len = strlen(name_buf); /* remaining length include '\6' */
+            while (label_len != 0) {
+                if (label_len > DNS_DNAME_LABEL_MAXLEN || label_len + 1 > (ssize_t)remain_len) {
+                    LOGERR("[dns_packet_check] the length of the domain name label is too long");
+                    return false;
+                }
+                *name_buf = '.'; /* change '\6' to '.' */
+                name_buf += label_len + 1; /* move to next '\len' pos */
+                remain_len -= label_len + 1; /* reduce the remaining len */
+                label_len = *(uint8_t *)name_buf; /* update current label len */
+            }
         }
     }
 
@@ -154,7 +154,7 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
     uint16_t answer_count = ntohs(header->answer_count);
 
     /* check dns packet length */
-    if (ans_len < answer_count * ((ssize_t)sizeof(dns_record_t) + 2)) {
+    if (ans_len < answer_count * ((ssize_t)sizeof(dns_record_t) + 1)) {
         LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
         return false;
     }
@@ -165,10 +165,6 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
 
     /* find the first A/AAAA record */
     for (uint16_t i = 0; i < answer_count; ++i) {
-        if (*(uint8_t *)ans_ptr == 0) {
-            LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
-            return false;
-        }
         while (true) {
             uint8_t label_len = *(uint8_t *)ans_ptr;
             if (label_len >= DNS_DNAME_COMPRESSION_MINVAL) {
@@ -226,7 +222,7 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
             default:
                 ans_ptr += sizeof(dns_record_t) + rdatalen;
                 ans_len -= sizeof(dns_record_t) + rdatalen;
-                if (i != answer_count - 1 && ans_len < (ssize_t)sizeof(dns_record_t) + 2) {
+                if (i != answer_count - 1 && ans_len < (ssize_t)sizeof(dns_record_t) + 1) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
