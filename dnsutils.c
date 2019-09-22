@@ -42,16 +42,12 @@ static inline bool dns_rheader_check(const void *packet_buf) {
         LOGERR("[dns_rheader_check] this is a reply packet, but header->qr != 1");
         return false;
     }
-    if (header->tc) {
-        LOGERR("[dns_rheader_check] dns reply message has been truncated");
+    if (header->opcode != DNS_OPCODE_QUERY) {
+        LOGERR("[dns_rheader_check] this is not a standard query, opcode: %hhu", header->opcode);
         return false;
     }
     if (ntohs(header->question_count) != 1) {
         LOGERR("[dns_rheader_check] there should be one and only one question section");
-        return false;
-    }
-    if (!g_noip_as_chnip && ntohs(header->answer_count) == 0) {
-        LOGERR("[dns_rheader_check] no resource records found in the dns reply packet");
         return false;
     }
     return true;
