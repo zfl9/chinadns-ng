@@ -5,7 +5,7 @@
 - 手动指定国内 DNS 和可信 DNS，而非自动识别，更加可控。
 - 修复原版对保留地址的处理问题，去除过时特性，只留核心功能。
 - 修复原版对可信 DNS 先于国内 DNS 返回而导致判断失效的问题。
-- 支持 `gfwlist` 域名黑名单模式，使用 hashmap 以优化匹配效率。
+- 支持 `gfwlist` 黑名单匹配模式，利用 hashmap 优化域名匹配效率。
 
 # 快速编译
 ```bash
@@ -48,7 +48,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `trust-dns` 选项指定可信上游 DNS 服务器，最多两个，逗号隔开。
 - `ipset-name4` 选项指定存储中国大陆 IPv4 地址的 ipset 集合的名称。
 - `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset 集合的名称。
-- `gfwlist-file` 选项指定黑名单域名文件，命中的域名只会走可信 DNS。
+- `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
 - `fair-mode` 选项表示启用"公平模式"而非默认的"抢答模式"，见后文。
@@ -74,7 +74,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
         - 国内 IP：接受国内 DNS 的响应，移除相关上下文，不再考虑其它上游。
         - 国外 IP：接受可信 DNS 的响应，移除相关上下文，不再考虑其它上游。
 - 上述流程为 chinadns-ng 的"公平模式"，chinadns-ng 默认使用的是"抢答模式"，抢答模式与公平模式只有一点不同：当从可信 DNS 收到一个响应时，均将其结果 IP 视为国内 IP，不存在等待国内 DNS 上游的特殊情况。那么该如何选择这两种判断模式呢？绝大多数情况下，使用抢答模式即可，只有可信 DNS 比国内 DNS 先返回的情况下，才需要启用公平模式（比如使用深港专线 VPS 来代理 trust-dns 的访问）。
-- 如果希望 chinadns-ng 只向可信 DNS 转发某些域名的解析请求（如谷歌等敏感域名），可使用 `--gfwlist-file` 选项指定一个黑名单文件，文件内容是按行分隔的 **域名模式**。查询黑名单域名时，chinadns-ng 只会向可信 DNS 转发解析请求。`chinadns-ng` 的域名模式与 `dnsmasq` 的域名模式差不多，都是 **域名后缀**，但是我人为的加了几个限制（当然目的也是为了提升匹配性能）：域名模式中的 `label` 数量最少 2 个最多 4 个；少于 2 个 label 的模式会被忽略（如 `com`）；多于 4 个 label 的模式就被截断（如 `test.www.google.com.hk`，等价于 `www.google.com.hk`）。chinadns-ng 使用 hashmap 来存储和匹配域名，性能比 dnsmasq 的线性查找方式好得多，不会因为域名模式数量的增加导致匹配性能的降低，因为哈希表的查找速度是恒定的。
+- 如果希望 chinadns-ng 只向可信 DNS 转发某些域名的解析请求（如谷歌等敏感域名），可使用 `--gfwlist-file` 选项指定一个黑名单文件，文件内容是按行分隔的 **域名模式**。查询黑名单域名时，chinadns-ng 只会向可信 DNS 转发解析请求。`chinadns-ng` 的域名模式与 `dnsmasq` 的域名模式差不多，都是 **域名后缀**，但是我人为的加了几个限制（当然目的也是为了提升匹配性能）：域名模式中的 `label` 数量最少 2 个最多 4 个；少于 2 个 label 的模式会被忽略（如 `com`）；多于 4 个 label 的模式会被截断（如 `test.www.google.com.hk`，等价于 `www.google.com.hk`）。chinadns-ng 使用 hashmap 来存储和匹配域名，性能比 dnsmasq 的线性查找方式好得多，不会因为域名模式数量的增加而导致匹配性能的降低，因为哈希表的查找速度是恒定的，与具体的数据量无关。
 
 # 简单测试
 使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
