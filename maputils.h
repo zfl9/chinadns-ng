@@ -13,12 +13,13 @@ typedef struct {
     int            query_timerfd; /* [value] dns query timeout timerfd */
     void          *trustdns_buf;  /* [value] storage reply from trust-dns */
     bool           chinadns_got;  /* [value] received reply from china-dns */
+    bool           gfwlist_dname; /* [value] it is a gfwlist domain name */
     inet6_skaddr_t source_addr;   /* [value] associated client sockaddr */
     UT_hash_handle hh;            /* metadata, used internally by uthash */
 } hashmap_t, hashentry_t;
 
 /* put key and value to hashmap */
-hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, const inet6_skaddr_t *source_addr);
+hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, bool gfwlist_dname, const inet6_skaddr_t *source_addr);
 
 /* get entry_ptr by unique_msgid */
 hashentry_t* hashmap_get(hashmap_t *hashmap, uint16_t unique_msgid);
