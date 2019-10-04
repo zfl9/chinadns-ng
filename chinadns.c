@@ -368,7 +368,7 @@ static void handle_remote_packet(int index) {
     if (index == CHINADNS1_IDX || index == CHINADNS2_IDX) is_chinadns = true;
 
     if (!g_fair_mode && !is_chinadns) is_chnip = true;
-    if (!is_chinadns && entry->gfwlist_dname) is_chnip = true;
+    if (entry->gfwlist_dname && !is_chinadns) is_chnip = true;
 
     if (is_chinadns) {
         /* china-dns upstream */
