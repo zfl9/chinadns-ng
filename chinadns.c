@@ -10,7 +10,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <limits.h>
 #include <time.h>
 #include <errno.h>
 #include <unistd.h>
@@ -21,6 +20,7 @@
 #include <sys/epoll.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <linux/limits.h>
 #undef _GNU_SOURCE
 
 /* left-16-bit:MSGID; right-16-bit:IDX/MARK */
