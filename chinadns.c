@@ -266,12 +266,16 @@ static void parse_command_args(int argc, char *argv[]) {
         build_ipv6_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
     }
     if (chinadns_optarg) {
-        parse_dns_server_opt(chinadns_optarg, true);
+        char dnsserver_optstring[strlen(chinadns_optarg) + 1];
+        strcpy(dnsserver_optstring, chinadns_optarg);
+        parse_dns_server_opt(dnsserver_optstring, true);
     } else {
         build_ipv4_addr((void *)&g_remote_skaddrs[CHINADNS1_IDX], "114.114.114.114", 53);
     }
     if (trustdns_optarg) {
-        parse_dns_server_opt(trustdns_optarg, false);
+        char dnsserver_optstring[strlen(trustdns_optarg) + 1];
+        strcpy(dnsserver_optstring, trustdns_optarg);
+        parse_dns_server_opt(dnsserver_optstring, false);
     } else {
         build_ipv4_addr((void *)&g_remote_skaddrs[TRUSTDNS1_IDX], "8.8.8.8", 53);
     }
