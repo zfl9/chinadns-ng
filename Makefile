@@ -16,7 +16,7 @@ install: $(MAIN)
 clean:
 	$(RM) *.o $(MAIN)
 
-$(MAIN): $(OBJS) 
+$(MAIN): $(OBJS)
 	$(CC) $(CFLAGS) -s -o $(MAIN) $(OBJS)
 
 .c.o:
