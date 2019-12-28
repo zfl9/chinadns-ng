@@ -263,7 +263,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 8、chinadns-ng 原则上只为替代原版 chinadns，非必要的新功能暂不打算实现；目前个人的用法是：dnsmasq 在前，chinadns-ng 在后；dnsmasq 做 DNS 缓存、ipset（将特定域名解析出来的 IP 动态添加至 ipset 集合，便于 iptables 操作）；chinadns-ng 则作为 dnsmasq 的上游服务器，提供无污染的 DNS 解析服务。
 
-9、如何更新 gfwlist.txt？进入项目根目录执行 `./update-gfwlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt` 文件的行数，一般有 5000+ 行，然后重新启动 chinadns-ng 生效。
+9、如何更新 gfwlist.txt？进入项目根目录执行 `./update-gfwlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt` 文件的行数，一般有 5000+ 行，然后重新启动 chinadns-ng 生效。chnlist.txt 的更新处理也是一样的，也可以自己定制 gfwlist.txt 和 chnlist.txt，看个人喜好。
 
 10、`--noip-as-chnip` 选项的作用？首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、AAAA（查询给定域名的 IPv6 地址）、CNAME（查询给定域名的别名）、MX（查询给定域名的邮件服务器）；chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply，如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
 ```bash
