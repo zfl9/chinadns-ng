@@ -52,7 +52,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset 集合的名称。
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
-- `chnlist-first` 选项表示优先匹配 chnlist，默认优先匹配 gfwlist。
+- `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
 - `fair-mode` 选项表示启用"公平模式"而非默认的"抢答模式"，见后文。
