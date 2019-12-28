@@ -276,6 +276,10 @@ static void parse_command_args(int argc, char *argv[]) {
                 goto PRINT_HELP_AND_EXIT;
         }
     }
+    if (g_gfwlist_fname && g_chnlist_fname && !strcmp(g_gfwlist_fname, "-") && !strcmp(g_chnlist_fname, "-")) {
+        printf("[parse_command_args] gfwlist:%s and chnlist:%s are both STDIN\n", g_gfwlist_fname, g_chnlist_fname);
+        goto PRINT_HELP_AND_EXIT;
+    }
     if (get_addrstr_family(g_bind_addr) == AF_INET) {
         build_ipv4_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
     } else {
