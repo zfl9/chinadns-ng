@@ -39,7 +39,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.13 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.14 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
@@ -50,7 +50,9 @@ static bool            g_verbose                                          = fals
 static bool            g_reuse_port                                       = false;
 static bool            g_fair_mode                                        = false; /* default: fast-mode */
 static uint8_t         g_repeat_times                                     = 1; /* used by trust-dns only */
-static const char     *g_dnl_filename                                     = NULL; /* domain-name-list filename */
+static const char     *g_gfwlist_fname                                    = NULL; /* gfwlist dnamelist filename */
+static const char     *g_chnlist_fname                                    = NULL; /* chnlist dnamelist filename */
+static bool            g_gfwlist_first                                    = true; /* match gfwlist dnamelist first */
        bool            g_noip_as_chnip                                    = false; /* default: see as not-chnip */
        char            g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char            g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
@@ -78,8 +80,10 @@ static void print_command_help(void) {
            " -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute\n"
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
            " -g, --gfwlist-file <file-path>       filepath of gfwlist, '-' indicate stdin\n"
+           " -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin\n"
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 3\n"
            " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
+           " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
            " -f, --fair-mode                      enable `fair` mode, default: <fast-mode>\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
            " -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)\n"
@@ -138,7 +142,7 @@ PRINT_HELP_AND_EXIT:
 
 /* parse and check command arguments */
 static void parse_command_args(int argc, char *argv[]) {
-    const char *optstr = ":b:l:c:t:4:6:g:o:p:frnvVh";
+    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:MfrnvVh";
     const struct option options[] = {
         {"bind-addr",     required_argument, NULL, 'b'},
         {"bind-port",     required_argument, NULL, 'l'},
@@ -147,8 +151,10 @@ static void parse_command_args(int argc, char *argv[]) {
         {"ipset-name4",   required_argument, NULL, '4'},
         {"ipset-name6",   required_argument, NULL, '6'},
         {"gfwlist-file",  required_argument, NULL, 'g'},
+        {"chnlist-file",  required_argument, NULL, 'm'},
         {"timeout-sec",   required_argument, NULL, 'o'},
         {"repeat-times",  required_argument, NULL, 'p'},
+        {"chnlist-first", no_argument,       NULL, 'M'},
         {"fair-mode",     no_argument,       NULL, 'f'},
         {"reuse-port",    no_argument,       NULL, 'r'},
         {"noip-as-chnip", no_argument,       NULL, 'n'},
@@ -211,7 +217,14 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] file path max length is 4095: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
-                g_dnl_filename = optarg;
+                g_gfwlist_fname = optarg;
+                break;
+            case 'm':
+                if (strlen(optarg) + 1 > PATH_MAX) {
+                    printf("[parse_command_args] file path max length is 4095: %s\n", optarg);
+                    goto PRINT_HELP_AND_EXIT;
+                }
+                g_chnlist_fname = optarg;
                 break;
             case 'o':
                 g_upstream_timeout_sec = strtol(optarg, NULL, 10);
@@ -226,6 +239,9 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] repeat times min value is 1: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
+                break;
+            case 'M':
+                g_gfwlist_first = false;
                 break;
             case 'f':
                 g_fair_mode = true;
@@ -297,7 +313,7 @@ static void handle_local_packet(void) {
         return;
     }
 
-    if (!dns_query_check(g_socket_buffer, packet_len, (g_verbose || g_dnl_filename) ? g_domain_name_buffer : NULL)) return;
+    if (!dns_query_check(g_socket_buffer, packet_len, (g_verbose || g_gfwlist_fname || g_chnlist_fname) ? g_domain_name_buffer : NULL)) return;
 
     IF_VERBOSE {
         sock_port_t source_port = 0;
@@ -313,12 +329,16 @@ static void handle_local_packet(void) {
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
     uint16_t origin_msgid = dns_header->id;
     dns_header->id = unique_msgid; /* replace with new msgid */
-    bool gfwlist_dname = g_dnl_filename ? dnl_ismatch(g_domain_name_buffer) : false;
+    uint8_t dnlmatch_ret = (g_gfwlist_fname || g_chnlist_fname) ? dnl_ismatch(g_domain_name_buffer, g_gfwlist_first) : DNL_MRESULT_NOMATCH;
 
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (g_remote_sockets[i] < 0) continue;
-        uint8_t repeat_times = gfwlist_dname ? 0 : 1; /* default is 1 */
-        if (i == TRUSTDNS1_IDX || i == TRUSTDNS2_IDX) repeat_times = g_repeat_times;
+        uint8_t repeat_times = 0;
+        if (i == CHINADNS1_IDX || i == CHINADNS2_IDX) {
+            repeat_times = (dnlmatch_ret == DNL_MRESULT_GFWLIST) ? 0 : 1;
+        } else {
+            repeat_times = (dnlmatch_ret == DNL_MRESULT_CHNLIST) ? 0 : g_repeat_times;
+        }
         socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
         for (int j = 0; j < repeat_times; ++j) {
             if (sendto(g_remote_sockets[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
@@ -335,7 +355,7 @@ static void handle_local_packet(void) {
         return;
     }
 
-    hashmap_put(&g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, gfwlist_dname, &source_addr);
+    hashmap_put(&g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, dnlmatch_ret, &source_addr);
 }
 
 /* handle remote socket readable event */
@@ -368,11 +388,8 @@ static void handle_remote_packet(int index) {
     void *reply_buffer = NULL;
     size_t reply_length = 0;
 
-    bool is_chinadns = false;
-    if (index == CHINADNS1_IDX || index == CHINADNS2_IDX) is_chinadns = true;
-
-    if (!g_fair_mode && !is_chinadns) is_chnip = true;
-    if (entry->gfwlist_dname && !is_chinadns) is_chnip = true;
+    bool is_chinadns = index == CHINADNS1_IDX || index == CHINADNS2_IDX;
+    if ((!g_fair_mode && !is_chinadns) || (entry->dnlmatch_ret != DNL_MRESULT_NOMATCH)) is_chnip = true;
 
     if (is_chinadns) {
         /* china-dns upstream */
@@ -465,7 +482,8 @@ int main(int argc, char *argv[]) {
     LOGINF("[main] ipset ip4 setname: %s", g_ipset_setname4);
     LOGINF("[main] ipset ip6 setname: %s", g_ipset_setname6);
     LOGINF("[main] dns query timeout: %ld seconds", g_upstream_timeout_sec);
-    if (g_dnl_filename) LOGINF("[main] gfwlist entries count: %zu", dnl_init(g_dnl_filename));
+    if (g_gfwlist_fname) LOGINF("[main] gfwlist entries count: %zu", dnl_init(g_gfwlist_fname, true));
+    if (g_chnlist_fname) LOGINF("[main] chnlist entries count: %zu", dnl_init(g_chnlist_fname, false));
     if (g_repeat_times != 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
     if (g_noip_as_chnip) LOGINF("[main] accept reply without ip addr");
     LOGINF("[main] core judgment mode: %s mode", g_fair_mode ? "fair" : "fast");

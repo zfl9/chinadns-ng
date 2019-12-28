@@ -16,7 +16,8 @@ typedef struct {
 } dnlentry_t;
 
 /* hash table (head entry) */
-static dnlentry_t *g_headentry = NULL;
+static dnlentry_t *g_gfwlist_headentry = NULL;
+static dnlentry_t *g_chnlist_headentry = NULL;
 
 /* handling dname matching pattern */
 static inline char* dnl_pattern_strip(char *pattern) {
@@ -81,7 +82,7 @@ static inline void dnl_input_convert(char *fulldomain, const char* subdomain_arr
 }
 
 /* initialize domain-name-list from file */
-size_t dnl_init(const char *filename) {
+size_t dnl_init(const char *filename, bool is_gfwlist) {
     FILE *fp = NULL;
     if (strcmp(filename, "-") == 0) {
         fp = stdin;
@@ -93,48 +94,61 @@ size_t dnl_init(const char *filename) {
         }
     }
 
+    dnlentry_t **headentry = is_gfwlist ? &g_gfwlist_headentry : &g_chnlist_headentry;
     char strbuf[DNS_DOMAIN_NAME_MAXLEN];
     while (fscanf(fp, "%253s", strbuf) > 0) {
         char *dname = dnl_pattern_strip(strbuf);
         if (!dname) continue;
 
         dnlentry_t *entry = NULL;
-        HASH_FIND_STR(g_headentry, dname, entry);
+        HASH_FIND_STR(*headentry, dname, entry);
         if (entry) continue;
 
         entry = malloc(sizeof(dnlentry_t));
         strcpy(entry->dname, dname);
-        HASH_ADD_STR(g_headentry, dname, entry);
+        HASH_ADD_STR(*headentry, dname, entry);
     }
     if (fp != stdin) fclose(fp);
 
     dnlentry_t *curentry = NULL, *tmpentry = NULL;
-    HASH_ITER(hh, g_headentry, curentry, tmpentry) {
+    HASH_ITER(hh, *headentry, curentry, tmpentry) {
         const char* subpattern_array[2] = {0};
         dnl_pattern_split(curentry->dname, subpattern_array);
         for (int i = 0; i < 2 && subpattern_array[i]; ++i) {
             dnlentry_t *findentry = NULL;
-            HASH_FIND_STR(g_headentry, subpattern_array[i], findentry);
+            HASH_FIND_STR(*headentry, subpattern_array[i], findentry);
             if (findentry) {
-                HASH_DEL(g_headentry, curentry);
+                HASH_DEL(*headentry, curentry);
                 free(curentry);
                 break;
             }
         }
     }
-    return HASH_COUNT(g_headentry);
+    return HASH_COUNT(*headentry);
 }
 
 /* check if the given domain name matches */
-bool dnl_ismatch(char *domainname) {
+uint8_t dnl_ismatch(char *domainname, bool is_gfwlist_first) {
     const char* subdomain_array[3] = {0};
     dnl_input_convert(domainname, subdomain_array);
 
-    for (int i = 0; i < 3 && subdomain_array[i]; ++i) {
-        dnlentry_t *findentry = NULL;
-        HASH_FIND_STR(g_headentry, subdomain_array[i], findentry);
-        if (findentry) return true;
+    dnlentry_t *headentry = is_gfwlist_first ? g_gfwlist_headentry : g_chnlist_headentry;
+    if (headentry) {
+        for (int i = 0; i < 3 && subdomain_array[i]; ++i) {
+            dnlentry_t *findentry = NULL;
+            HASH_FIND_STR(headentry, subdomain_array[i], findentry);
+            if (findentry) return is_gfwlist_first ? DNL_MRESULT_GFWLIST : DNL_MRESULT_CHNLIST;
+        }
     }
 
-    return false;
+    headentry = is_gfwlist_first ? g_chnlist_headentry : g_gfwlist_headentry;
+    if (headentry) {
+        for (int i = 0; i < 3 && subdomain_array[i]; ++i) {
+            dnlentry_t *findentry = NULL;
+            HASH_FIND_STR(headentry, subdomain_array[i], findentry);
+            if (findentry) return is_gfwlist_first ? DNL_MRESULT_CHNLIST : DNL_MRESULT_GFWLIST;
+        }
+    }
+
+    return DNL_MRESULT_NOMATCH;
 }
