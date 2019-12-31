@@ -14,19 +14,19 @@ hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t or
     hashentry->chinadns_got = false;
     hashentry->dnlmatch_ret = dnlmatch_ret;
     memcpy(&hashentry->source_addr, source_addr, sizeof(inet6_skaddr_t));
-    HASH_ADD(hh, *hashmap, unique_msgid, sizeof(uint16_t), hashentry);
+    MYHASH_ADD(*hashmap, hashentry, &hashentry->unique_msgid, sizeof(hashentry->unique_msgid));
     return hashentry;
 }
 
 /* get entry_ptr by unique_msgid */
 hashentry_t* hashmap_get(hashmap_t *hashmap, uint16_t unique_msgid) {
     hashentry_t *hashentry = NULL;
-    HASH_FIND(hh, hashmap, &unique_msgid, sizeof(uint16_t), hashentry);
+    MYHASH_GET(hashmap, hashentry, &unique_msgid, sizeof(unique_msgid));
     return hashentry;
 }
 
 /* delete and free the entry from hashmap */
 void hashmap_del(hashmap_t **hashmap, hashentry_t *hashentry) {
-    HASH_DEL(*hashmap, hashentry);
+    MYHASH_DEL(*hashmap, hashentry);
     free(hashentry);
 }

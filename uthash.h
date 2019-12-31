@@ -1227,4 +1227,13 @@ typedef struct UT_hash_handle {
    unsigned hashv;                   /* result of hash-fcn(key)        */
 } UT_hash_handle;
 
+/* ==================================================> MY_UTHASH begin <================================================== */
+#define MYHASH_ADD(head_entry, add_entry, key_ptr, key_len)     HASH_ADD_KEYPTR(hh, head_entry, key_ptr, key_len, add_entry)
+#define MYHASH_GET(head_entry, out_entry, key_ptr, key_len)     HASH_FIND(hh, head_entry, key_ptr, key_len, out_entry)
+#define MYHASH_FOR(head_entry, cur_entry, tmp_entry)            HASH_ITER(hh, head_entry, cur_entry, tmp_entry)
+#define MYHASH_DEL(head_entry, del_entry)                       HASH_DELETE(hh, head_entry, del_entry)
+#define MYHASH_SRT(head_entry, cmp_func)                        HASH_SRT(hh, head_entry, cmp_func)
+#define MYHASH_LEN(head_entry)                                  HASH_CNT(hh, head_entry)
+/* ===================================================> MY_UTHASH end <=================================================== */
+
 #endif /* UTHASH_H */

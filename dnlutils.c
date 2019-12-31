@@ -9,10 +9,24 @@
 #include <errno.h>
 #undef _GNU_SOURCE
 
+/* a very simple memory pool (alloc only) */
+static void* mempool_alloc(size_t length) {
+    static void  *mempool_buffer = NULL;
+    static size_t mempool_length = 0;
+    if (mempool_length < length) {
+        /* arg.length must be <= 4096 */
+        mempool_length = 4096; /* block size */
+        mempool_buffer = malloc(mempool_length);
+    }
+    mempool_buffer += length;
+    mempool_length -= length;
+    return mempool_buffer - length;
+}
+
 /* hash entry typedef */
 typedef struct {
-    char dname[DNS_DOMAIN_NAME_MAXLEN];
     UT_hash_handle hh;
+    char dname[];
 } dnlentry_t;
 
 /* hash table (head entry) */
@@ -101,30 +115,29 @@ size_t dnl_init(const char *filename, bool is_gfwlist) {
         if (!dname) continue;
 
         dnlentry_t *entry = NULL;
-        HASH_FIND_STR(*headentry, dname, entry);
+        MYHASH_GET(*headentry, entry, dname, strlen(dname));
         if (entry) continue;
 
-        entry = malloc(sizeof(dnlentry_t));
+        entry = mempool_alloc(sizeof(dnlentry_t) + strlen(dname) + 1);
         strcpy(entry->dname, dname);
-        HASH_ADD_STR(*headentry, dname, entry);
+        MYHASH_ADD(*headentry, entry, entry->dname, strlen(entry->dname));
     }
     if (fp != stdin) fclose(fp);
 
     dnlentry_t *curentry = NULL, *tmpentry = NULL;
-    HASH_ITER(hh, *headentry, curentry, tmpentry) {
+    MYHASH_FOR(*headentry, curentry, tmpentry) {
         const char* subpattern_array[2] = {0};
         dnl_pattern_split(curentry->dname, subpattern_array);
         for (int i = 0; i < 2 && subpattern_array[i]; ++i) {
             dnlentry_t *findentry = NULL;
-            HASH_FIND_STR(*headentry, subpattern_array[i], findentry);
+            MYHASH_GET(*headentry, findentry, subpattern_array[i], strlen(subpattern_array[i]));
             if (findentry) {
-                HASH_DEL(*headentry, curentry);
-                free(curentry);
+                MYHASH_DEL(*headentry, curentry);
                 break;
             }
         }
     }
-    return HASH_COUNT(*headentry);
+    return MYHASH_LEN(*headentry);
 }
 
 /* check if the given domain name matches */
@@ -136,7 +149,7 @@ uint8_t dnl_ismatch(char *domainname, bool is_gfwlist_first) {
     if (headentry) {
         for (int i = 0; i < 3 && subdomain_array[i]; ++i) {
             dnlentry_t *findentry = NULL;
-            HASH_FIND_STR(headentry, subdomain_array[i], findentry);
+            MYHASH_GET(headentry, findentry, subdomain_array[i], strlen(subdomain_array[i]));
             if (findentry) return is_gfwlist_first ? DNL_MRESULT_GFWLIST : DNL_MRESULT_CHNLIST;
         }
     }
@@ -145,7 +158,7 @@ uint8_t dnl_ismatch(char *domainname, bool is_gfwlist_first) {
     if (headentry) {
         for (int i = 0; i < 3 && subdomain_array[i]; ++i) {
             dnlentry_t *findentry = NULL;
-            HASH_FIND_STR(headentry, subdomain_array[i], findentry);
+            MYHASH_GET(headentry, findentry, subdomain_array[i], strlen(subdomain_array[i]));
             if (findentry) return is_gfwlist_first ? DNL_MRESULT_CHNLIST : DNL_MRESULT_GFWLIST;
         }
     }
