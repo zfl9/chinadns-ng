@@ -87,7 +87,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
 ```
-> 只要没有显式的从内核删除 ipset 集合，那么下次运行时就不用需要再次导入了。
+> 只要没有显式的从内核删除 ipset 集合，那么下次运行时就不需要再次导入了。
 
 然后在 shell 中运行 chinadns-ng，注意你需要先确保可信 DNS 的访问会走代理：
 ```bash
