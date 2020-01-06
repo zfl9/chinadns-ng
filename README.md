@@ -79,7 +79,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
         - 国外 IP：接受可信 DNS 的响应，移除相关上下文，不再考虑其它上游。
 - 上述流程为 chinadns-ng 的"公平模式"，chinadns-ng 默认使用的是"抢答模式"，抢答模式与公平模式只有一点不同：当从可信 DNS 收到一个响应时，均将其结果 IP 视为国内 IP，不存在等待国内 DNS 上游的特殊情况。那么该如何选择这两种判断模式呢？绝大多数情况下，使用抢答模式即可，只有可信 DNS 比国内 DNS 先返回的情况下，才需要启用公平模式（比如使用深港专线 VPS 来代理 trust-dns 的访问）。
 - 如果希望 chinadns-ng 只向可信 DNS 转发某些域名的解析请求（如谷歌等敏感域名），可使用 `--gfwlist-file` 选项指定一个黑名单文件，文件内容是按行分隔的 **域名模式**。查询黑名单域名时，chinadns-ng 只会向可信 DNS 转发解析请求。`chinadns-ng` 的域名模式与 `dnsmasq` 的域名模式差不多，都是 **域名后缀**，但是我人为的加了几个限制（当然目的也是为了提升匹配性能）：域名模式中的 `label` 数量最少 2 个最多 4 个；少于 2 个 label 的模式会被忽略（如 `com`）；多于 4 个 label 的模式会被截断（如 `test.www.google.com.hk`，等价于 `www.google.com.hk`）。chinadns-ng 使用 hashmap 来存储和匹配域名，性能比 dnsmasq 的线性查找方式好得多，不会因为域名模式数量的增加而导致匹配性能的降低，因为哈希表的查找速度是恒定的，与具体的数据量无关。
-- chinadns-ng v1.0-b14+ 支持 chnlist 白名单匹配模式，命中 chnlist 列表的域名只会走国内 DNS；允许同时指定 gfwlist 黑名单列表和 chnlist 白名单列表；如果查询的域名同时命中 gfwlist 和 chnlist，则默认走可信 DNS 上游，也即 gfwlist 优先级比 chnlist 高，指定选项 `-M/--chnlist-first` 可调换该优先级。
+- chinadns-ng v1.0-b14+ 支持 chnlist 白名单匹配模式，命中 chnlist 列表的域名只会走国内 DNS；允许同时指定 gfwlist 黑名单列表和 chnlist 白名单列表；如果查询的域名同时命中 gfwlist 和 chnlist，则默认走可信 DNS 上游，也即 gfwlist 优先级比 chnlist 高，指定选项 `-M/--chnlist-first` 可调换该优先级。注意，这里说的"同时命中"黑名单和白名单只是逻辑上的同时命中，在实现层面上只要一个域名命中了其中一个列表，整个匹配函数直接 return 了，不存在无意义的匹配消耗。
 
 # 简单测试
 使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
@@ -87,6 +87,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
 ```
+> 只要没有显式的从内核移除 ipset 集合，那么下次运行 chinadns-ng 时就不需要再次导入了。
 
 然后在 shell 中运行 chinadns-ng，注意你需要先确保可信 DNS 的访问会走代理：
 ```bash
@@ -315,6 +316,15 @@ yys.163.com.        1776    IN  CNAME   game-cache.nie.163.com.
 ;; SERVER: 114.114.114.114#53(114.114.114.114)
 ;; WHEN: Sat Oct 05 10:51:48 CST 2019
 ;; MSG SIZE  rcvd: 81
+```
+
+11、如何以普通用户身份运行 chinadns-ng？如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合是需要 `CAP_NET_ADMIN` 特权的，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。那么有办法突破这个限制吗？其实是有的，使用一个 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 一下的特权端口，那么执行下面那条命令即可。
+```shell
+# 授予 CAP_NET_ADMIN 特权
+sudo setcap cap_net_admin+ep /usr/local/bin/chinadns-ng
+
+# 授予 CAP_NET_ADMIN + CAP_NET_BIND_SERVICE 特权
+sudo setcap cap_net_bind_service,cap_net_admin+ep /usr/local/bin/chinadns-ng
 ```
 
 另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.0 编写的，欢迎使用。
