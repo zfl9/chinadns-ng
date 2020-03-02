@@ -37,6 +37,9 @@ int new_udp6_socket(void);
 /* setsockopt(IPV6_V6ONLY) */
 void set_ipv6_only(int sockfd);
 
+/* setsockopt(SO_REUSEADDR) */
+void set_reuse_addr(int sockfd);
+
 /* setsockopt(SO_REUSEPORT) */
 void set_reuse_port(int sockfd);
 

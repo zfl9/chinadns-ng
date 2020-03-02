@@ -501,6 +501,7 @@ int main(int argc, char *argv[]) {
     g_bind_socket = (g_bind_skaddr.sin6_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
     if (g_bind_skaddr.sin6_family == AF_INET6) set_ipv6_only(g_bind_socket);
     if (g_reuse_port) set_reuse_port(g_bind_socket);
+    set_reuse_addr(g_bind_socket); // default enable
 
     /* create remote socket */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
