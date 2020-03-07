@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -O3
+CFLAGS = -std=c99 -Wall -Wextra -O2
 SRCS = chinadns.c dnsutils.c dnlutils.c maputils.c netutils.c
 OBJS = $(SRCS:.c=.o)
 MAIN = chinadns-ng
@@ -19,5 +19,5 @@ clean:
 $(MAIN): $(OBJS)
 	$(CC) $(CFLAGS) -s -o $(MAIN) $(OBJS)
 
-.c.o:
+%.o: %.c:
 	$(CC) $(CFLAGS) -c $< -o $@
