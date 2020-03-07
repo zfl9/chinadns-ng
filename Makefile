@@ -19,5 +19,5 @@ clean:
 $(MAIN): $(OBJS)
 	$(CC) $(CFLAGS) -s -o $(MAIN) $(OBJS)
 
-%.o: %.c:
+.c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
