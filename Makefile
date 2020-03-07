@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -O3 -no-pie
+CFLAGS = -std=c99 -Wall -Wextra -O3
 SRCS = chinadns.c dnsutils.c dnlutils.c maputils.c netutils.c
 OBJS = $(SRCS:.c=.o)
 MAIN = chinadns-ng
