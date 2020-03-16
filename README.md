@@ -28,7 +28,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6
  -g, --gfwlist-file <file-path>       filepath of gfwlist, '-' indicate stdin
  -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin
- -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 3
+ -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
  -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1
  -M, --chnlist-first                  match chnlist first, default: <disabled>
  -f, --fair-mode                      enable `fair` mode, default: <fast-mode>
@@ -322,4 +322,4 @@ sudo setcap cap_net_admin+ep /usr/local/bin/chinadns-ng
 sudo setcap cap_net_bind_service,cap_net_admin+ep /usr/local/bin/chinadns-ng
 ```
 
-另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.0 编写的，欢迎使用。
+另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.x 编写的，欢迎使用。
