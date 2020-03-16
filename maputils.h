@@ -15,7 +15,7 @@ typedef struct {
     bool           chinadns_got;  /* [value] received reply from china-dns */
     uint8_t        dnlmatch_ret;  /* [value] dnl_ismatch(dname) ret-value */
     inet6_skaddr_t source_addr;   /* [value] associated client sockaddr */
-    UT_hash_handle hh;            /* metadata, used internally by uthash */
+    myhash_hh      hh;            /* metadata, used internally by uthash */
 } hashmap_t, hashentry_t;
 
 /* put key and value to hashmap */

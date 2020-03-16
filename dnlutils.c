@@ -25,7 +25,7 @@ static void* mempool_alloc(size_t length) {
 
 /* hash entry typedef */
 typedef struct {
-    UT_hash_handle hh;
+    myhash_hh hh;
     char dname[];
 } dnlentry_t;
 
@@ -137,7 +137,7 @@ size_t dnl_init(const char *filename, bool is_gfwlist) {
             }
         }
     }
-    return MYHASH_LEN(*headentry);
+    return MYHASH_CNT(*headentry);
 }
 
 /* check if the given domain name matches */

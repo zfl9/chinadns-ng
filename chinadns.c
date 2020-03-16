@@ -39,7 +39,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.17 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.18 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
@@ -64,7 +64,7 @@ static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1,
 static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
 static inet6_skaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
 static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
-static time_t          g_upstream_timeout_sec                             = 3;
+static time_t          g_upstream_timeout_sec                             = 5;
 static uint16_t        g_current_message_id                               = 0;
 static hashmap_t      *g_message_id_hashmap                               = NULL;
 static char            g_domain_name_buffer[DNS_DOMAIN_NAME_MAXLEN]       = {0};
@@ -81,7 +81,7 @@ static void print_command_help(void) {
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
            " -g, --gfwlist-file <file-path>       filepath of gfwlist, '-' indicate stdin\n"
            " -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin\n"
-           " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 3\n"
+           " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
            " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
            " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
            " -f, --fair-mode                      enable `fair` mode, default: <fast-mode>\n"
@@ -490,7 +490,7 @@ int main(int argc, char *argv[]) {
     if (g_chnlist_fname) LOGINF("[main] chnlist entries count: %zu", dnl_init(g_chnlist_fname, false));
     if (g_repeat_times != 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
     if (g_noip_as_chnip) LOGINF("[main] accept reply without ip addr");
-    LOGINF("[main] core judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
+    LOGINF("[main] cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
     if (g_reuse_port) LOGINF("[main] enable `SO_REUSEPORT` feature");
     if (g_verbose) LOGINF("[main] print the verbose running log");
 

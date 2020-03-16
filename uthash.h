@@ -1225,7 +1225,7 @@ typedef struct UT_hash_handle {
    void *key;                        /* ptr to enclosing struct's key  */
    unsigned keylen;                  /* enclosing struct's key len     */
    unsigned hashv;                   /* result of hash-fcn(key)        */
-} UT_hash_handle;
+} UT_hash_handle, myhash_hh;
 
 /* ==================================================> MY_UTHASH begin <================================================== */
 #define MYHASH_ADD(head_entry, add_entry, key_ptr, key_len)     HASH_ADD_KEYPTR(hh, head_entry, key_ptr, key_len, add_entry)
@@ -1233,7 +1233,7 @@ typedef struct UT_hash_handle {
 #define MYHASH_FOR(head_entry, cur_entry, tmp_entry)            HASH_ITER(hh, head_entry, cur_entry, tmp_entry)
 #define MYHASH_DEL(head_entry, del_entry)                       HASH_DELETE(hh, head_entry, del_entry)
 #define MYHASH_SRT(head_entry, cmp_func)                        HASH_SRT(hh, head_entry, cmp_func)
-#define MYHASH_LEN(head_entry)                                  HASH_CNT(hh, head_entry)
+#define MYHASH_CNT(head_entry)                                  HASH_CNT(hh, head_entry)
 /* ===================================================> MY_UTHASH end <=================================================== */
 
 #endif /* UTHASH_H */
