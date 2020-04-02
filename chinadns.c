@@ -471,7 +471,7 @@ SEND_REPLY:
 /* handle upstream reply timeout event */
 static void handle_timeout_event(uint16_t msg_id) {
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, msg_id);
-    if (!entry) return; /* after closed timerfd, may still receive a timeout event */
+    if (!entry) return; /* due to timing issues, the query context has actually been released */
     LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
     free(entry->trustdns_buf); /* release the buffer that stores the trust-dns reply */
     close(entry->query_timerfd); /* epoll will automatically remove the associated event */
