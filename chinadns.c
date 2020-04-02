@@ -39,7 +39,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.19 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.20 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
@@ -73,7 +73,7 @@ static char            g_ipaddrstring_buffer[INET6_ADDRSTRLEN]            = {0};
 /* print command help information */
 static void print_command_help(void) {
     printf("usage: chinadns-ng <options...>. the existing options are as follows:\n"
-           " -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1\n" 
+           " -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1\n"
            " -l, --bind-port <port-number>        listen port number, default: 65353\n"
            " -c, --china-dns <ip[#port],...>      china dns server, default: <114DNS>\n"
            " -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>\n"
@@ -470,8 +470,9 @@ SEND_REPLY:
 
 /* handle upstream reply timeout event */
 static void handle_timeout_event(uint16_t msg_id) {
-    LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
     hashentry_t *entry = hashmap_get(g_message_id_hashmap, msg_id);
+    if (!entry) return; /* after closed timerfd, may still receive a timeout event */
+    LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
     free(entry->trustdns_buf); /* release the buffer that stores the trust-dns reply */
     close(entry->query_timerfd); /* epoll will automatically remove the associated event */
     hashmap_del(&g_message_id_hashmap, entry); /* delete and free the associated hash entry */
@@ -562,54 +563,50 @@ int main(int argc, char *argv[]) {
             uint32_t curr_event = events[i].events;
             uint32_t curr_data = events[i].data.u32;
 
-            /* an error occurred */
             if (curr_event & EPOLLERR) {
+                /* an error occurred */
                 switch (curr_data & IDX_MARK_MASK) {
                     case CHINADNS1_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[CHINADNS1_IDX], errno, strerror(errno));
-                        return errno ? errno : 1;
+                        break;
                     case CHINADNS2_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[CHINADNS2_IDX], errno, strerror(errno));
-                        return errno ? errno : 1;
+                        break;
                     case TRUSTDNS1_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[TRUSTDNS1_IDX], errno, strerror(errno));
-                        return errno ? errno : 1;
+                        break;
                     case TRUSTDNS2_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[TRUSTDNS2_IDX], errno, strerror(errno));
-                        return errno ? errno : 1;
+                        break;
                     case BINDSOCK_MARK:
                         LOGERR("[main] local udp listen socket error: (%d) %s", errno, strerror(errno));
-                        return errno ? errno : 1;
+                        break;
                     case TIMER_FD_MARK:
                         LOGERR("[main] query timeout timer fd error: (%d) %s", errno, strerror(errno));
-                        return errno ? errno : 1;
+                        break;
                 }
-                continue;
-            }
-
-            /* ignore other events */
-            if (!(curr_event & EPOLLIN)) continue;
-
-            /* handle readable event */
-            switch (curr_data & IDX_MARK_MASK) {
-                case CHINADNS1_IDX:
-                    handle_remote_packet(CHINADNS1_IDX);
-                    break;
-                case CHINADNS2_IDX:
-                    handle_remote_packet(CHINADNS2_IDX);
-                    break;
-                case TRUSTDNS1_IDX:
-                    handle_remote_packet(TRUSTDNS1_IDX);
-                    break;
-                case TRUSTDNS2_IDX:
-                    handle_remote_packet(TRUSTDNS2_IDX);
-                    break;
-                case BINDSOCK_MARK:
-                    handle_local_packet();
-                    break;
-                case TIMER_FD_MARK:
-                    handle_timeout_event(curr_data >> BIT_SHIFT_LEN);
-                    break;
+            } else if (curr_event & EPOLLIN) {
+                /* handle readable event */
+                switch (curr_data & IDX_MARK_MASK) {
+                    case CHINADNS1_IDX:
+                        handle_remote_packet(CHINADNS1_IDX);
+                        break;
+                    case CHINADNS2_IDX:
+                        handle_remote_packet(CHINADNS2_IDX);
+                        break;
+                    case TRUSTDNS1_IDX:
+                        handle_remote_packet(TRUSTDNS1_IDX);
+                        break;
+                    case TRUSTDNS2_IDX:
+                        handle_remote_packet(TRUSTDNS2_IDX);
+                        break;
+                    case BINDSOCK_MARK:
+                        handle_local_packet();
+                        break;
+                    case TIMER_FD_MARK:
+                        handle_timeout_event(curr_data >> BIT_SHIFT_LEN);
+                        break;
+                }
             }
         }
     }
