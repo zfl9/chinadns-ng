@@ -239,14 +239,14 @@ static void parse_command_args(int argc, char *argv[]) {
                 break;
             case 'o':
                 g_upstream_timeout_sec = strtoul(optarg, NULL, 10);
-                if (g_upstream_timeout_sec <= 0) {
+                if (g_upstream_timeout_sec == 0) {
                     printf("[parse_command_args] invalid upstream timeout sec: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
                 break;
             case 'p':
                 g_repeat_times = strtoul(optarg, NULL, 10);
-                if (g_repeat_times < 1) {
+                if (g_repeat_times == 0) {
                     printf("[parse_command_args] repeat times min value is 1: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
