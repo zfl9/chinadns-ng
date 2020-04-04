@@ -136,19 +136,14 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
             printf("[parse_dns_server_opt] ip address max length is 45: %s\n", server_str);
             goto PRINT_HELP_AND_EXIT;
         }
-        int index = is_chinadns ? server_cnt - 1 : server_cnt + 1;
-        switch (get_ipstr_family(server_str)) {
-            case AF_INET:
-                build_socket_addr(AF_INET, &g_remote_skaddrs[index], server_str, server_port);
-                break;
-            case AF_INET6:
-                build_socket_addr(AF_INET6, &g_remote_skaddrs[index], server_str, server_port);
-                break;
-            default:
-                printf("[parse_dns_server_opt] invalid server ip address: %s\n", server_str);
-                goto PRINT_HELP_AND_EXIT;
+        int family = get_ipstr_family(server_str);
+        if (family == -1) {
+            printf("[parse_dns_server_opt] invalid server ip address: %s\n", server_str);
+            goto PRINT_HELP_AND_EXIT;
         }
+        int index = is_chinadns ? server_cnt - 1 : server_cnt + 1;
         sprintf(g_remote_ipports[index], "%s#%hu", server_str, server_port);
+        build_socket_addr(family, &g_remote_skaddrs[index], server_str, server_port);
     }
     return;
 PRINT_HELP_AND_EXIT:
