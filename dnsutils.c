@@ -196,13 +196,13 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
-                return ipset_addr4_is_exists((void *)record->rdataptr);
+                return ipset_addr_is_exists(record->rdataptr, true); /* ipv4 */
             case DNS_RECORD_TYPE_AAAA:
                 if (rdatalen != IPV6_BINADDR_LEN) {
                     LOGERR("[dns_ipset_check] the format of the dns packet is incorrect");
                     return false;
                 }
-                return ipset_addr6_is_exists((void *)record->rdataptr);
+                return ipset_addr_is_exists(record->rdataptr, false); /* ipv6 */
             default:
                 ans_ptr += sizeof(dns_record_t) + rdatalen;
                 ans_len -= sizeof(dns_record_t) + rdatalen;

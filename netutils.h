@@ -41,7 +41,6 @@ void parse_socket_addr(const void *skaddr, char *ipstr, portno_t *portno);
 void ipset_init_nlsocket(void);
 
 /* check given ipaddr is exists in ipset */
-bool ipset_addr4_is_exists(const void *addr_ptr);
-bool ipset_addr6_is_exists(const void *addr_ptr);
+bool ipset_addr_is_exists(const void *addr_ptr, bool is_ipv4);
 
 #endif

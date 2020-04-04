@@ -313,53 +313,30 @@ static inline const char* ipset_error_tostr(int errcode) {
 }
 
 /* check given ipaddr is exists in ipset */
-bool ipset_addr4_is_exists(const void *addr_ptr) {
-    memcpy(g_ipset_ipv4addr_ptr, addr_ptr, IPV4_BINADDR_LEN);
-    *g_ipset_nlmsg4_seq_ptr = g_ipset_nlmsg_seq++;
-    const struct nlmsghdr *netlink_msg = (struct nlmsghdr *)g_ipset_sendbuffer4;
-    if (send(g_ipset_nlsocket, g_ipset_sendbuffer4, netlink_msg->nlmsg_len, 0) < 0) {
-        LOGERR("[ipset_addr4_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
-        return false;
-    }
-    if (recv(g_ipset_nlsocket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
-        LOGERR("[ipset_addr4_is_exists] failed to recv netlink msg from kernel: (%d) %s", errno, strerror(errno));
-        return false;
-    }
-    const struct nlmsgerr *netlink_errmsg = NLMSG_DATA(g_ipset_recvbuffer);
-    switch (netlink_errmsg->error) {
-        case 0:
-            return true; // exist
-        case IPSET_ERR_EXIST:
-            return false; // not exist
-        default:
-            LOGERR("[ipset_addr4_is_exists] received an error code from kernel: (%d) %s", netlink_errmsg->error, ipset_error_tostr(netlink_errmsg->error));
-            return false; // error occurred
-    }
-    return false; // unachievable
-}
+bool ipset_addr_is_exists(const void *addr_ptr, bool is_ipv4) {
+    void *ipaddr_buf = is_ipv4 ? g_ipset_ipv4addr_ptr : g_ipset_ipv6addr_ptr;
+    __u32 *msgseq_ptr = is_ipv4 ? g_ipset_nlmsg4_seq_ptr : g_ipset_nlmsg6_seq_ptr;
+    struct nlmsghdr *netlink_sendmsg = (void *)(is_ipv4 ? g_ipset_sendbuffer4 : g_ipset_sendbuffer6);
 
-/* check given ipaddr is exists in ipset */
-bool ipset_addr6_is_exists(const void *addr_ptr) {
-    memcpy(g_ipset_ipv6addr_ptr, addr_ptr, IPV6_BINADDR_LEN);
-    *g_ipset_nlmsg6_seq_ptr = g_ipset_nlmsg_seq++;
-    const struct nlmsghdr *netlink_msg = (struct nlmsghdr *)g_ipset_sendbuffer6;
-    if (send(g_ipset_nlsocket, g_ipset_sendbuffer6, netlink_msg->nlmsg_len, 0) < 0) {
-        LOGERR("[ipset_addr6_is_exists] failed to send netlink msg to kernel: (%d) %s", errno, strerror(errno));
+    *msgseq_ptr = g_ipset_nlmsg_seq++; /* increment nlmsg seq */
+    memcpy(ipaddr_buf, addr_ptr, is_ipv4 ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN); /* replace ipv4/ipv6 addr */
+
+    if (send(g_ipset_nlsocket, netlink_sendmsg, netlink_sendmsg->nlmsg_len, 0) < 0) {
+        LOGERR("[ipset_addr%c_is_exists] failed to send netlink msg to kernel: (%d) %s", is_ipv4 ? '4' : '6', errno, strerror(errno));
         return false;
     }
     if (recv(g_ipset_nlsocket, g_ipset_recvbuffer, MSGBUFFER_MAXLEN, 0) < 0) {
-        LOGERR("[ipset_addr6_is_exists] failed to recv netlink msg from kernel: (%d) %s", errno, strerror(errno));
+        LOGERR("[ipset_addr%c_is_exists] failed to recv netlink msg from kernel: (%d) %s", is_ipv4 ? '4' : '6', errno, strerror(errno));
         return false;
     }
-    const struct nlmsgerr *netlink_errmsg = NLMSG_DATA(g_ipset_recvbuffer);
-    switch (netlink_errmsg->error) {
-        case 0:
-            return true; // exist
-        case IPSET_ERR_EXIST:
-            return false; // not exist
-        default:
-            LOGERR("[ipset_addr6_is_exists] received an error code from kernel: (%d) %s", netlink_errmsg->error, ipset_error_tostr(netlink_errmsg->error));
-            return false; // error occurred
+
+    int errcode = ((struct nlmsgerr *)NLMSG_DATA(g_ipset_recvbuffer))->error;
+    if (errcode == 0) {
+        return true; // exists
+    } else if (errcode == IPSET_ERR_EXIST) {
+        return false; // not exists
+    } else {
+        LOGERR("[ipset_addr%c_is_exists] received an error code from kernel: (%d) %s", is_ipv4 ? '4' : '6', errcode, ipset_error_tostr(errcode));
+        return false; // error occurred
     }
-    return false; // unachievable
 }
