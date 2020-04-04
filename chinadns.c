@@ -392,7 +392,8 @@ static void handle_remote_packet(int index) {
         return;
     }
 
-    bool is_chnip = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, true);
+    bool is_chinadns = index == CHINADNS1_IDX || index == CHINADNS2_IDX;
+    bool is_accept = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, is_chinadns);
 
     queryctx_t *context = NULL;
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
@@ -401,63 +402,47 @@ static void handle_remote_packet(int index) {
         IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_ipport);
         return;
     }
+    if (context->dnlmatch_ret != DNL_MRESULT_NOMATCH) is_accept = true;
 
-    /* used by `SEND_REPLY` */
     void *reply_buffer = NULL;
     size_t reply_length = 0;
 
-    bool is_chinadns = index == CHINADNS1_IDX || index == CHINADNS2_IDX;
-    if ((!g_fair_mode && !is_chinadns) || (context->dnlmatch_ret != DNL_MRESULT_NOMATCH)) is_chnip = true;
-
     if (is_chinadns) {
-        /* china-dns upstream */
-        if (is_chnip) {
-            /* return the china-ip, accept it */
+        if (is_accept) {
             IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_ipport);
             reply_buffer = g_socket_buffer;
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
-            /* return the other-ip, filter it */
             IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: filter", g_domain_name_buffer, remote_ipport);
             if (context->trustdns_buf) {
-                /* trust-dns returns first than china-dns */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns>, result: accept", g_domain_name_buffer);
                 reply_buffer = context->trustdns_buf + sizeof(uint16_t);
                 reply_length = *(uint16_t *)context->trustdns_buf;
                 goto SEND_REPLY;
             } else {
-                /* china-dns returns first than trust-dns */
                 context->chinadns_got = true;
                 return;
             }
-            return;
         }
     } else {
-        /* trust-dns upstream */
-        if (is_chnip || context->chinadns_got) {
-            /* return the china-ip, or china-dns returns first than trust-dns, accept it */
+        if (context->chinadns_got) {
             IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_ipport);
             reply_buffer = g_socket_buffer;
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
             if (context->trustdns_buf) {
-                /* have received another reply from trustdns before, ignore it */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_ipport);
-                return;
             } else {
-                /* trust-dns returns first than china-dns, delay it */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: delay", g_domain_name_buffer, remote_ipport);
-                context->trustdns_buf = malloc(packet_len + sizeof(uint16_t));
-                *(uint16_t *)context->trustdns_buf = packet_len;
+                context->trustdns_buf = malloc(sizeof(uint16_t) + packet_len);
+                *(uint16_t *)context->trustdns_buf = packet_len; /* dns reply length */
                 memcpy(context->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
-                return;
             }
             return;
         }
     }
-    return;
 
 SEND_REPLY:
     dns_header = reply_buffer;
