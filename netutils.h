@@ -8,9 +8,6 @@
 #include <netinet/in.h>
 #undef _GNU_SOURCE
 
-/* ipset setname max len (including '\0') */
-#define IPSET_MAXNAMELEN 32
-
 /* ipv4/ipv6 address length (binary) */
 #define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
 #define IPV6_BINADDR_LEN 16 /* 16byte, 128bit */

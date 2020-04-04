@@ -3,8 +3,10 @@
 
 #define _GNU_SOURCE
 #include <stdbool.h>
-#include "netutils.h"
 #undef _GNU_SOURCE
+
+/* ipset setname max len */
+#define IPSET_MAXNAMELEN 32 /* including '\0' */
 
 /* global variable declaration */
 extern bool g_noip_as_chnip; /* used by dnsutils.h */
