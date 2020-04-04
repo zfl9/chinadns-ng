@@ -68,7 +68,7 @@ struct nfgenmsg {
 
 /* static global variable declaration */
 static int    g_ipset_nlsocket                      = -1;
-static __u32  g_ipset_nlmsg_seq                     = 1;
+static __u32  g_ipset_nlmsg_seq                     = 0;
 static char   g_ipset_sendbuffer4[MSGBUFFER_MAXLEN] = {0};
 static char   g_ipset_sendbuffer6[MSGBUFFER_MAXLEN] = {0};
 static char   g_ipset_recvbuffer[MSGBUFFER_MAXLEN]  = {0};
