@@ -1,5 +1,5 @@
 # ChinaDNS-NG
-[ChinaDNS](https://github.com/shadowsocks/ChinaDNS) 的个人重构版本，特点：
+[ChinaDNS](https://github.com/shadowsocks/ChinaDNS) 的个人重构版本，功能简述：
 - 使用 epoll 和 ipset(netlink) 实现，性能更强。
 - 完整支持 IPv4 和 IPv6 协议，兼容 EDNS 请求和响应。
 - 手动指定国内 DNS 和可信 DNS，而非自动识别，更加可控。
