@@ -386,8 +386,9 @@ static void handle_remote_packet(int index) {
     ssize_t packet_len = recvfrom(remote_sockfd, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, NULL, NULL);
 
     if (packet_len < 0) {
-        if (errno == EAGAIN || errno == EINTR) return;
-        LOGERR("[handle_remote_packet] failed to recv data from %s: (%d) %s", remote_ipport, errno, strerror(errno));
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            LOGERR("[handle_remote_packet] failed to recv data from %s: (%d) %s", remote_ipport, errno, strerror(errno));
+        }
         return;
     }
 
