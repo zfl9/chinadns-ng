@@ -215,12 +215,12 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
     return g_noip_as_chnip; /* not found A/AAAA record */
 }
 
-/* check a dns query packet, `name_buf` used to get domain name */
+/* check dns query, `name_buf` used to get domain name, return true if valid */
 bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf) {
     return dns_packet_check(packet_buf, packet_len, name_buf, true, NULL);
 }
 
-/* check a dns reply packet, `name_buf` used to get domain name */
+/* check dns reply, `name_buf` used to get domain name, return true if accept */
 bool dns_reply_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool chk_ipset) {
     const void *answer_ptr = NULL;
     if (!dns_packet_check(packet_buf, packet_len, name_buf, false, &answer_ptr)) return false;

@@ -66,10 +66,10 @@ typedef struct {
     uint8_t  rdataptr[]; // record data pointer (sizeof=0)
 } __attribute__((packed)) dns_record_t;
 
-/* check a dns query packet, `name_buf` used to get domain name */
+/* check dns query, `name_buf` used to get domain name, return true if valid */
 bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf);
 
-/* check a dns reply packet, `name_buf` used to get domain name */
+/* check dns reply, `name_buf` used to get domain name, return true if accept */
 bool dns_reply_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool chk_ipset);
 
 #endif
