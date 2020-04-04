@@ -75,7 +75,7 @@ static bool        g_gfwlist_first                                    = true; /*
 static char        g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
 static portno_t    g_bind_port                                        = 65353;
 static skaddr6_t   g_bind_skaddr                                      = {0};
-static int         g_bind_socket                                      = -1;
+static int         g_bind_sockfd                                      = -1;
 static int         g_remote_sockfds[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
 static char        g_remote_ipports[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
 static skaddr6_t   g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
@@ -326,7 +326,7 @@ static void handle_local_packet(void) {
 
     skaddr6_t source_addr = {0};
     socklen_t source_addrlen = sizeof(skaddr6_t);
-    ssize_t packet_len = recvfrom(g_bind_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, (void *)&source_addr, &source_addrlen);
+    ssize_t packet_len = recvfrom(g_bind_sockfd, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, (void *)&source_addr, &source_addrlen);
 
     if (packet_len < 0) {
         if (errno == EAGAIN || errno == EINTR) return;
@@ -471,7 +471,7 @@ SEND_REPLY:
     dns_header = reply_buffer;
     dns_header->id = context->origin_msgid; /* replace with old msgid */
     socklen_t source_addrlen = (context->source_addr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
-    if (sendto(g_bind_socket, reply_buffer, reply_length, 0, (void *)&context->source_addr, source_addrlen) < 0) {
+    if (sendto(g_bind_sockfd, reply_buffer, reply_length, 0, (void *)&context->source_addr, source_addrlen) < 0) {
         portno_t source_port = 0;
         parse_socket_addr(&context->source_addr, g_ipaddrstring_buffer, &source_port);
         LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
@@ -520,8 +520,8 @@ int main(int argc, char *argv[]) {
     ipset_init_nlsocket();
 
     /* create listen socket */
-    g_bind_socket = new_udp_socket(g_bind_skaddr.sin6_family);
-    if (g_reuse_port) set_reuse_port(g_bind_socket);
+    g_bind_sockfd = new_udp_socket(g_bind_skaddr.sin6_family);
+    if (g_reuse_port) set_reuse_port(g_bind_sockfd);
 
     /* create remote socket */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
@@ -530,7 +530,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* bind address to listen socket */
-    if (bind(g_bind_socket, (void *)&g_bind_skaddr, (g_bind_skaddr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t))) {
+    if (bind(g_bind_sockfd, (void *)&g_bind_skaddr, (g_bind_skaddr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t))) {
         LOGERR("[main] failed to bind address to socket: (%d) %s", errno, strerror(errno));
         return errno;
     }
@@ -547,7 +547,7 @@ int main(int argc, char *argv[]) {
     /* listen socket readable event */
     ev.events = EPOLLIN;
     ev.data.u32 = BINDSOCK_MARK; /* don't care about msg id */
-    if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, g_bind_socket, &ev)) {
+    if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, g_bind_sockfd, &ev)) {
         LOGERR("[main] failed to register epoll event: (%d) %s", errno, strerror(errno));
         return errno;
     }
