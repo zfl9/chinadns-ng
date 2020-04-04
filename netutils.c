@@ -13,8 +13,9 @@
 #include <linux/netlink.h>
 #undef _GNU_SOURCE
 
+/* since linux 3.9 */
 #ifndef SO_REUSEPORT
-#define SO_REUSEPORT 15
+  #define SO_REUSEPORT 15
 #endif
 
 /* netfilter and ipset constants definition */
