@@ -54,8 +54,6 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `noip-as-chnip` 选项表示接受 qtype 为 A/AAAA 但却没有 IP 的 reply。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
-> 可信 DNS 必须经过代理来访问，否则会导致 chinadns-ng 的判断完全失效。
-
 # 工作原理
 - chinadns-ng 启动后会创建一个监听套接字，N 个上游套接字，N 为上游 DNS 数量。
 - 监听套接字用于处理本地请求客户端的 DNS 请求，以及向请求客户端发送 DNS 响应。
