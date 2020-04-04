@@ -492,16 +492,13 @@ int main(int argc, char *argv[]) {
     ipset_init_nlsocket();
 
     /* create listen socket */
-    g_bind_socket = (g_bind_skaddr.sin6_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
-    if (g_bind_skaddr.sin6_family == AF_INET6) set_ipv6_only(g_bind_socket);
+    g_bind_socket = new_udp_socket(g_bind_skaddr.sin6_family);
     if (g_reuse_port) set_reuse_port(g_bind_socket);
-    set_reuse_addr(g_bind_socket); // default enable
 
     /* create remote socket */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (!strlen(g_remote_servers[i])) continue;
-        g_remote_sockets[i] = (g_remote_skaddrs[i].sin6_family == AF_INET) ? new_udp4_socket() : new_udp6_socket();
-        if (g_remote_skaddrs[i].sin6_family == AF_INET6) set_ipv6_only(g_remote_sockets[i]);
+        g_remote_sockets[i] = new_udp_socket(g_remote_skaddrs[i].sin6_family);
     }
 
     /* bind address to listen socket */

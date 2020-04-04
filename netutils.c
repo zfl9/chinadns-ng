@@ -76,39 +76,17 @@ static void  *g_ipset_ipv6addr_ptr                  = NULL;
 static __u32 *g_ipset_nlmsg4_seq_ptr                = NULL;
 static __u32 *g_ipset_nlmsg6_seq_ptr                = NULL;
 
-/* create a udp socket (AF_INET) */
-int new_udp4_socket(void) {
-    int sockfd = socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
-    if (sockfd < 0) {
-        LOGERR("[new_udp4_socket] failed to create udp socket: (%d) %s", errno, strerror(errno));
-        exit(errno);
-    }
-    return sockfd;
-}
-
-/* create a udp socket (AF_INET6) */
-int new_udp6_socket(void) {
-    int sockfd = socket(AF_INET6, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
-    if (sockfd < 0) {
-        LOGERR("[new_udp6_socket] failed to create udp socket: (%d) %s", errno, strerror(errno));
-        exit(errno);
-    }
-    return sockfd;
-}
-
 /* setsockopt(IPV6_V6ONLY) */
-void set_ipv6_only(int sockfd) {
-    const int optval = 1;
-    if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &optval, sizeof(optval))) {
+static inline void set_ipv6_only(int sockfd) {
+    if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &(int){1}, sizeof(int))) {
         LOGERR("[set_ipv6_only] setsockopt(%d, IPV6_V6ONLY): (%d) %s", sockfd, errno, strerror(errno));
         exit(errno);
     }
 }
 
 /* setsockopt(SO_REUSEADDR) */
-void set_reuse_addr(int sockfd) {
-    const int optval = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval))) {
+static inline void set_reuse_addr(int sockfd) {
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int))) {
         LOGERR("[set_reuse_addr] setsockopt(%d, SO_REUSEADDR): (%d) %s", sockfd, errno, strerror(errno));
         exit(errno);
     }
@@ -116,11 +94,22 @@ void set_reuse_addr(int sockfd) {
 
 /* setsockopt(SO_REUSEPORT) */
 void set_reuse_port(int sockfd) {
-    const int optval = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval))) {
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int))) {
         LOGERR("[set_reuse_port] setsockopt(%d, SO_REUSEPORT): (%d) %s", sockfd, errno, strerror(errno));
         exit(errno);
     }
+}
+
+/* create a udp socket (v4/v6) */
+int new_udp_socket(int family) {
+    int sockfd = socket(family, SOCK_DGRAM | SOCK_NONBLOCK, 0); /* since Linux 2.6.27 */
+    if (sockfd < 0) {
+        LOGERR("[new_udp_socket] failed to create udp%c socket: (%d) %s", family == AF_INET ? '4' : '6', errno, strerror(errno));
+        exit(errno);
+    }
+    if (family == AF_INET6) set_ipv6_only(sockfd);
+    set_reuse_addr(sockfd);
+    return sockfd;
 }
 
 /* create a timer fd (in seconds) */

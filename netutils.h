@@ -19,20 +19,11 @@ typedef struct sockaddr_in6 skaddr6_t;
 /* socket port number typedef */
 typedef uint16_t portno_t;
 
-/* create a udp socket (AF_INET) */
-int new_udp4_socket(void);
-
-/* create a udp socket (AF_INET6) */
-int new_udp6_socket(void);
-
-/* setsockopt(IPV6_V6ONLY) */
-void set_ipv6_only(int sockfd);
-
-/* setsockopt(SO_REUSEADDR) */
-void set_reuse_addr(int sockfd);
-
 /* setsockopt(SO_REUSEPORT) */
 void set_reuse_port(int sockfd);
+
+/* create a udp socket (v4/v6) */
+int new_udp_socket(int family);
 
 /* create a timer fd (in seconds) */
 int new_once_timerfd(time_t second);
