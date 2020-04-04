@@ -146,14 +146,14 @@ int get_ipstr_family(const char *ipstr) {
 }
 
 /* build ipv4 address structure */
-static inline void build_ipv4_addr(skaddr4_t *skaddr, const char *ipstr, portno_t port) {
+static inline void build_socket_addr4(skaddr4_t *skaddr, const char *ipstr, portno_t port) {
     skaddr->sin_family = AF_INET;
     inet_pton(AF_INET, ipstr, &skaddr->sin_addr);
     skaddr->sin_port = htons(port);
 }
 
 /* build ipv6 address structure */
-static inline void build_ipv6_addr(skaddr6_t *skaddr, const char *ipstr, portno_t port) {
+static inline void build_socket_addr6(skaddr6_t *skaddr, const char *ipstr, portno_t port) {
     skaddr->sin6_family = AF_INET6;
     inet_pton(AF_INET6, ipstr, &skaddr->sin6_addr);
     skaddr->sin6_port = htons(port);
@@ -162,20 +162,20 @@ static inline void build_ipv6_addr(skaddr6_t *skaddr, const char *ipstr, portno_
 /* build v4/v6 address structure */
 void build_socket_addr(int family, void *skaddr, const char *ipstr, portno_t portno) {
     if (family == AF_INET) {
-        build_ipv4_addr(skaddr, ipstr, portno);
+        build_socket_addr4(skaddr, ipstr, portno);
     } else {
-        build_ipv6_addr(skaddr, ipstr, portno);
+        build_socket_addr6(skaddr, ipstr, portno);
     }
 }
 
 /* parse ipv4 address structure */
-static inline void parse_ipv4_addr(const skaddr4_t *skaddr, char *ipstr, portno_t *port) {
+static inline void parse_socket_addr4(const skaddr4_t *skaddr, char *ipstr, portno_t *port) {
     inet_ntop(AF_INET, &skaddr->sin_addr, ipstr, INET_ADDRSTRLEN);
     *port = ntohs(skaddr->sin_port);
 }
 
 /* parse ipv6 address structure */
-static inline void parse_ipv6_addr(const skaddr6_t *skaddr, char *ipstr, portno_t *port) {
+static inline void parse_socket_addr6(const skaddr6_t *skaddr, char *ipstr, portno_t *port) {
     inet_ntop(AF_INET6, &skaddr->sin6_addr, ipstr, INET6_ADDRSTRLEN);
     *port = ntohs(skaddr->sin6_port);
 }
@@ -183,9 +183,9 @@ static inline void parse_ipv6_addr(const skaddr6_t *skaddr, char *ipstr, portno_
 /* parse v4/v6 address structure */
 void parse_socket_addr(const void *skaddr, char *ipstr, portno_t *portno) {
     if (((const skaddr4_t *)skaddr)->sin_family == AF_INET) {
-        parse_ipv4_addr(skaddr, ipstr, portno);
+        parse_socket_addr4(skaddr, ipstr, portno);
     } else {
-        parse_ipv6_addr(skaddr, ipstr, portno);
+        parse_socket_addr6(skaddr, ipstr, portno);
     }
 }
 
