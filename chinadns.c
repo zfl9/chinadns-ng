@@ -20,8 +20,12 @@
 #include <sys/epoll.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <linux/limits.h>
 #undef _GNU_SOURCE
+
+/* limits.h */
+#ifndef PATH_MAX
+  #define PATH_MAX 4096
+#endif
 
 /* left-16-bit:MSGID; right-16-bit:IDX/MARK */
 #define CHINADNS1_IDX 0
