@@ -239,7 +239,7 @@ static void parse_command_args(int argc, char *argv[]) {
                 break;
             case 'o':
                 g_upstream_timeout_sec = strtoul(optarg, NULL, 10);
-                if (g_upstream_timeout_sec == 0) {
+                if (g_upstream_timeout_sec <= 0) {
                     printf("[parse_command_args] invalid upstream timeout sec: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
@@ -494,8 +494,9 @@ int main(int argc, char *argv[]) {
     LOGINF("[main] dns query timeout: %ld seconds", g_upstream_timeout_sec);
     if (g_gfwlist_fname) LOGINF("[main] gfwlist entries count: %zu", dnl_init(g_gfwlist_fname, true));
     if (g_chnlist_fname) LOGINF("[main] chnlist entries count: %zu", dnl_init(g_chnlist_fname, false));
-    if (g_repeat_times != 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
-    if (g_noip_as_chnip) LOGINF("[main] accept reply without ip addr");
+    if (g_gfwlist_fname && g_chnlist_fname) LOGINF("[main] %s have higher priority", g_gfwlist_first ? "gfwlist" : "chnlist");
+    if (g_repeat_times > 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
+    LOGINF("[main] %s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
     LOGINF("[main] cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
     if (g_reuse_port) LOGINF("[main] enable `SO_REUSEPORT` feature");
     if (g_verbose) LOGINF("[main] print the verbose running log");
