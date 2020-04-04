@@ -391,7 +391,6 @@ static void handle_remote_packet(int index) {
         }
         return;
     }
-
     if (packet_len < (ssize_t)sizeof(dns_header_t)) {
         LOGERR("[handle_remote_packet] received bad reply from %s, packet too small: %zd", remote_ipport, packet_len);
         return;
