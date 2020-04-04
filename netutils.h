@@ -50,12 +50,10 @@ int new_once_timerfd(time_t second);
 int get_addrstr_family(const char *addrstr);
 
 /* build ipv4/ipv6 address structure */
-void build_ipv4_addr(inet4_skaddr_t *addr, const char *host, sock_port_t port);
-void build_ipv6_addr(inet6_skaddr_t *addr, const char *host, sock_port_t port);
+void build_socket_addr(int family, void *skaddr, const char *ipstr, sock_port_t portno);
 
 /* parse ipv4/ipv6 address structure */
-void parse_ipv4_addr(const inet4_skaddr_t *addr, char *host, sock_port_t *port);
-void parse_ipv6_addr(const inet6_skaddr_t *addr, char *host, sock_port_t *port);
+void parse_socket_addr(const void *skaddr, char *ipstr, sock_port_t *portno);
 
 /* init netlink socket for ipset query */
 void ipset_init_nlsocket(void);

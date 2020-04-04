@@ -156,29 +156,47 @@ int get_addrstr_family(const char *addrstr) {
 }
 
 /* build ipv4 address structure */
-void build_ipv4_addr(inet4_skaddr_t *addr, const char *host, sock_port_t port) {
+static inline void build_ipv4_addr(inet4_skaddr_t *addr, const char *host, sock_port_t port) {
     addr->sin_family = AF_INET;
     inet_pton(AF_INET, host, &addr->sin_addr);
     addr->sin_port = htons(port);
 }
 
 /* build ipv6 address structure */
-void build_ipv6_addr(inet6_skaddr_t *addr, const char *host, sock_port_t port) {
+static inline void build_ipv6_addr(inet6_skaddr_t *addr, const char *host, sock_port_t port) {
     addr->sin6_family = AF_INET6;
     inet_pton(AF_INET6, host, &addr->sin6_addr);
     addr->sin6_port = htons(port);
 }
 
+/* build v4/v6 address structure */
+void build_socket_addr(int family, void *skaddr, const char *ipstr, sock_port_t portno) {
+    if (family == AF_INET) {
+        build_ipv4_addr(skaddr, ipstr, portno);
+    } else {
+        build_ipv6_addr(skaddr, ipstr, portno);
+    }
+}
+
 /* parse ipv4 address structure */
-void parse_ipv4_addr(const inet4_skaddr_t *addr, char *host, sock_port_t *port) {
+static inline void parse_ipv4_addr(const inet4_skaddr_t *addr, char *host, sock_port_t *port) {
     inet_ntop(AF_INET, &addr->sin_addr, host, INET_ADDRSTRLEN);
     *port = ntohs(addr->sin_port);
 }
 
 /* parse ipv6 address structure */
-void parse_ipv6_addr(const inet6_skaddr_t *addr, char *host, sock_port_t *port) {
+static inline void parse_ipv6_addr(const inet6_skaddr_t *addr, char *host, sock_port_t *port) {
     inet_ntop(AF_INET6, &addr->sin6_addr, host, INET6_ADDRSTRLEN);
     *port = ntohs(addr->sin6_port);
+}
+
+/* parse v4/v6 address structure */
+void parse_socket_addr(const void *skaddr, char *ipstr, sock_port_t *portno) {
+    if (((const inet4_skaddr_t *)skaddr)->sin_family == AF_INET) {
+        parse_ipv4_addr(skaddr, ipstr, portno);
+    } else {
+        parse_ipv6_addr(skaddr, ipstr, portno);
+    }
 }
 
 /* create ipset netlink socket */

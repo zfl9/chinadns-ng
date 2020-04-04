@@ -123,10 +123,10 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
         int index = is_chinadns ? server_cnt - 1 : server_cnt + 1;
         switch (get_addrstr_family(server_str)) {
             case AF_INET:
-                build_ipv4_addr((void *)&g_remote_skaddrs[index], server_str, server_port);
+                build_socket_addr(AF_INET, &g_remote_skaddrs[index], server_str, server_port);
                 break;
             case AF_INET6:
-                build_ipv6_addr((void *)&g_remote_skaddrs[index], server_str, server_port);
+                build_socket_addr(AF_INET6, &g_remote_skaddrs[index], server_str, server_port);
                 break;
             default:
                 printf("[parse_dns_server_opt] invalid server ip address: %s\n", server_str);
@@ -280,24 +280,20 @@ static void parse_command_args(int argc, char *argv[]) {
         printf("[parse_command_args] gfwlist:%s and chnlist:%s are both STDIN\n", g_gfwlist_fname, g_chnlist_fname);
         goto PRINT_HELP_AND_EXIT;
     }
-    if (get_addrstr_family(g_bind_addr) == AF_INET) {
-        build_ipv4_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
-    } else {
-        build_ipv6_addr((void *)&g_bind_skaddr, g_bind_addr, g_bind_port);
-    }
+    build_socket_addr(get_addrstr_family(g_bind_addr), &g_bind_skaddr, g_bind_addr, g_bind_port);
     if (chinadns_optarg) {
         char dnsserver_optstring[strlen(chinadns_optarg) + 1];
         strcpy(dnsserver_optstring, chinadns_optarg);
         parse_dns_server_opt(dnsserver_optstring, true);
     } else {
-        build_ipv4_addr((void *)&g_remote_skaddrs[CHINADNS1_IDX], "114.114.114.114", 53);
+        build_socket_addr(AF_INET, &g_remote_skaddrs[CHINADNS1_IDX], "114.114.114.114", 53);
     }
     if (trustdns_optarg) {
         char dnsserver_optstring[strlen(trustdns_optarg) + 1];
         strcpy(dnsserver_optstring, trustdns_optarg);
         parse_dns_server_opt(dnsserver_optstring, false);
     } else {
-        build_ipv4_addr((void *)&g_remote_skaddrs[TRUSTDNS1_IDX], "8.8.8.8", 53);
+        build_socket_addr(AF_INET, &g_remote_skaddrs[TRUSTDNS1_IDX], "8.8.8.8", 53);
     }
     return;
 PRINT_HELP_AND_EXIT:
@@ -326,11 +322,7 @@ static void handle_local_packet(void) {
 
     IF_VERBOSE {
         sock_port_t source_port = 0;
-        if (source_addr.sin6_family == AF_INET) {
-            parse_ipv4_addr((void *)&source_addr, g_ipaddrstring_buffer, &source_port);
-        } else {
-            parse_ipv6_addr((void *)&source_addr, g_ipaddrstring_buffer, &source_port);
-        }
+        parse_socket_addr(&source_addr, g_ipaddrstring_buffer, &source_port);
         LOGINF("[handle_local_packet] query [%s] from %s#%hu", g_domain_name_buffer, g_ipaddrstring_buffer, source_port);
     }
 
@@ -456,11 +448,7 @@ SEND_REPLY:
     socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
     if (sendto(g_bind_socket, reply_buffer, reply_length, 0, (void *)&entry->source_addr, source_addrlen) < 0) {
         sock_port_t source_port = 0;
-        if (entry->source_addr.sin6_family == AF_INET) {
-            parse_ipv4_addr((void *)&entry->source_addr, g_ipaddrstring_buffer, &source_port);
-        } else {
-            parse_ipv6_addr((void *)&entry->source_addr, g_ipaddrstring_buffer, &source_port);
-        }
+        parse_socket_addr(&entry->source_addr, g_ipaddrstring_buffer, &source_port);
         LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
     }
     free(entry->trustdns_buf);
