@@ -381,9 +381,9 @@ static void handle_local_packet(void) {
 
 /* handle remote socket readable event */
 static void handle_remote_packet(int index) {
-    int remote_socket = g_remote_sockfds[index];
+    int remote_sockfd = g_remote_sockfds[index];
     const char *remote_servers = g_remote_ipports[index];
-    ssize_t packet_len = recvfrom(remote_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, NULL, NULL);
+    ssize_t packet_len = recvfrom(remote_sockfd, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, NULL, NULL);
 
     if (packet_len < 0) {
         if (errno == EAGAIN || errno == EINTR) return;
