@@ -284,31 +284,31 @@ void ipset_init_nlsocket(void) {
 /* get a string description of the ipset error code */
 static inline const char* ipset_error_tostr(int errcode) {
     switch (errcode) {
-        case IPSET_ERR_PROTOCOL: return "IPSET_ERR_PROTOCOL";
-        case IPSET_ERR_FIND_TYPE: return "IPSET_ERR_FIND_TYPE";
-        case IPSET_ERR_MAX_SETS: return "IPSET_ERR_MAX_SETS";
-        case IPSET_ERR_BUSY: return "IPSET_ERR_BUSY";
-        case IPSET_ERR_EXIST_SETNAME2: return "IPSET_ERR_EXIST_SETNAME2";
-        case IPSET_ERR_TYPE_MISMATCH: return "IPSET_ERR_TYPE_MISMATCH";
-        case IPSET_ERR_EXIST: return "IPSET_ERR_EXIST";
-        case IPSET_ERR_INVALID_CIDR: return "IPSET_ERR_INVALID_CIDR";
-        case IPSET_ERR_INVALID_NETMASK: return "IPSET_ERR_INVALID_NETMASK";
-        case IPSET_ERR_INVALID_FAMILY: return "IPSET_ERR_INVALID_FAMILY";
-        case IPSET_ERR_INVALID_MARKMASK: return "IPSET_ERR_INVALID_MARKMASK";
-        case IPSET_ERR_TIMEOUT: return "IPSET_ERR_TIMEOUT";
-        case IPSET_ERR_REFERENCED: return "IPSET_ERR_REFERENCED";
-        case IPSET_ERR_IPADDR_IPV4: return "IPSET_ERR_IPADDR_IPV4";
-        case IPSET_ERR_IPADDR_IPV6: return "IPSET_ERR_IPADDR_IPV6";
-        case IPSET_ERR_COUNTER: return "IPSET_ERR_COUNTER";
-        case IPSET_ERR_COMMENT: return "IPSET_ERR_COMMENT";
-        case IPSET_ERR_SKBINFO: return "IPSET_ERR_SKBINFO";
-        case IPSET_ERR_HASH_FULL: return "IPSET_ERR_HASH_FULL";
-        case IPSET_ERR_HASH_ELEM: return "IPSET_ERR_HASH_ELEM";
-        case IPSET_ERR_INVALID_PROTO: return "IPSET_ERR_INVALID_PROTO";
-        case IPSET_ERR_MISSING_PROTO: return "IPSET_ERR_MISSING_PROTO";
+        case IPSET_ERR_PROTOCOL:               return "IPSET_ERR_PROTOCOL";
+        case IPSET_ERR_FIND_TYPE:              return "IPSET_ERR_FIND_TYPE";
+        case IPSET_ERR_MAX_SETS:               return "IPSET_ERR_MAX_SETS";
+        case IPSET_ERR_BUSY:                   return "IPSET_ERR_BUSY";
+        case IPSET_ERR_EXIST_SETNAME2:         return "IPSET_ERR_EXIST_SETNAME2";
+        case IPSET_ERR_TYPE_MISMATCH:          return "IPSET_ERR_TYPE_MISMATCH";
+        case IPSET_ERR_EXIST:                  return "IPSET_ERR_EXIST";
+        case IPSET_ERR_INVALID_CIDR:           return "IPSET_ERR_INVALID_CIDR";
+        case IPSET_ERR_INVALID_NETMASK:        return "IPSET_ERR_INVALID_NETMASK";
+        case IPSET_ERR_INVALID_FAMILY:         return "IPSET_ERR_INVALID_FAMILY";
+        case IPSET_ERR_INVALID_MARKMASK:       return "IPSET_ERR_INVALID_MARKMASK";
+        case IPSET_ERR_TIMEOUT:                return "IPSET_ERR_TIMEOUT";
+        case IPSET_ERR_REFERENCED:             return "IPSET_ERR_REFERENCED";
+        case IPSET_ERR_IPADDR_IPV4:            return "IPSET_ERR_IPADDR_IPV4";
+        case IPSET_ERR_IPADDR_IPV6:            return "IPSET_ERR_IPADDR_IPV6";
+        case IPSET_ERR_COUNTER:                return "IPSET_ERR_COUNTER";
+        case IPSET_ERR_COMMENT:                return "IPSET_ERR_COMMENT";
+        case IPSET_ERR_SKBINFO:                return "IPSET_ERR_SKBINFO";
+        case IPSET_ERR_HASH_FULL:              return "IPSET_ERR_HASH_FULL";
+        case IPSET_ERR_HASH_ELEM:              return "IPSET_ERR_HASH_ELEM";
+        case IPSET_ERR_INVALID_PROTO:          return "IPSET_ERR_INVALID_PROTO";
+        case IPSET_ERR_MISSING_PROTO:          return "IPSET_ERR_MISSING_PROTO";
         case IPSET_ERR_HASH_RANGE_UNSUPPORTED: return "IPSET_ERR_HASH_RANGE_UNSUPPORTED";
-        case IPSET_ERR_HASH_RANGE: return "IPSET_ERR_HASH_RANGE";
-        default: return strerror(-errcode);
+        case IPSET_ERR_HASH_RANGE:             return "IPSET_ERR_HASH_RANGE";
+        default:                               return strerror(-errcode);
     }
 }
 
