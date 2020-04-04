@@ -473,8 +473,8 @@ SEND_REPLY:
         LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
     }
     MYHASH_DEL(g_query_context_hashtbl, context);
-    free(context->trustdns_buf);
     close(context->query_timerfd);
+    free(context->trustdns_buf);
     free(context);
 }
 
@@ -484,9 +484,9 @@ static void handle_timeout_event(uint16_t msg_id) {
     MYHASH_GET(g_query_context_hashtbl, context, &msg_id, sizeof(msg_id));
     if (!context) return; /* due to timing issues, the query context has actually been released */
     LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
-    MYHASH_DEL(g_query_context_hashtbl, context); /* delete context from the hashtbl */
-    free(context->trustdns_buf); /* release the buffer that stores the trust-dns reply */
+    MYHASH_DEL(g_query_context_hashtbl, context); /* delete query context from the hashtable */
     close(context->query_timerfd); /* epoll will automatically remove the associated event */
+    free(context->trustdns_buf); /* release the buffer that stores the trust-dns reply */
     free(context);
 }
 
