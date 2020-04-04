@@ -392,11 +392,6 @@ static void handle_remote_packet(int index) {
         return;
     }
 
-    if (packet_len < (ssize_t)sizeof(dns_header_t) + (ssize_t)sizeof(dns_query_t) + 1) {
-        LOGERR("[handle_remote_packet] received bad packet from %s, packet too small: %zd", remote_ipport, packet_len);
-        return;
-    }
-
     bool is_chnip = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, true);
 
     queryctx_t *context = NULL;
