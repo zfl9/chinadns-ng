@@ -15,7 +15,7 @@
 #define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
 #define IPV6_BINADDR_LEN 16 /* 16byte, 128bit */
 
-/* uniform struct sockaddr_* name */
+/* struct sockaddr_* typedef */
 typedef struct sockaddr_in  skaddr4_t;
 typedef struct sockaddr_in6 skaddr6_t;
 
