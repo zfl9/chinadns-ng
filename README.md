@@ -78,7 +78,7 @@ ipset -R <chnroute6.ipset
 ```
 > 只要没有显式的从内核删除 ipset 集合，那么下次运行时就不需要再次导入了。
 
-然后运行 chinadns-ng，我是配置了全局代理的，所以 `8.8.8.8` 会走代理出去。
+然后运行 chinadns-ng，注意我是配置了全局代理的，所以 `8.8.8.8` 会走代理出去。
 ```bash
 $ chinadns-ng -v
 2019-07-28 09:26:39 INF: [main] local listen addr: 127.0.0.1#65353
