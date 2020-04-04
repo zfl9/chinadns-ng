@@ -356,7 +356,7 @@ static void handle_local_packet(void) {
         return;
     }
 
-    hashmap_put(&g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, dnlmatch_ret, &source_addr);
+    hashmap_add(&g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, dnlmatch_ret, &source_addr);
 }
 
 /* handle remote socket readable event */

@@ -18,8 +18,8 @@ typedef struct {
     myhash_hh      hh;            /* metadata, used internally by uthash */
 } hashmap_t, hashentry_t;
 
-/* put key and value to hashmap */
-hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, uint8_t dnlmatch_ret, const skaddr6_t *source_addr);
+/* add key and value to hashmap */
+void hashmap_add(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, uint8_t dnlmatch_ret, const skaddr6_t *source_addr);
 
 /* get entry_ptr by unique_msgid */
 hashentry_t* hashmap_get(const hashmap_t *hashmap, uint16_t unique_msgid);
