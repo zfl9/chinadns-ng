@@ -73,7 +73,7 @@ static bool        g_gfwlist_first                                    = true; /*
        char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
 static char        g_bind_ipstr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
-static portno_t    g_bind_port                                        = 65353;
+static portno_t    g_bind_portno                                        = 65353;
 static skaddr6_t   g_bind_skaddr                                      = {0};
 static int         g_bind_sockfd                                      = -1;
 static int         g_remote_sockfds[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
@@ -202,8 +202,8 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] port number max length is 5: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
-                g_bind_port = strtol(optarg, NULL, 10);
-                if (g_bind_port == 0) {
+                g_bind_portno = strtol(optarg, NULL, 10);
+                if (g_bind_portno == 0) {
                     printf("[parse_command_args] invalid listen port number: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
@@ -296,7 +296,7 @@ static void parse_command_args(int argc, char *argv[]) {
         printf("[parse_command_args] gfwlist:%s and chnlist:%s are both STDIN\n", g_gfwlist_fname, g_chnlist_fname);
         goto PRINT_HELP_AND_EXIT;
     }
-    build_socket_addr(get_ipstr_family(g_bind_ipstr), &g_bind_skaddr, g_bind_ipstr, g_bind_port);
+    build_socket_addr(get_ipstr_family(g_bind_ipstr), &g_bind_skaddr, g_bind_ipstr, g_bind_portno);
     if (chinadns_optarg) {
         char dnsserver_optstring[strlen(chinadns_optarg) + 1];
         strcpy(dnsserver_optstring, chinadns_optarg);
@@ -500,7 +500,7 @@ int main(int argc, char *argv[]) {
     parse_command_args(argc, argv);
 
     /* show startup information */
-    LOGINF("[main] local listen addr: %s#%hu", g_bind_ipstr, g_bind_port);
+    LOGINF("[main] local listen addr: %s#%hu", g_bind_ipstr, g_bind_portno);
     if (strlen(g_remote_ipports[CHINADNS1_IDX])) LOGINF("[main] chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
     if (strlen(g_remote_ipports[CHINADNS2_IDX])) LOGINF("[main] chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
     if (strlen(g_remote_ipports[TRUSTDNS1_IDX])) LOGINF("[main] trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
