@@ -375,7 +375,7 @@ static void handle_local_packet(void) {
     context->trustdns_buf = NULL;
     context->chinadns_got = false;
     context->dnlmatch_ret = dnlmatch_ret;
-    memcpy(&context->source_addr, &source_addr, sizeof(source_addr));
+    memcpy(&context->source_addr, &source_addr, source_addrlen);
     MYHASH_ADD(g_query_context_hashtbl, context, &context->unique_msgid, sizeof(context->unique_msgid));
 }
 
