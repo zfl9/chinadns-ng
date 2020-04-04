@@ -177,8 +177,8 @@ static void parse_command_args(int argc, char *argv[]) {
     opterr = 0;
     int optindex = -1;
     int shortopt = -1;
-    char *chinadns_optarg = NULL;
-    char *trustdns_optarg = NULL;
+    const char *chinadns_optarg = NULL;
+    const char *trustdns_optarg = NULL;
     while ((shortopt = getopt_long(argc, argv, optstr, options, &optindex)) != -1) {
         switch (shortopt) {
             case 'b':
