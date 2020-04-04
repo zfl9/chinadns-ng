@@ -77,7 +77,7 @@ static portno_t    g_bind_port                                        = 65353;
 static skaddr6_t   g_bind_skaddr                                      = {0};
 static int         g_bind_socket                                      = -1;
 static int         g_remote_sockfds[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
-static char        g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
+static char        g_remote_ipports[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
 static skaddr6_t   g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
 static char        g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
 static time_t      g_upstream_timeout_sec                             = 5;
@@ -148,7 +148,7 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
                 printf("[parse_dns_server_opt] invalid server ip address: %s\n", server_str);
                 goto PRINT_HELP_AND_EXIT;
         }
-        sprintf(g_remote_servers[index], "%s#%hu", server_str, server_port);
+        sprintf(g_remote_ipports[index], "%s#%hu", server_str, server_port);
     }
     return;
 PRINT_HELP_AND_EXIT:
@@ -359,7 +359,7 @@ static void handle_local_packet(void) {
         socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
         for (int j = 0; j < repeat_times; ++j) {
             if (sendto(g_remote_sockfds[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
-                LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
+                LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_ipports[i], errno, strerror(errno));
             }
         }
     }
@@ -386,7 +386,7 @@ static void handle_local_packet(void) {
 /* handle remote socket readable event */
 static void handle_remote_packet(int index) {
     int remote_socket = g_remote_sockfds[index];
-    const char *remote_servers = g_remote_servers[index];
+    const char *remote_servers = g_remote_ipports[index];
     ssize_t packet_len = recvfrom(remote_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, NULL, NULL);
 
     if (packet_len < 0) {
@@ -501,10 +501,10 @@ int main(int argc, char *argv[]) {
 
     /* show startup information */
     LOGINF("[main] local listen addr: %s#%hu", g_bind_addr, g_bind_port);
-    if (strlen(g_remote_servers[CHINADNS1_IDX])) LOGINF("[main] chinadns server#1: %s", g_remote_servers[CHINADNS1_IDX]);
-    if (strlen(g_remote_servers[CHINADNS2_IDX])) LOGINF("[main] chinadns server#2: %s", g_remote_servers[CHINADNS2_IDX]);
-    if (strlen(g_remote_servers[TRUSTDNS1_IDX])) LOGINF("[main] trustdns server#1: %s", g_remote_servers[TRUSTDNS1_IDX]);
-    if (strlen(g_remote_servers[TRUSTDNS2_IDX])) LOGINF("[main] trustdns server#2: %s", g_remote_servers[TRUSTDNS2_IDX]);
+    if (strlen(g_remote_ipports[CHINADNS1_IDX])) LOGINF("[main] chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
+    if (strlen(g_remote_ipports[CHINADNS2_IDX])) LOGINF("[main] chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
+    if (strlen(g_remote_ipports[TRUSTDNS1_IDX])) LOGINF("[main] trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
+    if (strlen(g_remote_ipports[TRUSTDNS2_IDX])) LOGINF("[main] trustdns server#2: %s", g_remote_ipports[TRUSTDNS2_IDX]);
     LOGINF("[main] ipset ip4 setname: %s", g_ipset_setname4);
     LOGINF("[main] ipset ip6 setname: %s", g_ipset_setname6);
     LOGINF("[main] dns query timeout: %ld seconds", g_upstream_timeout_sec);
@@ -525,7 +525,7 @@ int main(int argc, char *argv[]) {
 
     /* create remote socket */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
-        if (!strlen(g_remote_servers[i])) continue;
+        if (!strlen(g_remote_ipports[i])) continue;
         g_remote_sockfds[i] = new_udp_socket(g_remote_skaddrs[i].sin6_family);
     }
 
@@ -580,16 +580,16 @@ int main(int argc, char *argv[]) {
                 /* an error occurred */
                 switch (curr_data & IDX_MARK_MASK) {
                     case CHINADNS1_IDX:
-                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[CHINADNS1_IDX], errno, strerror(errno));
+                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_ipports[CHINADNS1_IDX], errno, strerror(errno));
                         break;
                     case CHINADNS2_IDX:
-                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[CHINADNS2_IDX], errno, strerror(errno));
+                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_ipports[CHINADNS2_IDX], errno, strerror(errno));
                         break;
                     case TRUSTDNS1_IDX:
-                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[TRUSTDNS1_IDX], errno, strerror(errno));
+                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_ipports[TRUSTDNS1_IDX], errno, strerror(errno));
                         break;
                     case TRUSTDNS2_IDX:
-                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_servers[TRUSTDNS2_IDX], errno, strerror(errno));
+                        LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_ipports[TRUSTDNS2_IDX], errno, strerror(errno));
                         break;
                     case BINDSOCK_MARK:
                         LOGERR("[main] local udp listen socket error: (%d) %s", errno, strerror(errno));
