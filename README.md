@@ -86,7 +86,7 @@ $ chinadns-ng -v
 2019-07-28 09:26:39 INF: [main] trustdns server#1: 8.8.8.8#53
 2019-07-28 09:26:39 INF: [main] ipset ip4 setname: chnroute
 2019-07-28 09:26:39 INF: [main] ipset ip6 setname: chnroute6
-2019-07-28 09:26:39 INF: [main] dns query timeout: 3 seconds
+2019-07-28 09:26:39 INF: [main] dns query timeout: 5 seconds
 2019-07-28 09:26:39 INF: [main] print the verbose running log
 ```
 
