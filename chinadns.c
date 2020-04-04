@@ -43,7 +43,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0.0 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.21 <https://github.com/zfl9/chinadns-ng>"
 
 /* is enable verbose logging */
 #define IF_VERBOSE if (g_verbose)
@@ -324,8 +324,9 @@ static void handle_local_packet(void) {
     ssize_t packet_len = recvfrom(g_bind_sockfd, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, (void *)&source_addr, &source_addrlen);
 
     if (packet_len < 0) {
-        if (errno == EAGAIN || errno == EINTR) return;
-        LOGERR("[handle_local_packet] failed to recv data from bind socket: (%d) %s", errno, strerror(errno));
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            LOGERR("[handle_local_packet] failed to recv data from bind socket: (%d) %s", errno, strerror(errno));
+        }
         return;
     }
 
@@ -372,7 +373,7 @@ static void handle_local_packet(void) {
     context->origin_msgid = origin_msgid;
     context->query_timerfd = query_timerfd;
     context->trustdns_buf = NULL;
-    context->chinadns_got = false;
+    context->chinadns_got = !g_fair_mode;
     context->dnlmatch_ret = dnlmatch_ret;
     memcpy(&context->source_addr, &source_addr, sizeof(source_addr));
     MYHASH_ADD(g_query_context_hashtbl, context, &context->unique_msgid, sizeof(context->unique_msgid));
