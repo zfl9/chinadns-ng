@@ -145,7 +145,7 @@ int new_once_timerfd(time_t second) {
 /* AF_INET or AF_INET6 or -1(invalid) */
 int get_addrstr_family(const char *addrstr) {
     if (!addrstr) return -1;
-    inet6_ipaddr_t addrbin; /* save ipv4 and ipv6 addr */
+    char addrbin[IPV6_BINADDR_LEN]; /* v4 or v6 */
     if (inet_pton(AF_INET, addrstr, &addrbin) == 1) {
         return AF_INET;
     } else if (inet_pton(AF_INET6, addrstr, &addrbin) == 1) {
@@ -275,7 +275,7 @@ static void ipset_prebuild_nlmsg(bool is_ipv4) {
 
     /* ipset_ip attr */
     struct nlattr *ipset_ip_attr = buffer + netlink_msg->nlmsg_len;
-    ipset_ip_attr->nla_len = NLMSG_ALIGN(sizeof(struct nlattr)) + (is_ipv4 ? sizeof(inet4_ipaddr_t) : sizeof(inet6_ipaddr_t));
+    ipset_ip_attr->nla_len = NLMSG_ALIGN(sizeof(struct nlattr)) + (is_ipv4 ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN);
     ipset_ip_attr->nla_type = (is_ipv4 ? IPSET_ATTR_IPADDR_IPV4 : IPSET_ATTR_IPADDR_IPV6) | NLA_F_NET_BYTEORDER;
     if (is_ipv4) g_ipset_ipv4addr_ptr = (void *)&ipset_ip_attr->nla_type + sizeof(ipset_ip_attr->nla_type); // ptr for set ipv4 addr
     if (!is_ipv4) g_ipset_ipv6addr_ptr = (void *)&ipset_ip_attr->nla_type + sizeof(ipset_ip_attr->nla_type); // ptr for set ipv6 addr
@@ -323,8 +323,8 @@ static inline const char* ipset_error_tostr(int errcode) {
 }
 
 /* check given ipaddr is exists in ipset */
-bool ipset_addr4_is_exists(const inet4_ipaddr_t *addr_ptr) {
-    memcpy(g_ipset_ipv4addr_ptr, addr_ptr, sizeof(inet4_ipaddr_t));
+bool ipset_addr4_is_exists(const void *addr_ptr) {
+    memcpy(g_ipset_ipv4addr_ptr, addr_ptr, IPV4_BINADDR_LEN);
     *g_ipset_nlmsg4_seq_ptr = g_ipset_nlmsg_seq++;
     const struct nlmsghdr *netlink_msg = (struct nlmsghdr *)g_ipset_sendbuffer4;
     if (send(g_ipset_nlsocket, g_ipset_sendbuffer4, netlink_msg->nlmsg_len, 0) < 0) {
@@ -349,8 +349,8 @@ bool ipset_addr4_is_exists(const inet4_ipaddr_t *addr_ptr) {
 }
 
 /* check given ipaddr is exists in ipset */
-bool ipset_addr6_is_exists(const inet6_ipaddr_t *addr_ptr) {
-    memcpy(g_ipset_ipv6addr_ptr, addr_ptr, sizeof(inet6_ipaddr_t));
+bool ipset_addr6_is_exists(const void *addr_ptr) {
+    memcpy(g_ipset_ipv6addr_ptr, addr_ptr, IPV6_BINADDR_LEN);
     *g_ipset_nlmsg6_seq_ptr = g_ipset_nlmsg_seq++;
     const struct nlmsghdr *netlink_msg = (struct nlmsghdr *)g_ipset_sendbuffer6;
     if (send(g_ipset_nlsocket, g_ipset_sendbuffer6, netlink_msg->nlmsg_len, 0) < 0) {

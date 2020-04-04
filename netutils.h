@@ -11,15 +11,9 @@
 /* ipset setname max len (including '\0') */
 #define IPSET_MAXNAMELEN 32
 
-/* ipv4 binary addr typedef */
-typedef struct __attribute__((packed)) {
-    uint32_t addr;
-} inet4_ipaddr_t;
-
-/* ipv6 binary addr typedef */
-typedef struct __attribute__((packed)) {
-    uint8_t addr[16];
-} inet6_ipaddr_t;
+/* ipv4/ipv6 address length (binary) */
+#define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
+#define IPV6_BINADDR_LEN 16 /* 16byte, 128bit */
 
 /* uniform struct sockaddr_* name */
 typedef struct sockaddr_in  inet4_skaddr_t;
@@ -59,7 +53,7 @@ void parse_socket_addr(const void *skaddr, char *ipstr, sock_port_t *portno);
 void ipset_init_nlsocket(void);
 
 /* check given ipaddr is exists in ipset */
-bool ipset_addr4_is_exists(const inet4_ipaddr_t *addr_ptr);
-bool ipset_addr6_is_exists(const inet6_ipaddr_t *addr_ptr);
+bool ipset_addr4_is_exists(const void *addr_ptr);
+bool ipset_addr6_is_exists(const void *addr_ptr);
 
 #endif
