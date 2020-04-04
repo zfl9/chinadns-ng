@@ -19,7 +19,7 @@ hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t or
 }
 
 /* get entry_ptr by unique_msgid */
-hashentry_t* hashmap_get(hashmap_t *hashmap, uint16_t unique_msgid) {
+hashentry_t* hashmap_get(const hashmap_t *hashmap, uint16_t unique_msgid) {
     hashentry_t *hashentry = NULL;
     MYHASH_GET(hashmap, hashentry, &unique_msgid, sizeof(unique_msgid));
     return hashentry;

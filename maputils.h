@@ -22,7 +22,7 @@ typedef struct {
 hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, uint8_t dnlmatch_ret, const skaddr6_t *source_addr);
 
 /* get entry_ptr by unique_msgid */
-hashentry_t* hashmap_get(hashmap_t *hashmap, uint16_t unique_msgid);
+hashentry_t* hashmap_get(const hashmap_t *hashmap, uint16_t unique_msgid);
 
 /* delete and free the entry from hashmap */
 void hashmap_del(hashmap_t **hashmap, hashentry_t *hashentry);
