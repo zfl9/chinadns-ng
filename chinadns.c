@@ -72,7 +72,7 @@ static bool        g_gfwlist_first                                    = true; /*
        bool        g_noip_as_chnip                                    = false; /* default: see as not-china-ip */
        char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
-static char        g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
+static char        g_bind_ipstr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
 static portno_t    g_bind_port                                        = 65353;
 static skaddr6_t   g_bind_skaddr                                      = {0};
 static int         g_bind_sockfd                                      = -1;
@@ -195,7 +195,7 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] invalid listen ip address: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
-                strcpy(g_bind_addr, optarg);
+                strcpy(g_bind_ipstr, optarg);
                 break;
             case 'l':
                 if (strlen(optarg) + 1 > PORTSTR_MAXLEN) {
@@ -296,7 +296,7 @@ static void parse_command_args(int argc, char *argv[]) {
         printf("[parse_command_args] gfwlist:%s and chnlist:%s are both STDIN\n", g_gfwlist_fname, g_chnlist_fname);
         goto PRINT_HELP_AND_EXIT;
     }
-    build_socket_addr(get_ipstr_family(g_bind_addr), &g_bind_skaddr, g_bind_addr, g_bind_port);
+    build_socket_addr(get_ipstr_family(g_bind_ipstr), &g_bind_skaddr, g_bind_ipstr, g_bind_port);
     if (chinadns_optarg) {
         char dnsserver_optstring[strlen(chinadns_optarg) + 1];
         strcpy(dnsserver_optstring, chinadns_optarg);
@@ -500,7 +500,7 @@ int main(int argc, char *argv[]) {
     parse_command_args(argc, argv);
 
     /* show startup information */
-    LOGINF("[main] local listen addr: %s#%hu", g_bind_addr, g_bind_port);
+    LOGINF("[main] local listen addr: %s#%hu", g_bind_ipstr, g_bind_port);
     if (strlen(g_remote_ipports[CHINADNS1_IDX])) LOGINF("[main] chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
     if (strlen(g_remote_ipports[CHINADNS2_IDX])) LOGINF("[main] chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
     if (strlen(g_remote_ipports[TRUSTDNS1_IDX])) LOGINF("[main] trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
