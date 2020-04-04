@@ -43,9 +43,9 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.20 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0.0 <https://github.com/zfl9/chinadns-ng>"
 
-/* whether it is a verbose mode */
+/* is enable verbose logging */
 #define IF_VERBOSE if (g_verbose)
 
 /* dns query context structure */
@@ -61,30 +61,30 @@ typedef struct {
 } queryctx_t;
 
 /* static global variable declaration */
-static int             g_epollfd                                          = -1;
-static bool            g_verbose                                          = false;
-static bool            g_reuse_port                                       = false;
-static bool            g_fair_mode                                        = false; /* default: fast-mode */
-static uint8_t         g_repeat_times                                     = 1; /* used by trust-dns only */
-static const char     *g_gfwlist_fname                                    = NULL; /* gfwlist dnamelist filename */
-static const char     *g_chnlist_fname                                    = NULL; /* chnlist dnamelist filename */
-static bool            g_gfwlist_first                                    = true; /* match gfwlist dnamelist first */
-       bool            g_noip_as_chnip                                    = false; /* default: see as not-chnip */
-       char            g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
-       char            g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
-static char            g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
-static portno_t        g_bind_port                                        = 65353;
-static skaddr6_t       g_bind_skaddr                                      = {0};
-static int             g_bind_socket                                      = -1;
-static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
-static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
-static skaddr6_t       g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
-static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
-static time_t          g_upstream_timeout_sec                             = 5;
-static uint16_t        g_current_unique_msgid                             = 0;
-static queryctx_t     *g_query_context_hashtbl                            = NULL;
-static char            g_domain_name_buffer[DNS_DOMAIN_NAME_MAXLEN]       = {0};
-static char            g_ipaddrstring_buffer[INET6_ADDRSTRLEN]            = {0};
+static int         g_epollfd                                          = -1;
+static bool        g_verbose                                          = false;
+static bool        g_reuse_port                                       = false;
+static bool        g_fair_mode                                        = false; /* default: fast-mode */
+static uint8_t     g_repeat_times                                     = 1; /* used by trust-dns only */
+static const char *g_gfwlist_fname                                    = NULL; /* gfwlist dnamelist filename */
+static const char *g_chnlist_fname                                    = NULL; /* chnlist dnamelist filename */
+static bool        g_gfwlist_first                                    = true; /* match gfwlist dnamelist first */
+       bool        g_noip_as_chnip                                    = false; /* default: see as not-chnip */
+       char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
+       char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
+static char        g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
+static portno_t    g_bind_port                                        = 65353;
+static skaddr6_t   g_bind_skaddr                                      = {0};
+static int         g_bind_socket                                      = -1;
+static int         g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
+static char        g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
+static skaddr6_t   g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
+static char        g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
+static time_t      g_upstream_timeout_sec                             = 5;
+static uint16_t    g_current_unique_msgid                             = 0;
+static queryctx_t *g_query_context_hashtbl                            = NULL;
+static char        g_domain_name_buffer[DNS_DOMAIN_NAME_MAXLEN]       = {0};
+static char        g_ipaddrstring_buffer[INET6_ADDRSTRLEN]            = {0};
 
 /* print command help information */
 static void print_command_help(void) {
