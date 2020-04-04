@@ -46,14 +46,14 @@
 
 /* dns query context structure */
 typedef struct {
-    uint16_t   unique_msgid;  /* [key]   globally unique msgid */
+    uint16_t   unique_msgid;  /* [key] globally unique msgid */
     uint16_t   origin_msgid;  /* [value] associated original msgid */
-    int        query_timerfd; /* [value] dns query timeout timerfd */
+    int        query_timerfd; /* [value] dns query timeout timer-fd */
     void      *trustdns_buf;  /* [value] storage reply from trust-dns */
     bool       chinadns_got;  /* [value] received reply from china-dns */
     uint8_t    dnlmatch_ret;  /* [value] dnl_ismatch(dname) ret-value */
     skaddr6_t  source_addr;   /* [value] associated client socket addr */
-    myhash_hh  hh;            /* [metadata], used internally by uthash */
+    myhash_hh  hh;            /* [metadata] used internally by `uthash` */
 } queryctx_t;
 
 /* static global variable declaration */
