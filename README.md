@@ -57,7 +57,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 # 工作原理
 - chinadns-ng 启动后会创建一个监听套接字，N 个上游套接字，N 为上游 DNS 数量。
 - 监听套接字用于处理本地请求客户端的 DNS 请求，以及向请求客户端发送 DNS 响应。
-- 上游套接字用于向上游 DNS 服务器发送 DNS 请求，以及接收上游服务器返回的 DNS 响应。
+- 上游套接字用于向上游 DNS 服务器发送 DNS 请求，以及从上游服务器接收 DNS 响应。
 - 当从监听套接字收到请求客户端的 DNS 查询时，将按照如下逻辑转发给对应上游 DNS：
   - 如果启用了黑名单(gfwlist)且查询的域名命中了黑名单，则将该请求转发给可信 DNS。
   - 如果启用了白名单(chnlist)且查询的域名命中了白名单，则将该请求转发给国内 DNS。
