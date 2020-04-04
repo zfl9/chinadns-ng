@@ -80,7 +80,7 @@ ipset -R <chnroute6.ipset
 ```
 > 只要没有显式的从内核删除 ipset 集合，那么下次运行时就不需要再次导入了。
 
-然后在 shell 中运行 chinadns-ng，注意你需要先确保可信 DNS 的访问会走代理：
+然后运行 chinadns-ng，我是配置了全局代理的，所以 `8.8.8.8` 会走代理出去。
 ```bash
 $ chinadns-ng -v
 2019-07-28 09:26:39 INF: [main] local listen addr: 127.0.0.1#65353
@@ -253,7 +253,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 7、如果 trust-dns 上游存在丢包的情况（特别是 udp-based 类型的代理隧道），可以使用 `--repeat-times` 选项进行一定的缓解。比如设置为 3，则表示：chinadns-ng 从客户端收到一个 query 包后，会同时向 trust-dns 发送 3 个相同的 query 包，向 china-dns 发送 1 个 query 包（所以该选项仅针对 trust-dns）。也就是所谓的 **多倍发包**、**重复发包**，并没有其它魔力。
 
-8、chinadns-ng 原则上只为替代原版 chinadns，非必要的新功能暂不打算实现；目前个人的用法是：dnsmasq 在前，chinadns-ng 在后；dnsmasq 做 DNS 缓存、ipset（将特定域名解析出来的 IP 动态添加至 ipset 集合，便于 iptables 操作）；chinadns-ng 则作为 dnsmasq 的上游服务器，提供无污染的 DNS 解析服务。
+8、chinadns-ng 原则上只为替代原版 chinadns，非必要的新功能暂不打算实现；目前个人的用法是：dnsmasq 在前，chinadns-ng 在后；dnsmasq 做 DNS 缓存、ipset（将特定域名解析出来的 IP 动态添加至 ipset 集合，便于 iptables 操作）、以及相关附加服务（如 DHCP）；chinadns-ng 则作为 dnsmasq 的上游服务器，配合 ss-tproxy 透明代理，提供无污染的 DNS 解析服务。
 
 9、如何更新 gfwlist.txt？进入项目根目录执行 `./update-gfwlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt` 文件的行数，一般有 5000+ 行，然后重新启动 chinadns-ng 生效。chnlist.txt 的更新处理也是一样的，也可以自己定制 gfwlist.txt 和 chnlist.txt，看个人喜好。
 
