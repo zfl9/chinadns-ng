@@ -17,45 +17,9 @@
 #define DNS_DNAME_LABEL_MAXLEN 63 /* domain-name label maxlen */
 #define DNS_DNAME_COMPRESSION_MINVAL 192 /* domain-name compression minval */
 
-/* check query packet header */
-static inline bool dns_qheader_check(const void *packet_buf) {
-    const dns_header_t *header = packet_buf;
-    if (header->qr != DNS_QR_QUERY) {
-        LOGERR("[dns_qheader_check] this is a query packet, but header->qr != 0");
-        return false;
-    }
-    if (header->opcode != DNS_OPCODE_QUERY) {
-        LOGERR("[dns_qheader_check] this is not a standard query, opcode: %hhu", header->opcode);
-        return false;
-    }
-    if (ntohs(header->question_count) != 1) {
-        LOGERR("[dns_qheader_check] there should be one and only one question section");
-        return false;
-    }
-    return true;
-}
-
-/* check reply packet header */
-static inline bool dns_rheader_check(const void *packet_buf) {
-    const dns_header_t *header = packet_buf;
-    if (header->qr != DNS_QR_REPLY) {
-        LOGERR("[dns_rheader_check] this is a reply packet, but header->qr != 1");
-        return false;
-    }
-    if (header->opcode != DNS_OPCODE_QUERY) {
-        LOGERR("[dns_rheader_check] this is not a standard query, opcode: %hhu", header->opcode);
-        return false;
-    }
-    if (ntohs(header->question_count) != 1) {
-        LOGERR("[dns_rheader_check] there should be one and only one question section");
-        return false;
-    }
-    return true;
-}
-
 /* check dns packet */
 static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool is_query, const void **answer_ptr) {
-    /* check packet length */ 
+    /* check packet length */
     if (packet_len < (ssize_t)sizeof(dns_header_t) + (ssize_t)sizeof(dns_query_t) + 1) {
         LOGERR("[dns_packet_check] the dns packet is too small: %zd", packet_len);
         return false;
@@ -66,8 +30,19 @@ static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *n
     }
 
     /* check packet header */
-    if (is_query) if (!dns_qheader_check(packet_buf)) return false;
-    if (!is_query) if (!dns_rheader_check(packet_buf)) return false;
+    const dns_header_t *header = packet_buf;
+    if (header->qr != (is_query ? DNS_QR_QUERY : DNS_QR_REPLY)) {
+        LOGERR("[dns_packet_check] this is a %s packet, but header->qr != %d", is_query ? "query" : "reply", is_query ? DNS_QR_QUERY : DNS_QR_REPLY);
+        return false;
+    }
+    if (header->opcode != DNS_OPCODE_QUERY) {
+        LOGERR("[dns_packet_check] this is not a standard query, opcode: %hhu", header->opcode);
+        return false;
+    }
+    if (ntohs(header->question_count) != 1) {
+        LOGERR("[dns_packet_check] there should be one and only one question section");
+        return false;
+    }
 
     /* move ptr to question section */
     packet_buf += sizeof(dns_header_t);
