@@ -126,7 +126,7 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
                 printf("[parse_dns_server_opt] port number max length is 5: %s\n", hashsign_ptr);
                 goto PRINT_HELP_AND_EXIT;
             }
-            server_port = strtol(hashsign_ptr, NULL, 10);
+            server_port = strtoul(hashsign_ptr, NULL, 10);
             if (server_port == 0) {
                 printf("[parse_dns_server_opt] invalid server port number: %s\n", hashsign_ptr);
                 goto PRINT_HELP_AND_EXIT;
@@ -202,7 +202,7 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] port number max length is 5: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
-                g_bind_portno = strtol(optarg, NULL, 10);
+                g_bind_portno = strtoul(optarg, NULL, 10);
                 if (g_bind_portno == 0) {
                     printf("[parse_command_args] invalid listen port number: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
@@ -243,14 +243,14 @@ static void parse_command_args(int argc, char *argv[]) {
                 g_chnlist_fname = optarg;
                 break;
             case 'o':
-                g_upstream_timeout_sec = strtol(optarg, NULL, 10);
+                g_upstream_timeout_sec = strtoul(optarg, NULL, 10);
                 if (g_upstream_timeout_sec <= 0) {
                     printf("[parse_command_args] invalid upstream timeout sec: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
                 break;
             case 'p':
-                g_repeat_times = strtol(optarg, NULL, 10);
+                g_repeat_times = strtoul(optarg, NULL, 10);
                 if (g_repeat_times < 1) {
                     printf("[parse_command_args] repeat times min value is 1: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
