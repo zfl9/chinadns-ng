@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -std=c99 -Wall -Wextra -O2
-SRCS = chinadns.c dnsutils.c dnlutils.c maputils.c netutils.c
+SRCS = chinadns.c dnsutils.c dnlutils.c netutils.c
 OBJS = $(SRCS:.c=.o)
 MAIN = chinadns-ng
 DESTDIR = /usr/local/bin

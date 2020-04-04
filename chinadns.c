@@ -4,7 +4,7 @@
 #include "netutils.h"
 #include "dnsutils.h"
 #include "dnlutils.h"
-#include "maputils.h"
+#include "uthash.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +44,18 @@
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
 
+/* dns query context structure */
+typedef struct {
+    uint16_t       unique_msgid;  /* [key]   globally unique msgid */
+    uint16_t       origin_msgid;  /* [value] associated original msgid */
+    int            query_timerfd; /* [value] dns query timeout timerfd */
+    void          *trustdns_buf;  /* [value] storage reply from trust-dns */
+    bool           chinadns_got;  /* [value] received reply from china-dns */
+    uint8_t        dnlmatch_ret;  /* [value] dnl_ismatch(dname) ret-value */
+    skaddr6_t      source_addr;   /* [value] associated client socket addr */
+    myhash_hh      hh;            /* [metadata], used internally by uthash */
+} queryctx_t;
+
 /* static global variable declaration */
 static int             g_epollfd                                          = -1;
 static bool            g_verbose                                          = false;
@@ -65,8 +77,8 @@ static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"11
 static skaddr6_t       g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
 static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
 static time_t          g_upstream_timeout_sec                             = 5;
-static uint16_t        g_current_message_id                               = 0;
-static hashmap_t      *g_message_id_hashmap                               = NULL;
+static uint16_t        g_current_unique_msgid                             = 0;
+static queryctx_t     *g_query_context_hashtbl                            = NULL;
 static char            g_domain_name_buffer[DNS_DOMAIN_NAME_MAXLEN]       = {0};
 static char            g_ipaddrstring_buffer[INET6_ADDRSTRLEN]            = {0};
 
@@ -303,7 +315,7 @@ PRINT_HELP_AND_EXIT:
 
 /* handle local socket readable event */
 static void handle_local_packet(void) {
-    if (hashmap_cnt(g_message_id_hashmap) >= 65536) { /* range:0~65535, count:65536 */
+    if (MYHASH_CNT(g_query_context_hashtbl) >= 65536) { /* range:0~65535, count:65536 */
         LOGERR("[handle_local_packet] unique_msg_id is not enough, refused to serve");
         return;
     }
@@ -326,7 +338,7 @@ static void handle_local_packet(void) {
         LOGINF("[handle_local_packet] query [%s] from %s#%hu", g_domain_name_buffer, g_ipaddrstring_buffer, source_port);
     }
 
-    uint16_t unique_msgid = g_current_message_id++;
+    uint16_t unique_msgid = g_current_unique_msgid++;
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
     uint16_t origin_msgid = dns_header->id;
     dns_header->id = unique_msgid; /* replace with new msgid */
@@ -356,7 +368,15 @@ static void handle_local_packet(void) {
         return;
     }
 
-    hashmap_add(&g_message_id_hashmap, unique_msgid, origin_msgid, query_timerfd, dnlmatch_ret, &source_addr);
+    queryctx_t *context = malloc(sizeof(queryctx_t));
+    context->unique_msgid = unique_msgid;
+    context->origin_msgid = origin_msgid;
+    context->query_timerfd = query_timerfd;
+    context->trustdns_buf = NULL;
+    context->chinadns_got = false;
+    context->dnlmatch_ret = dnlmatch_ret;
+    memcpy(&context->source_addr, &source_addr, sizeof(source_addr));
+    MYHASH_ADD(g_query_context_hashtbl, context, &context->unique_msgid, sizeof(context->unique_msgid));
 }
 
 /* handle remote socket readable event */
@@ -378,9 +398,10 @@ static void handle_remote_packet(int index) {
 
     bool is_chnip = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL);
 
+    queryctx_t *context = NULL;
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
-    hashentry_t *entry = hashmap_get(g_message_id_hashmap, dns_header->id);
-    if (!entry) {
+    MYHASH_GET(g_query_context_hashtbl, context, &dns_header->id, sizeof(dns_header->id));
+    if (!context) {
         IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
         return;
     }
@@ -390,7 +411,7 @@ static void handle_remote_packet(int index) {
     size_t reply_length = 0;
 
     bool is_chinadns = index == CHINADNS1_IDX || index == CHINADNS2_IDX;
-    if ((!g_fair_mode && !is_chinadns) || (entry->dnlmatch_ret != DNL_MRESULT_NOMATCH)) is_chnip = true;
+    if ((!g_fair_mode && !is_chinadns) || (context->dnlmatch_ret != DNL_MRESULT_NOMATCH)) is_chnip = true;
 
     if (is_chinadns) {
         /* china-dns upstream */
@@ -403,38 +424,38 @@ static void handle_remote_packet(int index) {
         } else {
             /* return the other-ip, filter it */
             IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: filter", g_domain_name_buffer, remote_servers);
-            if (entry->trustdns_buf) {
+            if (context->trustdns_buf) {
                 /* trust-dns returns first than china-dns */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns>, result: accept", g_domain_name_buffer);
-                reply_buffer = entry->trustdns_buf + sizeof(uint16_t);
-                reply_length = *(uint16_t *)entry->trustdns_buf;
+                reply_buffer = context->trustdns_buf + sizeof(uint16_t);
+                reply_length = *(uint16_t *)context->trustdns_buf;
                 goto SEND_REPLY;
             } else {
                 /* china-dns returns first than trust-dns */
-                entry->chinadns_got = true;
+                context->chinadns_got = true;
                 return;
             }
             return;
         }
     } else {
         /* trust-dns upstream */
-        if (is_chnip || entry->chinadns_got) {
+        if (is_chnip || context->chinadns_got) {
             /* return the china-ip, or china-dns returns first than trust-dns, accept it */
             IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_servers);
             reply_buffer = g_socket_buffer;
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
-            if (entry->trustdns_buf) {
+            if (context->trustdns_buf) {
                 /* have received another reply from trustdns before, ignore it */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
                 return;
             } else {
                 /* trust-dns returns first than china-dns, delay it */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: delay", g_domain_name_buffer, remote_servers);
-                entry->trustdns_buf = malloc(packet_len + sizeof(uint16_t));
-                *(uint16_t *)entry->trustdns_buf = packet_len;
-                memcpy(entry->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
+                context->trustdns_buf = malloc(packet_len + sizeof(uint16_t));
+                *(uint16_t *)context->trustdns_buf = packet_len;
+                memcpy(context->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
                 return;
             }
             return;
@@ -444,26 +465,29 @@ static void handle_remote_packet(int index) {
 
 SEND_REPLY:
     dns_header = reply_buffer;
-    dns_header->id = entry->origin_msgid; /* replace with old msgid */
-    socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
-    if (sendto(g_bind_socket, reply_buffer, reply_length, 0, (void *)&entry->source_addr, source_addrlen) < 0) {
+    dns_header->id = context->origin_msgid; /* replace with old msgid */
+    socklen_t source_addrlen = (context->source_addr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
+    if (sendto(g_bind_socket, reply_buffer, reply_length, 0, (void *)&context->source_addr, source_addrlen) < 0) {
         portno_t source_port = 0;
-        parse_socket_addr(&entry->source_addr, g_ipaddrstring_buffer, &source_port);
+        parse_socket_addr(&context->source_addr, g_ipaddrstring_buffer, &source_port);
         LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
     }
-    free(entry->trustdns_buf);
-    close(entry->query_timerfd);
-    hashmap_del(&g_message_id_hashmap, entry);
+    MYHASH_DEL(g_query_context_hashtbl, context);
+    free(context->trustdns_buf);
+    close(context->query_timerfd);
+    free(context);
 }
 
 /* handle upstream reply timeout event */
 static void handle_timeout_event(uint16_t msg_id) {
-    hashentry_t *entry = hashmap_get(g_message_id_hashmap, msg_id);
-    if (!entry) return; /* due to timing issues, the query context has actually been released */
+    queryctx_t *context = NULL;
+    MYHASH_GET(g_query_context_hashtbl, context, &msg_id, sizeof(msg_id));
+    if (!context) return; /* due to timing issues, the query context has actually been released */
     LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
-    free(entry->trustdns_buf); /* release the buffer that stores the trust-dns reply */
-    close(entry->query_timerfd); /* epoll will automatically remove the associated event */
-    hashmap_del(&g_message_id_hashmap, entry); /* delete and free the associated hash entry */
+    MYHASH_DEL(g_query_context_hashtbl, context); /* delete context from the hashtbl */
+    free(context->trustdns_buf); /* release the buffer that stores the trust-dns reply */
+    close(context->query_timerfd); /* epoll will automatically remove the associated event */
+    free(context);
 }
 
 int main(int argc, char *argv[]) {
