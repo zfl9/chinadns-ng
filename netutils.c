@@ -133,12 +133,12 @@ int new_once_timerfd(time_t second) {
 }
 
 /* AF_INET or AF_INET6 or -1(invalid) */
-int get_addrstr_family(const char *addrstr) {
-    if (!addrstr) return -1;
-    char addrbin[IPV6_BINADDR_LEN]; /* v4 or v6 */
-    if (inet_pton(AF_INET, addrstr, &addrbin) == 1) {
+int get_ipstr_family(const char *ipstr) {
+    if (!ipstr) return -1;
+    char buffer[IPV6_BINADDR_LEN]; /* v4 or v6 */
+    if (inet_pton(AF_INET, ipstr, buffer) == 1) {
         return AF_INET;
-    } else if (inet_pton(AF_INET6, addrstr, &addrbin) == 1) {
+    } else if (inet_pton(AF_INET6, ipstr, buffer) == 1) {
         return AF_INET6;
     } else {
         return -1;

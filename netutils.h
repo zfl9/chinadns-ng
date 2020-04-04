@@ -29,7 +29,7 @@ int new_udp_socket(int family);
 int new_once_timerfd(time_t second);
 
 /* AF_INET or AF_INET6 or -1(invalid) */
-int get_addrstr_family(const char *addrstr);
+int get_ipstr_family(const char *ipstr);
 
 /* build ipv4/ipv6 address structure */
 void build_socket_addr(int family, void *skaddr, const char *ipstr, portno_t portno);

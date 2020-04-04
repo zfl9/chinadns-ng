@@ -121,7 +121,7 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
             goto PRINT_HELP_AND_EXIT;
         }
         int index = is_chinadns ? server_cnt - 1 : server_cnt + 1;
-        switch (get_addrstr_family(server_str)) {
+        switch (get_ipstr_family(server_str)) {
             case AF_INET:
                 build_socket_addr(AF_INET, &g_remote_skaddrs[index], server_str, server_port);
                 break;
@@ -175,7 +175,7 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] ip address max length is 45: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
-                if (get_addrstr_family(optarg) == -1) {
+                if (get_ipstr_family(optarg) == -1) {
                     printf("[parse_command_args] invalid listen ip address: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
@@ -280,7 +280,7 @@ static void parse_command_args(int argc, char *argv[]) {
         printf("[parse_command_args] gfwlist:%s and chnlist:%s are both STDIN\n", g_gfwlist_fname, g_chnlist_fname);
         goto PRINT_HELP_AND_EXIT;
     }
-    build_socket_addr(get_addrstr_family(g_bind_addr), &g_bind_skaddr, g_bind_addr, g_bind_port);
+    build_socket_addr(get_ipstr_family(g_bind_addr), &g_bind_skaddr, g_bind_addr, g_bind_port);
     if (chinadns_optarg) {
         char dnsserver_optstring[strlen(chinadns_optarg) + 1];
         strcpy(dnsserver_optstring, chinadns_optarg);
