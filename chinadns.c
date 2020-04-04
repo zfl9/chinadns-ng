@@ -395,7 +395,7 @@ static void handle_remote_packet(int index) {
         return;
     }
 
-    bool is_chnip = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL);
+    bool is_chnip = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, true);
 
     queryctx_t *context = NULL;
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
