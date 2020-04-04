@@ -382,17 +382,17 @@ static void handle_local_packet(void) {
 /* handle remote socket readable event */
 static void handle_remote_packet(int index) {
     int remote_sockfd = g_remote_sockfds[index];
-    const char *remote_servers = g_remote_ipports[index];
+    const char *remote_ipport = g_remote_ipports[index];
     ssize_t packet_len = recvfrom(remote_sockfd, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, NULL, NULL);
 
     if (packet_len < 0) {
         if (errno == EAGAIN || errno == EINTR) return;
-        LOGERR("[handle_remote_packet] failed to recv data from %s: (%d) %s", remote_servers, errno, strerror(errno));
+        LOGERR("[handle_remote_packet] failed to recv data from %s: (%d) %s", remote_ipport, errno, strerror(errno));
         return;
     }
 
     if (packet_len < (ssize_t)sizeof(dns_header_t) + (ssize_t)sizeof(dns_query_t) + 1) {
-        LOGERR("[handle_remote_packet] received bad packet from %s, packet too small: %zd", remote_servers, packet_len);
+        LOGERR("[handle_remote_packet] received bad packet from %s, packet too small: %zd", remote_ipport, packet_len);
         return;
     }
 
@@ -402,7 +402,7 @@ static void handle_remote_packet(int index) {
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
     MYHASH_GET(g_query_context_hashtbl, context, &dns_header->id, sizeof(dns_header->id));
     if (!context) {
-        IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
+        IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_ipport);
         return;
     }
 
@@ -417,13 +417,13 @@ static void handle_remote_packet(int index) {
         /* china-dns upstream */
         if (is_chnip) {
             /* return the china-ip, accept it */
-            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_servers);
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_ipport);
             reply_buffer = g_socket_buffer;
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
             /* return the other-ip, filter it */
-            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: filter", g_domain_name_buffer, remote_servers);
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: filter", g_domain_name_buffer, remote_ipport);
             if (context->trustdns_buf) {
                 /* trust-dns returns first than china-dns */
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns>, result: accept", g_domain_name_buffer);
@@ -441,18 +441,18 @@ static void handle_remote_packet(int index) {
         /* trust-dns upstream */
         if (is_chnip || context->chinadns_got) {
             /* return the china-ip, or china-dns returns first than trust-dns, accept it */
-            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_servers);
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_ipport);
             reply_buffer = g_socket_buffer;
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
             if (context->trustdns_buf) {
                 /* have received another reply from trustdns before, ignore it */
-                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_servers);
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_ipport);
                 return;
             } else {
                 /* trust-dns returns first than china-dns, delay it */
-                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: delay", g_domain_name_buffer, remote_servers);
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: delay", g_domain_name_buffer, remote_ipport);
                 context->trustdns_buf = malloc(packet_len + sizeof(uint16_t));
                 *(uint16_t *)context->trustdns_buf = packet_len;
                 memcpy(context->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
