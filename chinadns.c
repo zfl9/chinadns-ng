@@ -69,14 +69,14 @@ static uint8_t     g_repeat_times                                     = 1; /* us
 static const char *g_gfwlist_fname                                    = NULL; /* gfwlist dnamelist filename */
 static const char *g_chnlist_fname                                    = NULL; /* chnlist dnamelist filename */
 static bool        g_gfwlist_first                                    = true; /* match gfwlist dnamelist first */
-       bool        g_noip_as_chnip                                    = false; /* default: see as not-chnip */
+       bool        g_noip_as_chnip                                    = false; /* default: see as not-china-ip */
        char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
 static char        g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
 static portno_t    g_bind_port                                        = 65353;
 static skaddr6_t   g_bind_skaddr                                      = {0};
 static int         g_bind_socket                                      = -1;
-static int         g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
+static int         g_remote_sockfds[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
 static char        g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
 static skaddr6_t   g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
 static char        g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
@@ -349,7 +349,7 @@ static void handle_local_packet(void) {
     uint8_t dnlmatch_ret = (g_gfwlist_fname || g_chnlist_fname) ? dnl_ismatch(g_domain_name_buffer, g_gfwlist_first) : DNL_MRESULT_NOMATCH;
 
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
-        if (g_remote_sockets[i] < 0) continue;
+        if (g_remote_sockfds[i] < 0) continue;
         uint8_t repeat_times = 0;
         if (i == CHINADNS1_IDX || i == CHINADNS2_IDX) {
             repeat_times = (dnlmatch_ret == DNL_MRESULT_GFWLIST) ? 0 : 1;
@@ -358,7 +358,7 @@ static void handle_local_packet(void) {
         }
         socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
         for (int j = 0; j < repeat_times; ++j) {
-            if (sendto(g_remote_sockets[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
+            if (sendto(g_remote_sockfds[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
                 LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
             }
         }
@@ -385,7 +385,7 @@ static void handle_local_packet(void) {
 
 /* handle remote socket readable event */
 static void handle_remote_packet(int index) {
-    int remote_socket = g_remote_sockets[index];
+    int remote_socket = g_remote_sockfds[index];
     const char *remote_servers = g_remote_servers[index];
     ssize_t packet_len = recvfrom(remote_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, NULL, NULL);
 
@@ -526,7 +526,7 @@ int main(int argc, char *argv[]) {
     /* create remote socket */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (!strlen(g_remote_servers[i])) continue;
-        g_remote_sockets[i] = new_udp_socket(g_remote_skaddrs[i].sin6_family);
+        g_remote_sockfds[i] = new_udp_socket(g_remote_skaddrs[i].sin6_family);
     }
 
     /* bind address to listen socket */
@@ -554,10 +554,10 @@ int main(int argc, char *argv[]) {
 
     /* remote socket readable event */
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
-        if (g_remote_sockets[i] < 0) continue;
+        if (g_remote_sockfds[i] < 0) continue;
         ev.events = EPOLLIN;
         ev.data.u32 = i; /* don't care about msg id */
-        if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, g_remote_sockets[i], &ev)) {
+        if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, g_remote_sockfds[i], &ev)) {
             LOGERR("[main] failed to register epoll event: (%d) %s", errno, strerror(errno));
             return errno;
         }
