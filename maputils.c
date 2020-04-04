@@ -5,7 +5,7 @@
 #undef _GNU_SOURCE
 
 /* put key and value to hashmap */
-hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, uint8_t dnlmatch_ret, const inet6_skaddr_t *source_addr) {
+hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, uint8_t dnlmatch_ret, const skaddr6_t *source_addr) {
     hashentry_t *hashentry = malloc(sizeof(hashentry_t));
     hashentry->unique_msgid = unique_msgid;
     hashentry->origin_msgid = origin_msgid;
@@ -13,7 +13,7 @@ hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t or
     hashentry->trustdns_buf = NULL;
     hashentry->chinadns_got = false;
     hashentry->dnlmatch_ret = dnlmatch_ret;
-    memcpy(&hashentry->source_addr, source_addr, sizeof(inet6_skaddr_t));
+    memcpy(&hashentry->source_addr, source_addr, sizeof(skaddr6_t));
     MYHASH_ADD(*hashmap, hashentry, &hashentry->unique_msgid, sizeof(hashentry->unique_msgid));
     return hashentry;
 }

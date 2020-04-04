@@ -14,12 +14,12 @@ typedef struct {
     void          *trustdns_buf;  /* [value] storage reply from trust-dns */
     bool           chinadns_got;  /* [value] received reply from china-dns */
     uint8_t        dnlmatch_ret;  /* [value] dnl_ismatch(dname) ret-value */
-    inet6_skaddr_t source_addr;   /* [value] associated client sockaddr */
+    skaddr6_t source_addr;   /* [value] associated client sockaddr */
     myhash_hh      hh;            /* metadata, used internally by uthash */
 } hashmap_t, hashentry_t;
 
 /* put key and value to hashmap */
-hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, uint8_t dnlmatch_ret, const inet6_skaddr_t *source_addr);
+hashentry_t* hashmap_put(hashmap_t **hashmap, uint16_t unique_msgid, uint16_t origin_msgid, int query_timerfd, uint8_t dnlmatch_ret, const skaddr6_t *source_addr);
 
 /* get entry_ptr by unique_msgid */
 hashentry_t* hashmap_get(hashmap_t *hashmap, uint16_t unique_msgid);

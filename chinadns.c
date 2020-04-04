@@ -57,12 +57,12 @@ static bool            g_gfwlist_first                                    = true
        char            g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char            g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
 static char            g_bind_addr[INET6_ADDRSTRLEN]                      = "127.0.0.1";
-static sock_port_t     g_bind_port                                        = 65353;
-static inet6_skaddr_t  g_bind_skaddr                                      = {0};
+static portno_t     g_bind_port                                        = 65353;
+static skaddr6_t  g_bind_skaddr                                      = {0};
 static int             g_bind_socket                                      = -1;
 static int             g_remote_sockets[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
 static char            g_remote_servers[SERVER_MAXCOUNT][ADDRPORT_STRLEN] = {"114.114.114.114#53", "", "8.8.8.8#53", ""};
-static inet6_skaddr_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
+static skaddr6_t  g_remote_skaddrs[SERVER_MAXCOUNT]                  = {{0}};
 static char            g_socket_buffer[SOCKBUFF_MAXSIZE]                  = {0};
 static time_t          g_upstream_timeout_sec                             = 5;
 static uint16_t        g_current_message_id                               = 0;
@@ -102,7 +102,7 @@ static void parse_dns_server_opt(char *option_argval, bool is_chinadns) {
             printf("[parse_dns_server_opt] %s dns servers max count is 2\n", is_chinadns ? "china" : "trust");
             goto PRINT_HELP_AND_EXIT;
         }
-        sock_port_t server_port = 53;
+        portno_t server_port = 53;
         char *hashsign_ptr = strchr(server_str, '#');
         if (hashsign_ptr) {
             *hashsign_ptr = 0; ++hashsign_ptr;
@@ -308,8 +308,8 @@ static void handle_local_packet(void) {
         return;
     }
 
-    inet6_skaddr_t source_addr = {0};
-    socklen_t source_addrlen = sizeof(inet6_skaddr_t);
+    skaddr6_t source_addr = {0};
+    socklen_t source_addrlen = sizeof(skaddr6_t);
     ssize_t packet_len = recvfrom(g_bind_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, (void *)&source_addr, &source_addrlen);
 
     if (packet_len < 0) {
@@ -321,7 +321,7 @@ static void handle_local_packet(void) {
     if (!dns_query_check(g_socket_buffer, packet_len, (g_verbose || g_gfwlist_fname || g_chnlist_fname) ? g_domain_name_buffer : NULL)) return;
 
     IF_VERBOSE {
-        sock_port_t source_port = 0;
+        portno_t source_port = 0;
         parse_socket_addr(&source_addr, g_ipaddrstring_buffer, &source_port);
         LOGINF("[handle_local_packet] query [%s] from %s#%hu", g_domain_name_buffer, g_ipaddrstring_buffer, source_port);
     }
@@ -340,7 +340,7 @@ static void handle_local_packet(void) {
         } else {
             repeat_times = (dnlmatch_ret == DNL_MRESULT_CHNLIST) ? 0 : g_repeat_times;
         }
-        socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
+        socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
         for (int j = 0; j < repeat_times; ++j) {
             if (sendto(g_remote_sockets[i], g_socket_buffer, packet_len, 0, (void *)&g_remote_skaddrs[i], remote_addrlen) < 0) {
                 LOGERR("[handle_local_packet] failed to send dns query packet to %s: (%d) %s", g_remote_servers[i], errno, strerror(errno));
@@ -445,9 +445,9 @@ static void handle_remote_packet(int index) {
 SEND_REPLY:
     dns_header = reply_buffer;
     dns_header->id = entry->origin_msgid; /* replace with old msgid */
-    socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t);
+    socklen_t source_addrlen = (entry->source_addr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
     if (sendto(g_bind_socket, reply_buffer, reply_length, 0, (void *)&entry->source_addr, source_addrlen) < 0) {
-        sock_port_t source_port = 0;
+        portno_t source_port = 0;
         parse_socket_addr(&entry->source_addr, g_ipaddrstring_buffer, &source_port);
         LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
     }
@@ -505,7 +505,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* bind address to listen socket */
-    if (bind(g_bind_socket, (void *)&g_bind_skaddr, (g_bind_skaddr.sin6_family == AF_INET) ? sizeof(inet4_skaddr_t) : sizeof(inet6_skaddr_t))) {
+    if (bind(g_bind_socket, (void *)&g_bind_skaddr, (g_bind_skaddr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t))) {
         LOGERR("[main] failed to bind address to socket: (%d) %s", errno, strerror(errno));
         return errno;
     }

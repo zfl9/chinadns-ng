@@ -16,11 +16,11 @@
 #define IPV6_BINADDR_LEN 16 /* 16byte, 128bit */
 
 /* uniform struct sockaddr_* name */
-typedef struct sockaddr_in  inet4_skaddr_t;
-typedef struct sockaddr_in6 inet6_skaddr_t;
+typedef struct sockaddr_in  skaddr4_t;
+typedef struct sockaddr_in6 skaddr6_t;
 
 /* socket port number typedef */
-typedef uint16_t sock_port_t;
+typedef uint16_t portno_t;
 
 /* create a udp socket (AF_INET) */
 int new_udp4_socket(void);
@@ -44,10 +44,10 @@ int new_once_timerfd(time_t second);
 int get_addrstr_family(const char *addrstr);
 
 /* build ipv4/ipv6 address structure */
-void build_socket_addr(int family, void *skaddr, const char *ipstr, sock_port_t portno);
+void build_socket_addr(int family, void *skaddr, const char *ipstr, portno_t portno);
 
 /* parse ipv4/ipv6 address structure */
-void parse_socket_addr(const void *skaddr, char *ipstr, sock_port_t *portno);
+void parse_socket_addr(const void *skaddr, char *ipstr, portno_t *portno);
 
 /* init netlink socket for ipset query */
 void ipset_init_nlsocket(void);
