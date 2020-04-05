@@ -411,7 +411,7 @@ static void handle_remote_packet(int index) {
     size_t reply_length = 0;
 
     if (is_chinadns) {
-        if (is_accept || context->dnlmatch_ret == DNL_MRESULT_CHNLIST) {
+        if (context->dnlmatch_ret == DNL_MRESULT_CHNLIST || is_accept) {
             IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_ipport);
             if (context->trustdns_buf) {
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns>, result: filter", g_domain_name_buffer);
@@ -432,7 +432,7 @@ static void handle_remote_packet(int index) {
             }
         }
     } else {
-        if (context->chinadns_got || context->dnlmatch_ret == DNL_MRESULT_GFWLIST) {
+        if (context->dnlmatch_ret == DNL_MRESULT_GFWLIST || context->chinadns_got) {
             IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_ipport);
             reply_buffer = g_socket_buffer;
             reply_length = packet_len;
