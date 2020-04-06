@@ -76,6 +76,11 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 如果希望 chinadns-ng 只向可信 DNS 转发某些域名的解析请求（如谷歌等敏感域名），可使用 `--gfwlist-file` 选项指定一个黑名单文件，文件内容是按行分隔的 **域名模式**。查询黑名单域名时，chinadns-ng 只会向可信 DNS 转发解析请求。`chinadns-ng` 的域名模式与 `dnsmasq` 的域名模式差不多，都是 **域名后缀**，但是我人为的加了几个限制（当然目的也是为了提升匹配性能）：域名模式中的 `label` 数量最少 2 个最多 4 个；少于 2 个 label 的模式会被忽略（如 `com`）；多于 4 个 label 的模式会被截断（如 `test.www.google.com.hk`，等价于 `www.google.com.hk`）。chinadns-ng 使用 hashmap 来存储和匹配域名，性能比 dnsmasq 的线性查找方式好得多，不会因为域名模式数量的增加而导致匹配性能的降低，因为哈希表的查找速度是恒定的，与具体的数据量无关。
 - chinadns-ng v1.0-b14+ 支持 chnlist 白名单匹配模式，命中 chnlist 列表的域名只会走国内 DNS；允许同时指定 gfwlist 黑名单列表和 chnlist 白名单列表；如果查询的域名同时命中 gfwlist 和 chnlist，则默认走可信 DNS 上游，也即 gfwlist 优先级比 chnlist 高，指定选项 `-M/--chnlist-first` 可调换该优先级。注意，这里说的"同时命中"黑名单和白名单只是逻辑上的同时命中，在实现上只要命中了其中一个域名列表，匹配函数直接就 return 了，不存在无意义的匹配消耗。
 
+# 相关说明
+`chinadns-ng` 的核心任务只是从本地客户端接收 dns-query，然后根据 gfwlist(命中的走可信DNS)、chnlist(命中的走国内DNS) 进行 dns-query 分流；如果 query 的域名未被 gfwlist/chnlist 命中，则将收到的 dns-query 原样转发给两组上游 DNS，然后等待上游 DNS 返回的 dns-reply，然后解析出 dns-reply 中的 IPv4/IPv6 地址，调用 ipset 内核模块的 netlink api，检查对应 IP 是否存在于给定的 chnroute/chnroute6 集合中，根据上述【工作原理】的相关流程进行过滤，最后将合适的那个 dns-reply 原样返回给本地客户端。
+
+因此，chinadns-ng 的核心任务也不是为了防污染，实际上光靠 chinadns-ng 做不到防污染，防污染是可信 DNS 上游的任务，chinadns-ng 只是做一个简单的分发和过滤，不修改任何 dns-query、dns-reply。同理，chinadns-ng 只是兼容 EDNS 请求和响应，不提供 EDNS 相关特性，任何特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常情况下，chinadns-ng 都是与其它 dns 工具（或者代理工具）一起使用的，如 smartdns，具体与什么搭配，以及如何搭配，这里不讨论，由各位自由发挥。
+
 # 简单测试
 使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
 ```bash
