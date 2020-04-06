@@ -39,7 +39,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.18 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.19 <https://github.com/zfl9/chinadns-ng>"
 
 /* whether it is a verbose mode */
 #define IF_VERBOSE if (g_verbose)
@@ -307,6 +307,11 @@ PRINT_HELP_AND_EXIT:
 
 /* handle local socket readable event */
 static void handle_local_packet(void) {
+    if (hashmap_cnt(g_message_id_hashmap) >= 65536) { /* range:0~65535, count:65536 */
+        LOGERR("[handle_local_packet] unique_msg_id is not enough, refused to serve");
+        return;
+    }
+
     inet6_skaddr_t source_addr = {0};
     socklen_t source_addrlen = sizeof(inet6_skaddr_t);
     ssize_t packet_len = recvfrom(g_bind_socket, g_socket_buffer, SOCKBUFF_MAXSIZE, 0, (void *)&source_addr, &source_addrlen);

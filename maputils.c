@@ -30,3 +30,8 @@ void hashmap_del(hashmap_t **hashmap, hashentry_t *hashentry) {
     MYHASH_DEL(*hashmap, hashentry);
     free(hashentry);
 }
+
+/* number of key-value pairs in the hashmap */
+size_t hashmap_cnt(const hashmap_t *hashmap) {
+    return MYHASH_CNT(hashmap);
+}
