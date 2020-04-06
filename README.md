@@ -79,7 +79,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 # 相关说明
 `chinadns-ng` 的核心任务只是从本地客户端接收 dns-query，然后根据 gfwlist(命中的走可信DNS)、chnlist(命中的走国内DNS) 进行 dns-query 分流；如果 query 的域名未被 gfwlist/chnlist 命中，则将收到的 dns-query 原样转发给两组上游 DNS，然后等待上游 DNS 返回的 dns-reply，然后解析出 dns-reply 中的 IPv4/IPv6 地址，调用 ipset 内核模块的 api，检查对应 IP 是否存在于给定的 chnroute/chnroute6 集合，再根据上述【工作原理】的相关流程进行过滤，最后将合适的那个 dns-reply 原样返回给本地客户端。
 
-因此，chinadns-ng 的核心任务也不是为了防污染，实际上光靠 chinadns-ng 做不到防污染，防污染是可信 DNS 上游的任务，chinadns-ng 只是做一个简单的分发和过滤，不修改任何 dns-query、dns-reply。同理，chinadns-ng 只是兼容 EDNS 请求和响应，不提供 EDNS 相关特性，任何特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常情况下，chinadns-ng 都是与其它 dns 工具（或者代理工具）一起使用的，如 smartdns，具体与什么搭配，以及如何搭配，这里不讨论，由各位自由发挥。
+因此光靠 chinadns-ng 是做不到防 DNS 污染的，防 DNS 污染是可信 DNS 上游的任务，chinadns-ng 只是做一个简单的分发和过滤，不修改任何 dns-query、dns-reply。同理，chinadns-ng 只是兼容 EDNS 请求和响应，不提供 EDNS 相关特性，任何特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常情况下，chinadns-ng 都是与其它 dns 工具（如 smartdns）或代理工具（如 ss-tunnel）一起使用的，具体与什么搭配，以及如何搭配，这里不进行讨论，由各位自由发挥。
 
 # 简单测试
 使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
