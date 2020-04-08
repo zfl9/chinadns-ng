@@ -5,13 +5,16 @@ OBJS = $(SRCS:.c=.o)
 MAIN = chinadns-ng
 DESTDIR = /usr/local/bin
 
-.PHONY: all install clean
+.PHONY: all install uninstall clean
 
 all: $(MAIN)
 
 install: $(MAIN)
-	mkdir -p $(DESTDIR)
+	install -d $(DESTDIR)
 	install -m 0755 $(MAIN) $(DESTDIR)
+
+uninstall:
+	$(RM) -f $(DESTDIR)/$(MAIN)
 
 clean:
 	$(RM) *.o $(MAIN)
