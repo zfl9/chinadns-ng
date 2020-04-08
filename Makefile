@@ -14,7 +14,7 @@ install: $(MAIN)
 	install -m 0755 $(MAIN) $(DESTDIR)
 
 uninstall:
-	$(RM) -f $(DESTDIR)/$(MAIN)
+	$(RM) $(DESTDIR)/$(MAIN)
 
 clean:
 	$(RM) *.o $(MAIN)
