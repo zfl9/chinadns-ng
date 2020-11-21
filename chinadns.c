@@ -43,7 +43,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.22 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.23 <https://github.com/zfl9/chinadns-ng>"
 
 /* is enable verbose logging */
 #define IF_VERBOSE if (g_verbose)
@@ -335,7 +335,7 @@ static void handle_local_packet(void) {
     IF_VERBOSE {
         portno_t source_port = 0;
         parse_socket_addr(&source_addr, g_ipaddrstring_buffer, &source_port);
-        LOGINF("[handle_local_packet] query [%s] from %s#%hu", g_domain_name_buffer, g_ipaddrstring_buffer, source_port);
+        LOGINF("[handle_local_packet] query [%s] from %s#%hu (%hu)", g_domain_name_buffer, g_ipaddrstring_buffer, source_port, g_current_unique_msgid);
     }
 
     uint16_t unique_msgid = g_current_unique_msgid++;
@@ -403,7 +403,7 @@ static void handle_remote_packet(int index) {
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
     MYHASH_GET(g_query_context_hashtbl, context, &dns_header->id, sizeof(dns_header->id));
     if (!context) {
-        IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_ipport);
+        IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: ignore", g_domain_name_buffer, remote_ipport, dns_header->id);
         return;
     }
 
@@ -412,17 +412,17 @@ static void handle_remote_packet(int index) {
 
     if (is_chinadns) {
         if (context->dnlmatch_ret == DNL_MRESULT_CHNLIST || is_accept) {
-            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_ipport);
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: accept", g_domain_name_buffer, remote_ipport, dns_header->id);
             if (context->trustdns_buf) {
-                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns>, result: filter", g_domain_name_buffer);
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns> (%hu), result: filter", g_domain_name_buffer, dns_header->id);
             }
             reply_buffer = g_socket_buffer;
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
-            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: filter", g_domain_name_buffer, remote_ipport);
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: filter", g_domain_name_buffer, remote_ipport, dns_header->id);
             if (context->trustdns_buf) {
-                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns>, result: accept", g_domain_name_buffer);
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from <previous-trustdns> (%hu), result: accept", g_domain_name_buffer, dns_header->id);
                 reply_buffer = context->trustdns_buf + sizeof(uint16_t);
                 reply_length = *(uint16_t *)context->trustdns_buf;
                 goto SEND_REPLY;
@@ -433,15 +433,15 @@ static void handle_remote_packet(int index) {
         }
     } else {
         if (context->dnlmatch_ret == DNL_MRESULT_GFWLIST || context->chinadns_got) {
-            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: accept", g_domain_name_buffer, remote_ipport);
+            IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: accept", g_domain_name_buffer, remote_ipport, dns_header->id);
             reply_buffer = g_socket_buffer;
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
             if (context->trustdns_buf) {
-                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: ignore", g_domain_name_buffer, remote_ipport);
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: ignore", g_domain_name_buffer, remote_ipport, dns_header->id);
             } else {
-                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s, result: delay", g_domain_name_buffer, remote_ipport);
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: delay", g_domain_name_buffer, remote_ipport, dns_header->id);
                 context->trustdns_buf = malloc(sizeof(uint16_t) + packet_len);
                 *(uint16_t *)context->trustdns_buf = packet_len; /* dns reply length */
                 memcpy(context->trustdns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
