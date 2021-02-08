@@ -75,7 +75,7 @@ static bool        g_gfwlist_first                                    = true; /*
        char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
 static char        g_bind_ipstr[INET6_ADDRSTRLEN]                     = "127.0.0.1";
-static portno_t    g_bind_portno                                      = 1314;
+static portno_t    g_bind_portno                                      = 65353;
 static skaddr6_t   g_bind_skaddr                                      = {0};
 static int         g_bind_sockfd                                      = -1;
 static int         g_remote_sockfds[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
@@ -101,6 +101,7 @@ static void print_command_help(void) {
            " -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin\n"
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
            " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
+           " -N, --noipv6 <noipv6>                disable AAAA(IPV6) requrest, default: true\n"
            " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
            " -f, --fair-mode                      enable `fair` mode, default: <fast-mode>\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
@@ -155,7 +156,7 @@ PRINT_HELP_AND_EXIT:
 
 /* parse and check command arguments */
 static void parse_command_args(int argc, char *argv[]) {
-    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:MfrnvVh";
+    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:N:MfrnvVh";
     const struct option options[] = {
         {"bind-addr",     required_argument, NULL, 'b'},
         {"bind-port",     required_argument, NULL, 'l'},
@@ -258,11 +259,11 @@ static void parse_command_args(int argc, char *argv[]) {
                 g_gfwlist_first = false;
                 break;
             case 'N':
-                if(strlen(optarg) == 1) {
-                    g_noipv6 = !strcmp(optarg, "1");
-                } else {
-                    g_noipv6 = 1;
-                }
+                if(strcmp(optarg, "true") && strcmp(optarg, "false")) {
+                    printf("[parse_command_args] value of no ipv6 expect true or false,current:%s\n", optarg);
+                    goto PRINT_HELP_AND_EXIT;
+                } 
+                g_noipv6 = !strcmp(optarg, "true");
                 break;
             case 'f':
                 g_fair_mode = true;
