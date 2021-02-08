@@ -66,6 +66,8 @@ static bool        g_verbose                                          = false;
 static bool        g_reuse_port                                       = false;
 static bool        g_fair_mode                                        = false; /* default: fast-mode */
 static uint8_t     g_repeat_times                                     = 1; /* used by trust-dns only */
+static uint8_t     g_noipv6                                           = 1; /* no ipv6 result */
+
 static const char *g_gfwlist_fname                                    = NULL; /* gfwlist dnamelist filename */
 static const char *g_chnlist_fname                                    = NULL; /* chnlist dnamelist filename */
 static bool        g_gfwlist_first                                    = true; /* match gfwlist dnamelist first */
@@ -73,7 +75,7 @@ static bool        g_gfwlist_first                                    = true; /*
        char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
 static char        g_bind_ipstr[INET6_ADDRSTRLEN]                     = "127.0.0.1";
-static portno_t    g_bind_portno                                      = 65353;
+static portno_t    g_bind_portno                                      = 1314;
 static skaddr6_t   g_bind_skaddr                                      = {0};
 static int         g_bind_sockfd                                      = -1;
 static int         g_remote_sockfds[SERVER_MAXCOUNT]                  = {-1, -1, -1, -1};
@@ -165,6 +167,7 @@ static void parse_command_args(int argc, char *argv[]) {
         {"chnlist-file",  required_argument, NULL, 'm'},
         {"timeout-sec",   required_argument, NULL, 'o'},
         {"repeat-times",  required_argument, NULL, 'p'},
+        {"noipv6",        required_argument, NULL, 'N'},
         {"chnlist-first", no_argument,       NULL, 'M'},
         {"fair-mode",     no_argument,       NULL, 'f'},
         {"reuse-port",    no_argument,       NULL, 'r'},
@@ -254,6 +257,13 @@ static void parse_command_args(int argc, char *argv[]) {
             case 'M':
                 g_gfwlist_first = false;
                 break;
+            case 'N':
+                if(strlen(optarg) == 1) {
+                    g_noipv6 = !strcmp(optarg, "1");
+                } else {
+                    g_noipv6 = 1;
+                }
+                break;
             case 'f':
                 g_fair_mode = true;
                 break;
@@ -329,8 +339,8 @@ static void handle_local_packet(void) {
         }
         return;
     }
-
-    if (!dns_query_check(g_socket_buffer, packet_len, (g_verbose || g_gfwlist_fname || g_chnlist_fname) ? g_domain_name_buffer : NULL)) return;
+    const void *answer_ptr = NULL;
+    if (!dns_query_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, &answer_ptr)) return;
 
     IF_VERBOSE {
         portno_t source_port = 0;
@@ -340,6 +350,18 @@ static void handle_local_packet(void) {
 
     uint16_t unique_msgid = g_current_unique_msgid++;
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
+
+    if(g_noipv6)
+    {
+        uint16_t qtype = ntohs(((dns_query_t *)(answer_ptr - sizeof(dns_query_t)))->qtype);
+        if (qtype == DNS_RECORD_TYPE_AAAA)
+        {
+            dns_header->qr = 1;
+            sendto(g_bind_sockfd, g_socket_buffer, packet_len, 0, (void *)&source_addr, source_addrlen);
+            return;
+        }
+    }
+
     uint16_t origin_msgid = dns_header->id;
     dns_header->id = unique_msgid; /* replace with new msgid */
     uint8_t dnlmatch_ret = (g_gfwlist_fname || g_chnlist_fname) ? dnl_ismatch(g_domain_name_buffer, g_gfwlist_first) : DNL_MRESULT_NOMATCH;

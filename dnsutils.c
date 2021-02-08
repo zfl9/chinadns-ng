@@ -7,15 +7,6 @@
 #include <netinet/in.h>
 #undef _GNU_SOURCE
 
-#define DNS_QR_QUERY 0
-#define DNS_QR_REPLY 1
-#define DNS_OPCODE_QUERY 0
-#define DNS_RCODE_NOERROR 0
-#define DNS_CLASS_INTERNET 1
-#define DNS_RECORD_TYPE_A 1 /* ipv4 address */
-#define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
-#define DNS_DNAME_LABEL_MAXLEN 63 /* domain-name label maxlen */
-#define DNS_DNAME_COMPRESSION_MINVAL 192 /* domain-name compression minval */
 
 /* check dns packet */
 static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool is_query, const void **answer_ptr) {
@@ -191,8 +182,8 @@ static bool dns_ipset_check(const void *packet_ptr, const void *ans_ptr, ssize_t
 }
 
 /* check dns query, `name_buf` used to get domain name, return true if valid */
-bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf) {
-    return dns_packet_check(packet_buf, packet_len, name_buf, true, NULL);
+bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf, const void **answer_ptr) {
+    return dns_packet_check(packet_buf, packet_len, name_buf, true, answer_ptr);
 }
 
 /* check dns reply, `name_buf` used to get domain name, return true if accept */
