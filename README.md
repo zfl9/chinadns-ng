@@ -16,6 +16,24 @@ make && sudo make install
 chinadns-ng 默认安装到 `/usr/local/bin` 目录，可安装到其它目录，如 `make install DESTDIR=/opt/local/bin`。<br>
 交叉编译时只需指定 CC 变量，如 `make CC=aarch64-linux-gnu-gcc`（如有问题，请执行 `make clean`，然后再试）。
 
+## Docker
+同时，本项目也支持 Docker, 只需要执行以下命令：
+```bash
+# clone source
+git clone https://github.com/zfl9/chinadns-ng.git
+cd chinadns-ng
+
+# build image
+docker build -t chinadns-ng .
+
+# run chinadns-ng
+docker run -d \
+  --name chinadns-ng \
+  --restart always \
+  --net host \
+  chinadns-ng <args>
+```
+
 # 命令选项
 ```
 $ chinadns-ng --help
