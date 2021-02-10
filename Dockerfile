@@ -2,7 +2,10 @@
 # Dockerfile for chinadns-ng
 #
 
-FROM alpine
+#
+# Build stage
+#
+FROM alpine AS builder
 
 # copy source
 COPY . /tmp/chinadns-ng
@@ -18,6 +21,13 @@ RUN apk update \
   && rm -r /tmp/chinadns-ng \
   && apk del .build-deps \
   && rm -rf /var/cache/apk/*
+
+#
+# Runtime stage
+#
+FROM alpine
+
+COPY --from=builder /app/chinadns-ng /app/chinadns-ng
 
 USER nobody
 ENTRYPOINT ["/app/chinadns-ng"]
