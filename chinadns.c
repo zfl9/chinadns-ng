@@ -43,7 +43,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.23 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.24 <https://github.com/zfl9/chinadns-ng>"
 
 /* is enable verbose logging */
 #define IF_VERBOSE if (g_verbose)
@@ -69,6 +69,7 @@ static uint8_t     g_repeat_times                                     = 1; /* us
 static const char *g_gfwlist_fname                                    = NULL; /* gfwlist dnamelist filename */
 static const char *g_chnlist_fname                                    = NULL; /* chnlist dnamelist filename */
 static bool        g_gfwlist_first                                    = true; /* match gfwlist dnamelist first */
+static bool        g_no_ipv6_query                                    = false; /* disable ip6-addr query (AAAA) */
        bool        g_noip_as_chnip                                    = false; /* default: see as not-china-ip */
        char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
@@ -100,6 +101,7 @@ static void print_command_help(void) {
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
            " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
            " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
+           " -N, --no-ipv6                        disable ipv6-address query (qtype: AAAA)\n"
            " -f, --fair-mode                      enable `fair` mode, default: <fast-mode>\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
            " -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)\n"
@@ -153,7 +155,7 @@ PRINT_HELP_AND_EXIT:
 
 /* parse and check command arguments */
 static void parse_command_args(int argc, char *argv[]) {
-    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:MfrnvVh";
+    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:MNfrnvVh";
     const struct option options[] = {
         {"bind-addr",     required_argument, NULL, 'b'},
         {"bind-port",     required_argument, NULL, 'l'},
@@ -166,6 +168,7 @@ static void parse_command_args(int argc, char *argv[]) {
         {"timeout-sec",   required_argument, NULL, 'o'},
         {"repeat-times",  required_argument, NULL, 'p'},
         {"chnlist-first", no_argument,       NULL, 'M'},
+        {"no-ipv6",       no_argument,       NULL, 'N'},
         {"fair-mode",     no_argument,       NULL, 'f'},
         {"reuse-port",    no_argument,       NULL, 'r'},
         {"noip-as-chnip", no_argument,       NULL, 'n'},
@@ -254,6 +257,9 @@ static void parse_command_args(int argc, char *argv[]) {
             case 'M':
                 g_gfwlist_first = false;
                 break;
+            case 'N':
+                g_no_ipv6_query = true;
+                break;
             case 'f':
                 g_fair_mode = true;
                 break;
@@ -330,12 +336,22 @@ static void handle_local_packet(void) {
         return;
     }
 
-    if (!dns_query_check(g_socket_buffer, packet_len, (g_verbose || g_gfwlist_fname || g_chnlist_fname) ? g_domain_name_buffer : NULL)) return;
+    uint16_t qtype;
+    if (!dns_query_check(g_socket_buffer, packet_len, (g_verbose || g_gfwlist_fname || g_chnlist_fname) ? g_domain_name_buffer : NULL, &qtype)) return;
 
     IF_VERBOSE {
         portno_t source_port = 0;
         parse_socket_addr(&source_addr, g_ipaddrstring_buffer, &source_port);
         LOGINF("[handle_local_packet] query [%s] from %s#%hu (%hu)", g_domain_name_buffer, g_ipaddrstring_buffer, source_port, g_current_unique_msgid);
+    }
+
+    if (g_no_ipv6_query && qtype == DNS_RECORD_TYPE_AAAA) {
+        IF_VERBOSE LOGINF("[handle_local_packet] reply [%s] without answer (by ipv6 filter)", g_domain_name_buffer);
+        dns_header_t *header = (dns_header_t *)g_socket_buffer;
+        header->qr = DNS_QR_REPLY;
+        header->rcode = DNS_RCODE_REFUSED;
+        sendto(g_bind_sockfd, g_socket_buffer, packet_len, 0, (void *)&source_addr, source_addrlen);
+        return;
     }
 
     uint16_t unique_msgid = g_current_unique_msgid++;
@@ -497,6 +513,7 @@ int main(int argc, char *argv[]) {
     if (g_repeat_times > 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
     LOGINF("[main] %s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
     LOGINF("[main] cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
+    if (g_no_ipv6_query) LOGINF("[main] filter ipv6-address dns-query");
     if (g_reuse_port) LOGINF("[main] enable `SO_REUSEPORT` feature");
     if (g_verbose) LOGINF("[main] print the verbose running log");
 

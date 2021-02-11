@@ -19,6 +19,17 @@
 /* example: "www.example.com", length = 16 (including '\0') */
 #define DNS_DOMAIN_NAME_MAXLEN 254 /* eg: char namebuf[DNS_DOMAIN_NAME_MAXLEN] */
 
+#define DNS_QR_QUERY 0
+#define DNS_QR_REPLY 1
+#define DNS_OPCODE_QUERY 0
+#define DNS_RCODE_NOERROR 0
+#define DNS_RCODE_REFUSED 5
+#define DNS_CLASS_INTERNET 1
+#define DNS_RECORD_TYPE_A 1 /* ipv4 address */
+#define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
+#define DNS_DNAME_LABEL_MAXLEN 63 /* domain-name label maxlen */
+#define DNS_DNAME_COMPRESSION_MINVAL 192 /* domain-name compression minval */
+
 /* dns header structure (fixed length) */
 typedef struct {
     uint16_t id; // id of message
@@ -67,7 +78,7 @@ typedef struct {
 } __attribute__((packed)) dns_record_t;
 
 /* check dns query, `name_buf` used to get domain name, return true if valid */
-bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf);
+bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf, uint16_t *qtype);
 
 /* check dns reply, `name_buf` used to get domain name, return true if accept */
 bool dns_reply_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool chk_ipset);
