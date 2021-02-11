@@ -350,9 +350,6 @@ static void handle_local_packet(void) {
         dns_header_t *header = (dns_header_t *)g_socket_buffer;
         header->qr = DNS_QR_REPLY;
         header->rcode = DNS_RCODE_REFUSED;
-        header->answer_count = 0;
-        header->authority_count = 0;
-        header->additional_count = 0;
         sendto(g_bind_sockfd, g_socket_buffer, packet_len, 0, (void *)&source_addr, source_addrlen);
         return;
     }
