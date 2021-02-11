@@ -17,7 +17,7 @@ chinadns-ng 默认安装到 `/usr/local/bin` 目录，可安装到其它目录�
 交叉编译时只需指定 CC 变量，如 `make CC=aarch64-linux-gnu-gcc`（如有问题，请执行 `make clean`，然后再试）。
 
 ## Docker
-同时，本项目也支持 Docker, 只需要执行以下命令：
+本项目也支持 Docker，只需要执行以下命令：
 ```bash
 # clone source
 git clone https://github.com/zfl9/chinadns-ng.git
@@ -49,6 +49,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
  -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1
  -M, --chnlist-first                  match chnlist first, default: <disabled>
+ -N, --no-ipv6                        disable ipv6-address query (qtype: AAAA)
  -f, --fair-mode                      enable `fair` mode, default: <fast-mode>
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
  -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)
@@ -66,6 +67,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
 - `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
+- `no-ipv6` 选项表示过滤 IPv6-Address(AAAA) 查询，默认不设置此选项。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
 - `fair-mode` 选项表示启用"公平模式"而非默认的"抢答模式"，见后文。
