@@ -44,6 +44,7 @@
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
 #define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.24 <https://github.com/zfl9/chinadns-ng>"
+#define FULLBACK_DNS_NAME_LEN 6
 
 /* is enable verbose logging */
 #define IF_VERBOSE if (g_verbose)
@@ -74,6 +75,7 @@ static bool        g_no_ipv6_query                                    = false; /
        char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
 static char        g_bind_ipstr[INET6_ADDRSTRLEN]                     = "127.0.0.1";
+static char        g_fallback_dns[FULLBACK_DNS_NAME_LEN]              = "trust";
 static portno_t    g_bind_portno                                      = 65353;
 static skaddr6_t   g_bind_skaddr                                      = {0};
 static int         g_bind_sockfd                                      = -1;
@@ -155,7 +157,7 @@ PRINT_HELP_AND_EXIT:
 
 /* parse and check command arguments */
 static void parse_command_args(int argc, char *argv[]) {
-    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:MNfrnvVh";
+    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:F:MNfrnvVh";
     const struct option options[] = {
         {"bind-addr",     required_argument, NULL, 'b'},
         {"bind-port",     required_argument, NULL, 'l'},
@@ -167,6 +169,7 @@ static void parse_command_args(int argc, char *argv[]) {
         {"chnlist-file",  required_argument, NULL, 'm'},
         {"timeout-sec",   required_argument, NULL, 'o'},
         {"repeat-times",  required_argument, NULL, 'p'},
+        {"fallback",      required_argument, NULL, 'F'},
         {"chnlist-first", no_argument,       NULL, 'M'},
         {"no-ipv6",       no_argument,       NULL, 'N'},
         {"fair-mode",     no_argument,       NULL, 'f'},
@@ -253,6 +256,9 @@ static void parse_command_args(int argc, char *argv[]) {
                     printf("[parse_command_args] repeat times min value is 1: %s\n", optarg);
                     goto PRINT_HELP_AND_EXIT;
                 }
+                break;
+            case 'F':
+                strcpy(g_fallback_dns, optarg);
                 break;
             case 'M':
                 g_gfwlist_first = false;
@@ -413,7 +419,9 @@ static void handle_remote_packet(int index) {
     }
 
     bool is_chinadns = index == CHINADNS1_IDX || index == CHINADNS2_IDX;
-    bool is_accept = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, is_chinadns);
+    bool is_fallback_trust = strcmp(g_fallback_dns, "trust") == 0;
+    bool chk_ipset = is_chinadns && is_fallback_trust;
+    bool is_accept = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, chk_ipset);
 
     queryctx_t *context = NULL;
     dns_header_t *dns_header = (dns_header_t *)g_socket_buffer;
@@ -454,7 +462,7 @@ static void handle_remote_packet(int index) {
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
-            if (context->trustdns_buf) {
+            if (context->trustdns_buf || !is_fallback_trust) {
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: ignore", g_domain_name_buffer, remote_ipport, dns_header->id);
             } else {
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: delay", g_domain_name_buffer, remote_ipport, dns_header->id);
@@ -510,6 +518,7 @@ int main(int argc, char *argv[]) {
     if (g_gfwlist_fname) LOGINF("[main] gfwlist entries count: %zu", dnl_init(g_gfwlist_fname, true));
     if (g_chnlist_fname) LOGINF("[main] chnlist entries count: %zu", dnl_init(g_chnlist_fname, false));
     if (g_gfwlist_fname && g_chnlist_fname) LOGINF("[main] %s have higher priority", g_gfwlist_first ? "gfwlist" : "chnlist");
+    LOGINF("[main] fallback mode: %s", g_fallback_dns);
     if (g_repeat_times > 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
     LOGINF("[main] %s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
     LOGINF("[main] cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
