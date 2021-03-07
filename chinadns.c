@@ -365,14 +365,26 @@ static void handle_local_packet(void) {
     uint16_t origin_msgid = dns_header->id;
     dns_header->id = unique_msgid; /* replace with new msgid */
     uint8_t dnlmatch_ret = (g_gfwlist_fname || g_chnlist_fname) ? dnl_ismatch(g_domain_name_buffer, g_gfwlist_first) : DNL_MRESULT_NOMATCH;
+    bool is_fallback_trust = strcmp(g_fallback_dns, "trust") == 0;
 
     for (int i = 0; i < SERVER_MAXCOUNT; ++i) {
         if (g_remote_sockfds[i] < 0) continue;
         uint8_t repeat_times = 0;
         if (i == CHINADNS1_IDX || i == CHINADNS2_IDX) {
             repeat_times = (dnlmatch_ret == DNL_MRESULT_GFWLIST) ? 0 : 1;
+            /* if domain not match chnlist and fallback is trust-dns then china-dns query can be ignore*/
+            if (dnlmatch_ret == DNL_MRESULT_NOMATCH && is_fallback_trust)
+            {
+                repeat_times = 0;
+            }
+            
         } else {
             repeat_times = (dnlmatch_ret == DNL_MRESULT_CHNLIST) ? 0 : g_repeat_times;
+            /* if domain not match gfwlist and fallback is not trust-dns then trunst-dns query can be ignore*/
+            if (dnlmatch_ret == DNL_MRESULT_NOMATCH && !is_fallback_trust)
+            {
+                repeat_times = 0;
+            }
         }
         socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
         for (int j = 0; j < repeat_times; ++j) {
