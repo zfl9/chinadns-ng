@@ -373,6 +373,12 @@ static void handle_local_packet(void) {
             repeat_times = (dnlmatch_ret == DNL_MRESULT_GFWLIST) ? 0 : 1;
         } else {
             repeat_times = (dnlmatch_ret == DNL_MRESULT_CHNLIST) ? 0 : g_repeat_times;
+            // if query domain not in gfwlist and fallback dns is china-dns, we can ignore it
+            if (dnlmatch_ret == DNL_MRESULT_NOMATCH && strcmp(g_fallback_dns, "china") == 0)
+            {
+                repeat_times = 0;
+            }
+            
         }
         socklen_t remote_addrlen = g_remote_skaddrs[i].sin6_family == AF_INET ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
         for (int j = 0; j < repeat_times; ++j) {
