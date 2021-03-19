@@ -49,6 +49,10 @@
 /* is enable verbose logging */
 #define IF_VERBOSE if (g_verbose)
 
+/* final use option*/
+#define FINAL_USE_TRUST "trust"
+#define FINAL_USE_CHINA "china"
+
 /* dns query context structure */
 typedef struct {
     uint16_t   unique_msgid;  /* [key] globally unique msgid */
@@ -75,7 +79,7 @@ static bool        g_no_ipv6_query                                    = false; /
        char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
        char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
 static char        g_bind_ipstr[INET6_ADDRSTRLEN]                     = "127.0.0.1";
-static char        g_fallback_dns[FULLBACK_DNS_NAME_LEN]              = "trust";
+static char        g_final_use[FULLBACK_DNS_NAME_LEN]                 = "trust";
 static portno_t    g_bind_portno                                      = 65353;
 static skaddr6_t   g_bind_skaddr                                      = {0};
 static int         g_bind_sockfd                                      = -1;
@@ -100,6 +104,7 @@ static void print_command_help(void) {
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
            " -g, --gfwlist-file <file-path>       filepath of gfwlist, '-' indicate stdin\n"
            " -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin\n"
+           " -F, --final-use [china|trust]        used dns when not match special domail list and chnroute, default: <trust>\n"
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
            " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
            " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
@@ -169,7 +174,7 @@ static void parse_command_args(int argc, char *argv[]) {
         {"chnlist-file",  required_argument, NULL, 'm'},
         {"timeout-sec",   required_argument, NULL, 'o'},
         {"repeat-times",  required_argument, NULL, 'p'},
-        {"fallback",      required_argument, NULL, 'F'},
+        {"final-use",     required_argument, NULL, 'F'},
         {"chnlist-first", no_argument,       NULL, 'M'},
         {"no-ipv6",       no_argument,       NULL, 'N'},
         {"fair-mode",     no_argument,       NULL, 'f'},
@@ -257,8 +262,13 @@ static void parse_command_args(int argc, char *argv[]) {
                     goto PRINT_HELP_AND_EXIT;
                 }
                 break;
-            case 'F':
-                strcpy(g_fallback_dns, optarg);
+            case 'F':                
+                strcpy(g_final_use, optarg);
+                if (strcmp(g_final_use, FINAL_USE_TRUST) != 0 && strcmp(g_final_use, FINAL_USE_CHINA) != 0)
+                {
+                    printf("[parse_command_args] invalid options: %s\n", optarg);
+                    goto PRINT_HELP_AND_EXIT;
+                }
                 break;
             case 'M':
                 g_gfwlist_first = false;
@@ -373,8 +383,8 @@ static void handle_local_packet(void) {
             repeat_times = (dnlmatch_ret == DNL_MRESULT_GFWLIST) ? 0 : 1;
         } else {
             repeat_times = (dnlmatch_ret == DNL_MRESULT_CHNLIST) ? 0 : g_repeat_times;
-            // if query domain not in gfwlist and fallback dns is china-dns, we can ignore it
-            if (dnlmatch_ret == DNL_MRESULT_NOMATCH && strcmp(g_fallback_dns, "china") == 0)
+            // if query domain not in gfwlist and final used dns is china-dns, we can ignore it
+            if (dnlmatch_ret == DNL_MRESULT_NOMATCH && strcmp(g_final_use, FINAL_USE_CHINA) == 0)
             {
                 repeat_times = 0;
             }
@@ -425,8 +435,8 @@ static void handle_remote_packet(int index) {
     }
 
     bool is_chinadns = index == CHINADNS1_IDX || index == CHINADNS2_IDX;
-    bool is_fallback_trust = strcmp(g_fallback_dns, "trust") == 0;
-    bool chk_ipset = is_chinadns && is_fallback_trust;
+    bool is_final_use_trust = strcmp(g_final_use, FINAL_USE_TRUST) == 0;
+    bool chk_ipset = is_chinadns && is_final_use_trust;
     bool is_accept = dns_reply_check(g_socket_buffer, packet_len, g_verbose ? g_domain_name_buffer : NULL, chk_ipset);
 
     queryctx_t *context = NULL;
@@ -468,7 +478,7 @@ static void handle_remote_packet(int index) {
             reply_length = packet_len;
             goto SEND_REPLY;
         } else {
-            if (context->trustdns_buf || !is_fallback_trust) {
+            if (context->trustdns_buf || !is_final_use_trust) {
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: ignore", g_domain_name_buffer, remote_ipport, dns_header->id);
             } else {
                 IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: delay", g_domain_name_buffer, remote_ipport, dns_header->id);
@@ -524,7 +534,7 @@ int main(int argc, char *argv[]) {
     if (g_gfwlist_fname) LOGINF("[main] gfwlist entries count: %zu", dnl_init(g_gfwlist_fname, true));
     if (g_chnlist_fname) LOGINF("[main] chnlist entries count: %zu", dnl_init(g_chnlist_fname, false));
     if (g_gfwlist_fname && g_chnlist_fname) LOGINF("[main] %s have higher priority", g_gfwlist_first ? "gfwlist" : "chnlist");
-    LOGINF("[main] fallback mode: %s", g_fallback_dns);
+    LOGINF("[main] final use: %s-dns", g_final_use);
     if (g_repeat_times > 1) LOGINF("[main] enable repeat mode, times: %hhu", g_repeat_times);
     LOGINF("[main] %s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
     LOGINF("[main] cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
