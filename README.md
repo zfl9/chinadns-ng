@@ -46,7 +46,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6
  -g, --gfwlist-file <file-path>       filepath of gfwlist, '-' indicate stdin
  -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin
- -F, --final-use [china|trust]        used dns when not match special domail list and chnroute, default: <trust>
+ -F, --final-china                    use china-dns when not match special domail list and chnroute
  -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
  -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1
  -M, --chnlist-first                  match chnlist first, default: <disabled>
@@ -67,7 +67,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset 集合的名称。
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
-- `final-use` 选项指定域名未命中黑白名单，且 ip 未命中中国大陆 ipset 时走可信 DNS 还是走国内 DNS
+- `final-china` 选项表示指定域名未命中黑白名单，且 ip 未命中中国大陆 ipset 时是走国内 DNS
 - `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
 - `no-ipv6` 选项表示过滤 IPv6-Address(AAAA) 查询，默认不设置此选项。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
@@ -83,11 +83,11 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 当从监听套接字收到请求客户端的 DNS 查询时，将按照如下逻辑转发给对应上游 DNS：
   - 如果启用了黑名单(gfwlist)且查询的域名命中了黑名单，则将该请求转发给可信 DNS。
   - 如果启用了白名单(chnlist)且查询的域名命中了白名单，则将该请求转发给国内 DNS。
-  - 如果未启用黑名单、白名单，或未命中黑名单、白名单，且指定的未命中时使用的 DNS 是可信 DNS，则将请求转发给所有上游 DNS；否则将请求只转发给国内 DNS。
+  - 如果未启用黑名单、白名单，或未命中黑名单、白名单，且指定的未命中时使用的 DNS 是可信 DNS（即未指定选项 `-F/--final-china`），则将请求转发给所有上游 DNS；否则将请求只转发给国内 DNS。
 - 当从上游套接字收到上游服务器的 DNS 响应时，将按照如下逻辑过滤收到的上游 DNS 响应：
   - 如果关联的查询是命中了黑白名单的，则直接将其转发给请求客户端，并释放相关上下文。
-  - 如果关联的查询是未命中黑白名单的，且指定的未命中时使用的 DNS 是可信 DNS，则检查国内 DNS 返回的是否为国内 IP（即是否命中 chnroute/chnroute6）；如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果。如果可信 DNS 有一定概率会比国内 DNS 先返回的话，请务必启用"公平模式"（默认是"抢答模式"），也即指定选项 `-f/--fair-mode`。但也不是说无论何时都要启用公平模式，如果国内 DNS 绝大多数情况下都比可信 DNS 先返回的话，是不需要启用公平模式的，当然你启用公平模式也不会有任何问题以及性能损失。其实按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式。
-  - 如果关联的查询是未命中黑白名单的，且指定的未命中时使用的 DNS 是国内 DNS，则直接将其转发给请求客户端，并释放相关上下文。
+  - 如果关联的查询是未命中黑白名单的，且指定的未命中时使用的 DNS 是可信 DNS（即未指定选项 `-F/--final-china`），则检查国内 DNS 返回的是否为国内 IP（即是否命中 chnroute/chnroute6）；如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果。如果可信 DNS 有一定概率会比国内 DNS 先返回的话，请务必启用"公平模式"（默认是"抢答模式"），也即指定选项 `-f/--fair-mode`。但也不是说无论何时都要启用公平模式，如果国内 DNS 绝大多数情况下都比可信 DNS 先返回的话，是不需要启用公平模式的，当然你启用公平模式也不会有任何问题以及性能损失。其实按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式。
+  - 如果关联的查询是未命中黑白名单的，且指定的未命中时使用的 DNS 是国内 DNS（即指定选项 `-F/--final-china`），则直接将其转发给请求客户端，并释放相关上下文。
 - 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心黑白名单的查询效率问题，条目数量的多少只会影响一点儿内存占用，对查询速度是没有影响的，另外也不必担心内存占用会很多，我在`CentOS7`上实测的数据是：加载`5000+`条黑名单和`70000+`条白名单后，`chinadns-ng`占用`6.4M`内存，如果仅加载黑名单的话则只占用了`1.1M`内存。当然如果内存确实比较吃紧，那么仅加载黑名单也是没有问题的。
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是先匹配黑名单(gfwlist)，若命中，则标记命中黑名单并返回函数，若未命中，则接着匹配白名单(chnlist)，若命中，则标记命中白名单并返回函数，若未命中，则标记未命中任何名单并返回函数。也就是说黑名单的优先级是比白名单的优先级高的，如果想让白名单的优先级比黑名单的优先级高，指定选项 `-M/--chnlist-first` 即可。
 - 域名黑白名单文件是按行分隔的域名模式，所谓域名模式其实就是普通的域名后缀，格式如：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最少要有`2`个，最多只能`4`个，过短的会被忽略（如`net`），过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），当然这么做的目的还是为了尽量提高域名的匹配性能。
