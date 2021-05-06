@@ -75,6 +75,7 @@ static inline void dnl_input_convert(char *fulldomain, const char* subdomain_arr
         ++replace_count;
     }
     switch (replace_count) {
+        case 0:
         case 1:
             subdomain_array[0] = fulldomain;
             break;
