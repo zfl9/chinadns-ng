@@ -25,7 +25,7 @@ static void* mempool_alloc(size_t length) {
 
 /* hash entry typedef */
 typedef struct {
-    myhash_hh hh;
+    myhash_hh hh; /* TODO replace uthash to reduce memory usage */
     char dname[];
 } dnlentry_t;
 
@@ -33,66 +33,58 @@ typedef struct {
 static dnlentry_t *g_gfwlist_headentry = NULL;
 static dnlentry_t *g_chnlist_headentry = NULL;
 
-/* handling dname matching pattern */
-static inline char* dnl_pattern_strip(char *pattern) {
-    if (pattern[0] == '.' || pattern[strlen(pattern) - 1] == '.') return NULL;
-    for (int i = 0; i < 4; ++i) {
-        char *sepptr = strrchr(pattern, '.');
-        if (sepptr) {
-            *sepptr = '/';
-            if (i == 3) pattern = sepptr + 1;
-        } else if (i == 0) {
-            return NULL;
+// "www.google.com.hk"
+#define LABEL_MAXCNT 4
+
+// "a.www.google.com.hk" => "www.google.com.hk"
+static const char * dname_trim(const char *dname) {
+    unsigned dnamelen = strlen(dname);
+    if (dnamelen < 1 || dname[0] == '.' || dname[dnamelen - 1] == '.') return NULL;
+
+    unsigned labellen = 0, count = 0;
+    for (int i = dnamelen - 1; i >= 0; --i) {
+        if (dname[i] != '.') {
+            if (++labellen > DNS_DNAME_LABEL_MAXLEN) return NULL;
         } else {
-            break;
+            if (labellen < 1) return NULL;
+            labellen = 0;
+            if (++count >= LABEL_MAXCNT) return dname + i + 1;
         }
     }
-    return pattern;
+    return dname;
 }
 
-/* split dname pattern, array length is 2 */
-static inline void dnl_pattern_split(const char *pattern, const char* subpattern_array[]) {
-    int slashchar_count = 0;
-    for (int i = 0; pattern[i]; ++i) {
-        if (pattern[i] == '/') ++slashchar_count;
+// used by dnl_init()
+// "www.google.com.hk" => ["hk", "com.hk", "google.com.hk"], arraylen=3
+static unsigned dname_subsplit(const char *dname, unsigned dnamelen, const char *sub_dnames[LABEL_MAXCNT - 1], unsigned sub_dnamelens[LABEL_MAXCNT - 1]) {
+    unsigned arraylen = 0;
+    for (int i = dnamelen - 1, n = 0; i >= 0; --i, ++n) {
+        if (dname[i] == '.') {
+            sub_dnames[arraylen] = dname + i + 1;
+            sub_dnamelens[arraylen] = n;
+            if (++arraylen >= LABEL_MAXCNT - 1) break;
+        }
     }
-    if (slashchar_count == 2) {
-        subpattern_array[0] = strchr(pattern, '/') + 1;
-    } else if (slashchar_count == 3) {
-        subpattern_array[1] = strchr(pattern, '/') + 1;
-        subpattern_array[0] = strchr(subpattern_array[1], '/') + 1;
-    }
+    return arraylen;
 }
 
-/* convert domain name, array length is 3 */
-static inline void dnl_input_convert(char *fulldomain, const char* subdomain_array[]) {
-    if (fulldomain[0] == '.') return;
-    int replace_count = 0;
-    while (replace_count < 4) {
-        char *sepptr = strrchr(fulldomain, '.');
-        if (!sepptr) break;
-        *sepptr = '/';
-        ++replace_count;
+// used by dnl_ismatch()
+// "a.www.google.com.hk" => ["hk", "com.hk", "google.com.hk", "www.google.com.hk"], arraylen=4
+static unsigned dname_split(const char *dname, unsigned dnamelen, const char *sub_dnames[LABEL_MAXCNT], unsigned sub_dnamelens[LABEL_MAXCNT]) {
+    if (dname[0] == '.') return 0; //root-domain
+
+    unsigned arraylen = 0;
+    for (int i = dnamelen - 1, n = 0; i >= 0; --i, ++n) {
+        if (dname[i] == '.') {
+            sub_dnames[arraylen] = dname + i + 1;
+            sub_dnamelens[arraylen] = n;
+            if (++arraylen >= LABEL_MAXCNT) return arraylen;
+        }
     }
-    switch (replace_count) {
-        case 1:
-            subdomain_array[0] = fulldomain;
-            break;
-        case 2:
-            subdomain_array[1] = fulldomain;
-            subdomain_array[0] = strchr(fulldomain, '/') + 1;
-            break;
-        case 3:
-            subdomain_array[2] = fulldomain;
-            subdomain_array[1] = strchr(fulldomain, '/') + 1;
-            subdomain_array[0] = strchr(subdomain_array[1], '/') + 1;
-            break;
-        case 4:
-            subdomain_array[2] = strchr(fulldomain, '/') + 1;
-            subdomain_array[1] = strchr(subdomain_array[2], '/') + 1;
-            subdomain_array[0] = strchr(subdomain_array[1], '/') + 1;
-            break;
-    }
+
+    sub_dnames[arraylen] = dname;
+    sub_dnamelens[arraylen] = dnamelen;
+    return ++arraylen;
 }
 
 /* initialize domain-name-list from file */
@@ -101,7 +93,7 @@ size_t dnl_init(const char *filename, bool is_gfwlist) {
     if (strcmp(filename, "-") == 0) {
         fp = stdin;
     } else {
-        fp = fopen(filename, "r");
+        fp = fopen(filename, "rb");
         if (!fp) {
             LOGERR("[dnl_init] failed to open '%s': (%d) %s", filename, errno, strerror(errno));
             exit(errno);
@@ -109,28 +101,31 @@ size_t dnl_init(const char *filename, bool is_gfwlist) {
     }
 
     dnlentry_t **headentry = is_gfwlist ? &g_gfwlist_headentry : &g_chnlist_headentry;
-    char strbuf[DNS_DOMAIN_NAME_MAXLEN];
+    char strbuf[DNS_DOMAIN_NAME_MAXLEN]; //254(include \0)
     while (fscanf(fp, "%253s", strbuf) > 0) {
-        char *dname = dnl_pattern_strip(strbuf);
+        const char *dname = dname_trim(strbuf);
         if (!dname) continue;
 
         dnlentry_t *entry = NULL;
-        MYHASH_GET(*headentry, entry, dname, strlen(dname));
+        unsigned dnamelen = strlen(dname);
+        MYHASH_GET(*headentry, entry, dname, dnamelen);
         if (entry) continue;
 
-        entry = mempool_alloc(sizeof(dnlentry_t) + strlen(dname) + 1);
-        strcpy(entry->dname, dname);
-        MYHASH_ADD(*headentry, entry, entry->dname, strlen(entry->dname));
+        entry = mempool_alloc(sizeof(dnlentry_t) + dnamelen); //without \0
+        memcpy(entry->dname, dname, dnamelen);
+        MYHASH_ADD(*headentry, entry, entry->dname, dnamelen); //keyptr usually points to the inside of the structure
     }
     if (fp != stdin) fclose(fp);
 
+    //remove duplicate dnames
+    const char *sub_dnames[LABEL_MAXCNT - 1];
+    unsigned sub_dnamelens[LABEL_MAXCNT - 1];
     dnlentry_t *curentry = NULL, *tmpentry = NULL;
     MYHASH_FOR(*headentry, curentry, tmpentry) {
-        const char* subpattern_array[2] = {0};
-        dnl_pattern_split(curentry->dname, subpattern_array);
-        for (int i = 0; i < 2 && subpattern_array[i]; ++i) {
+        unsigned arraylen = dname_subsplit(curentry->dname, curentry->hh.keylen, sub_dnames, sub_dnamelens);
+        for (unsigned i = 0; i < arraylen; ++i) {
             dnlentry_t *findentry = NULL;
-            MYHASH_GET(*headentry, findentry, subpattern_array[i], strlen(subpattern_array[i]));
+            MYHASH_GET(*headentry, findentry, sub_dnames[i], sub_dnamelens[i]);
             if (findentry) {
                 MYHASH_DEL(*headentry, curentry);
                 break;
@@ -141,27 +136,27 @@ size_t dnl_init(const char *filename, bool is_gfwlist) {
 }
 
 /* check if the given domain name matches */
-uint8_t dnl_ismatch(char *domainname, bool is_gfwlist_first) {
-    const char* subdomain_array[3] = {0};
-    dnl_input_convert(domainname, subdomain_array);
+uint8_t dnl_ismatch(const char *dname, bool is_gfwlist_first) {
+    const char *sub_dnames[LABEL_MAXCNT];
+    unsigned sub_dnamelens[LABEL_MAXCNT];
+    unsigned arraylen = dname_split(dname, strlen(dname), sub_dnames, sub_dnamelens);
+    if (arraylen <= 0) return DNL_MRESULT_NOMATCH;
 
     dnlentry_t *headentry = is_gfwlist_first ? g_gfwlist_headentry : g_chnlist_headentry;
     if (headentry) {
-        for (int i = 0; i < 3 && subdomain_array[i]; ++i) {
+        for (unsigned i = 0; i < arraylen; ++i) {
             dnlentry_t *findentry = NULL;
-            MYHASH_GET(headentry, findentry, subdomain_array[i], strlen(subdomain_array[i]));
+            MYHASH_GET(headentry, findentry, sub_dnames[i], sub_dnamelens[i]);
             if (findentry) return is_gfwlist_first ? DNL_MRESULT_GFWLIST : DNL_MRESULT_CHNLIST;
         }
     }
-
     headentry = is_gfwlist_first ? g_chnlist_headentry : g_gfwlist_headentry;
     if (headentry) {
-        for (int i = 0; i < 3 && subdomain_array[i]; ++i) {
+        for (unsigned i = 0; i < arraylen; ++i) {
             dnlentry_t *findentry = NULL;
-            MYHASH_GET(headentry, findentry, subdomain_array[i], strlen(subdomain_array[i]));
+            MYHASH_GET(headentry, findentry, sub_dnames[i], sub_dnamelens[i]);
             if (findentry) return is_gfwlist_first ? DNL_MRESULT_CHNLIST : DNL_MRESULT_GFWLIST;
         }
     }
-
     return DNL_MRESULT_NOMATCH;
 }

@@ -16,6 +16,6 @@
 size_t dnl_init(const char *filename, bool is_gfwlist);
 
 /* check if the given domain name matches */
-uint8_t dnl_ismatch(char *domainname, bool is_gfwlist_first);
+uint8_t dnl_ismatch(const char *dname, bool is_gfwlist_first);
 
 #endif
