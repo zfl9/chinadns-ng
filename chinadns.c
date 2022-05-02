@@ -54,6 +54,7 @@ typedef struct {
     uint16_t   origin_msgid;  /* [value] associated original msgid */
     int        query_timerfd; /* [value] dns query timeout timer-fd */
     void      *trustdns_buf;  /* [value] storage reply from trust-dns */
+    void      *chinadns_buf;  /* [value] storage reply from china-dns */
     bool       chinadns_got;  /* [value] received reply from china-dns */
     uint8_t    dnlmatch_ret;  /* [value] dnl_ismatch(dname) ret-value */
     skaddr6_t  source_addr;   /* [value] associated client socket addr */
@@ -64,6 +65,7 @@ typedef struct {
 static int         g_epollfd                                          = -1;
 static bool        g_verbose                                          = false;
 static bool        g_reuse_port                                       = false;
+static bool        g_failover_mode                                    = false;
 static bool        g_fair_mode                                        = false; /* default: fast-mode */
 static uint8_t     g_repeat_times                                     = 1; /* used by trust-dns only */
 static const char *g_gfwlist_fname                                    = NULL; /* gfwlist dnamelist filename */
@@ -105,6 +107,7 @@ static void print_command_help(void) {
            " -f, --fair-mode                      enable `fair` mode, default: <fast-mode>\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
            " -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)\n"
+           " -F, --failover-mode                  failover between china dns and trust dns\n"
            " -v, --verbose                        print the verbose log, default: <disabled>\n"
            " -V, --version                        print `chinadns-ng` version number and exit\n"
            " -h, --help                           print `chinadns-ng` help information and exit\n"
@@ -155,7 +158,7 @@ PRINT_HELP_AND_EXIT:
 
 /* parse and check command arguments */
 static void parse_command_args(int argc, char *argv[]) {
-    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:MNfrnvVh";
+    const char *optstr = ":b:l:c:t:4:6:g:m:o:p:MNfrnFvVh";
     const struct option options[] = {
         {"bind-addr",     required_argument, NULL, 'b'},
         {"bind-port",     required_argument, NULL, 'l'},
@@ -172,6 +175,7 @@ static void parse_command_args(int argc, char *argv[]) {
         {"fair-mode",     no_argument,       NULL, 'f'},
         {"reuse-port",    no_argument,       NULL, 'r'},
         {"noip-as-chnip", no_argument,       NULL, 'n'},
+        {"failover-mode", no_argument,       NULL, 'F'},
         {"verbose",       no_argument,       NULL, 'v'},
         {"version",       no_argument,       NULL, 'V'},
         {"help",          no_argument,       NULL, 'h'},
@@ -268,6 +272,9 @@ static void parse_command_args(int argc, char *argv[]) {
                 break;
             case 'n':
                 g_noip_as_chnip = true;
+                break;
+            case 'F':
+                g_failover_mode = true;
                 break;
             case 'v':
                 g_verbose = true;
@@ -389,10 +396,23 @@ static void handle_local_packet(void) {
     context->origin_msgid = origin_msgid;
     context->query_timerfd = query_timerfd;
     context->trustdns_buf = NULL;
+    context->chinadns_buf = NULL;
     context->chinadns_got = !g_fair_mode;
     context->dnlmatch_ret = dnlmatch_ret;
     memcpy(&context->source_addr, &source_addr, sizeof(source_addr));
     MYHASH_ADD(g_query_context_hashtbl, context, &context->unique_msgid, sizeof(context->unique_msgid));
+}
+
+/* send the dns reply back to local socket */
+static void send_reply(void *reply_buffer, size_t reply_length, queryctx_t *context) {
+    dns_header_t *dns_header = reply_buffer;
+    dns_header->id = context->origin_msgid; /* replace with old msgid */
+    socklen_t source_addrlen = (context->source_addr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
+    if (sendto(g_bind_sockfd, reply_buffer, reply_length, 0, (void *)&context->source_addr, source_addrlen) < 0) {
+        portno_t source_port = 0;
+        parse_socket_addr(&context->source_addr, g_ipaddrstring_buffer, &source_port);
+        LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
+    }
 }
 
 /* handle remote socket readable event */
@@ -443,6 +463,10 @@ static void handle_remote_packet(int index) {
                 reply_length = *(uint16_t *)context->trustdns_buf;
                 goto SEND_REPLY;
             } else {
+                IF_VERBOSE LOGINF("[handle_remote_packet] reply [%s] from %s (%hu), result: delay", g_domain_name_buffer, remote_ipport, dns_header->id);
+                context->chinadns_buf = malloc(sizeof(uint16_t) + packet_len);
+                *(uint16_t *)context->chinadns_buf = packet_len; /* dns reply length */
+                memcpy(context->chinadns_buf + sizeof(uint16_t), g_socket_buffer, packet_len);
                 context->chinadns_got = true;
                 return;
             }
@@ -467,17 +491,12 @@ static void handle_remote_packet(int index) {
     }
 
 SEND_REPLY:
-    dns_header = reply_buffer;
-    dns_header->id = context->origin_msgid; /* replace with old msgid */
-    socklen_t source_addrlen = (context->source_addr.sin6_family == AF_INET) ? sizeof(skaddr4_t) : sizeof(skaddr6_t);
-    if (sendto(g_bind_sockfd, reply_buffer, reply_length, 0, (void *)&context->source_addr, source_addrlen) < 0) {
-        portno_t source_port = 0;
-        parse_socket_addr(&context->source_addr, g_ipaddrstring_buffer, &source_port);
-        LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
-    }
+    send_reply(reply_buffer, reply_length, context);
+    /* release context */
     MYHASH_DEL(g_query_context_hashtbl, context);
     close(context->query_timerfd);
     free(context->trustdns_buf);
+    free(context->chinadns_buf);
     free(context);
 }
 
@@ -489,7 +508,19 @@ static void handle_timeout_event(uint16_t msg_id) {
     LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
     MYHASH_DEL(g_query_context_hashtbl, context); /* delete query context from the hashtable */
     close(context->query_timerfd); /* epoll will automatically remove the associated event */
+
+    void *dns_buf = NULL;
+    /* no reply has been sent, send any existing dns reply as failover */
+    if (g_failover_mode && (dns_buf = context->trustdns_buf ? context->trustdns_buf : context->chinadns_buf)) {
+        void *reply_buffer = dns_buf + sizeof(uint16_t);
+        size_t reply_length = *(uint16_t *)dns_buf;
+
+        IF_VERBOSE LOGINF("[handle_timeout_event] reply from <previous-%s> (%hu), result: accept(failover)", dns_buf == context->trustdns_buf ? "trustdns" : "chinadns", msg_id);
+        send_reply(reply_buffer, reply_length, context);
+    }
+
     free(context->trustdns_buf); /* release the buffer that stores the trust-dns reply */
+    free(context->chinadns_buf); /* release the buffer that stores the china-dns reply */
     free(context);
 }
 
@@ -515,6 +546,7 @@ int main(int argc, char *argv[]) {
     LOGINF("[main] cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
     if (g_no_ipv6_query) LOGINF("[main] filter ipv6-address dns-query");
     if (g_reuse_port) LOGINF("[main] enable `SO_REUSEPORT` feature");
+    if (g_failover_mode) LOGINF("[main] enable failover mode");
     if (g_verbose) LOGINF("[main] print the verbose running log");
 
     /* init ipset netlink socket */

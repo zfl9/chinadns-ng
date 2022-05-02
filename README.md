@@ -53,6 +53,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -f, --fair-mode                      enable `fair` mode, default: <fast-mode>
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
  -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)
+ -F, --failover-mode                  failover between china dns and trust dns
  -v, --verbose                        print the verbose log, default: <disabled>
  -V, --version                        print `chinadns-ng` version number and exit
  -h, --help                           print `chinadns-ng` help information and exit
@@ -84,7 +85,9 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 如果未启用黑名单、白名单，或未命中黑名单、白名单，则将请求转发给所有上游 DNS。
 - 当从上游套接字收到上游服务器的 DNS 响应时，将按照如下逻辑过滤收到的上游 DNS 响应：
   - 如果关联的查询是命中了黑白名单的，则直接将其转发给请求客户端，并释放相关上下文。
-  - 如果关联的查询是未命中黑白名单的，则检查国内 DNS 返回的是否为国内 IP（即是否命中 chnroute/chnroute6）；如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果。如果可信 DNS 有一定概率会比国内 DNS 先返回的话，请务必启用"公平模式"（默认是"抢答模式"），也即指定选项 `-f/--fair-mode`。但也不是说无论何时都要启用公平模式，如果国内 DNS 绝大多数情况下都比可信 DNS 先返回的话，是不需要启用公平模式的，当然你启用公平模式也不会有任何问题以及性能损失。其实按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式。
+  - 如果关联的查询是未命中黑白名单的，则检查国内 DNS 返回的是否为国内 IP（即是否命中 chnroute/chnroute6）；如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果。
+    - 如果可信 DNS 有一定概率会比国内 DNS 先返回的话，请务必启用"公平模式"（默认是"抢答模式"），也即指定选项 `-f/--fair-mode`。但也不是说无论何时都要启用公平模式，如果国内 DNS 绝大多数情况下都比可信 DNS 先返回的话，是不需要启用公平模式的，当然你启用公平模式也不会有任何问题以及性能损失。其实按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式。
+    - 如果指定选项 `-F/--failover`, 并且从期望的 DNS 获取响应超时，比如可信 DNS 超时或者公平模式下国内 DNS 超时，则采用已经获取到的 DNS 结果作为后备。
 - 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心黑白名单的查询效率问题，条目数量的多少只会影响一点儿内存占用，对查询速度是没有影响的，另外也不必担心内存占用会很多，我在`CentOS7`上实测的数据是：加载`5000+`条黑名单和`70000+`条白名单后，`chinadns-ng`占用`6.4M`内存，如果仅加载黑名单的话则只占用了`1.1M`内存。当然如果内存确实比较吃紧，那么仅加载黑名单也是没有问题的。
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是先匹配黑名单(gfwlist)，若命中，则标记命中黑名单并返回函数，若未命中，则接着匹配白名单(chnlist)，若命中，则标记命中白名单并返回函数，若未命中，则标记未命中任何名单并返回函数。也就是说黑名单的优先级是比白名单的优先级高的，如果想让白名单的优先级比黑名单的优先级高，指定选项 `-M/--chnlist-first` 即可。
 - 域名黑白名单文件是按行分隔的域名模式，所谓域名模式其实就是普通的域名后缀，格式如：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最少要有`2`个，最多只能`4`个，过短的会被忽略（如`net`），过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），当然这么做的目的还是为了尽量提高域名的匹配性能。UPDATE：从b25版本开始，顶级域名不再被忽略（如`cn`、`hk`），因此`label`数量可以为`1~N`个（目前N为4，见`dnlutils.c`中的`LABEL_MAXCNT`常量）。
