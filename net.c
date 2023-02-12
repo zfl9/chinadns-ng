@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
-#include "netutils.h"
-#include "logutils.h"
-#include "chinadns.h"
+#include "net.h"
+#include "log.h"
+#include "main.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -11,7 +11,6 @@
 #include <sys/socket.h>
 #include <sys/timerfd.h>
 #include <linux/netlink.h>
-#undef _GNU_SOURCE
 
 /* since linux 3.9 */
 #ifndef SO_REUSEPORT

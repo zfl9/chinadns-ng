@@ -1,11 +1,10 @@
 #define _GNU_SOURCE
-#include "dnsutils.h"
-#include "netutils.h"
-#include "logutils.h"
-#include "chinadns.h"
+#include "dns.h"
+#include "net.h"
+#include "log.h"
+#include "main.h"
 #include <string.h>
 #include <netinet/in.h>
-#undef _GNU_SOURCE
 
 /* check dns packet */
 static bool dns_packet_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool is_query, const void **answer_ptr) {

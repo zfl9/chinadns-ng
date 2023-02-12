@@ -1,10 +1,7 @@
-#ifndef CHINADNS_NG_LOGUTILS_H
-#define CHINADNS_NG_LOGUTILS_H
+#pragma once
 
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <time.h>
-#undef _GNU_SOURCE
 
 #define LOGINF(fmt, ...)                                                    \
     do {                                                                    \
@@ -23,5 +20,3 @@
                 tm->tm_hour,        tm->tm_min,     tm->tm_sec,             \
                 ##__VA_ARGS__);                                             \
     } while (0)
-
-#endif

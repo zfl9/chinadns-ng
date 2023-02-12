@@ -1,12 +1,9 @@
-#ifndef CHINADNS_NG_NETUTILS_H
-#define CHINADNS_NG_NETUTILS_H
+#pragma once
 
-#define _GNU_SOURCE
 #include <time.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <netinet/in.h>
-#undef _GNU_SOURCE
 
 /* ipv4/ipv6 address length (binary) */
 #define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
@@ -42,5 +39,3 @@ void ipset_init_nlsocket(void);
 
 /* check given ipaddr is exists in ipset */
 bool ipset_addr_is_exists(const void *addr_ptr, bool is_ipv4);
-
-#endif

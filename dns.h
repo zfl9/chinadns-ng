@@ -1,12 +1,9 @@
-#ifndef CHINADNS_NG_DNSUTILS_H
-#define CHINADNS_NG_DNSUTILS_H
+#pragma once
 
-#define _GNU_SOURCE
 #include <stdint.h>
 #include <stdbool.h>
 #include <endian.h>
 #include <sys/types.h>
-#undef _GNU_SOURCE
 
 #if !(defined(__BYTE_ORDER) && defined(__LITTLE_ENDIAN) && defined(__BIG_ENDIAN))
   #error "__BYTE_ORDER or __LITTLE_ENDIAN or __BIG_ENDIAN not defined"
@@ -82,5 +79,3 @@ bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf,
 
 /* check dns reply, `name_buf` used to get domain name, return true if accept */
 bool dns_reply_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool chk_ipset);
-
-#endif

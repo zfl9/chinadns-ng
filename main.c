@@ -1,9 +1,9 @@
 #define _GNU_SOURCE
-#include "chinadns.h"
-#include "logutils.h"
-#include "netutils.h"
-#include "dnsutils.h"
-#include "dnlutils.h"
+#include "main.h"
+#include "log.h"
+#include "net.h"
+#include "dns.h"
+#include "dnl.h"
 #include "uthash.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,7 +20,6 @@
 #include <sys/epoll.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#undef _GNU_SOURCE
 
 /* limits.h */
 #ifndef PATH_MAX
@@ -33,9 +32,6 @@
 #define TRUSTDNS1_IDX 2
 #define TRUSTDNS2_IDX 3
 #define BINDSOCK_MARK 4
-#define TIMER_FD_MARK 5
-#define BIT_SHIFT_LEN 16
-#define IDX_MARK_MASK 0xffff
 
 /* constant macro definition */
 #define EPOLL_MAXEVENTS 8
@@ -43,7 +39,7 @@
 #define SOCKBUFF_MAXSIZE DNS_PACKET_MAXSIZE
 #define PORTSTR_MAXLEN 6 /* "65535\0" (including '\0') */
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN) /* "addr#port\0" */
-#define CHINADNS_VERSION "ChinaDNS-NG v1.0-beta.25 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG 2023.02.12 <https://github.com/zfl9/chinadns-ng>"
 
 /* is enable verbose logging */
 #define IF_VERBOSE if (g_verbose)
@@ -52,7 +48,7 @@
 typedef struct {
     uint16_t   unique_msgid;  /* [key] globally unique msgid */
     uint16_t   origin_msgid;  /* [value] associated original msgid */
-    int        query_timerfd; /* [value] dns query timeout timer-fd */
+    int        request_time;  /* [value] query request timestamp */
     void      *trustdns_buf;  /* [value] storage reply from trust-dns */
     bool       chinadns_got;  /* [value] received reply from china-dns */
     uint8_t    dnlmatch_ret;  /* [value] dnl_ismatch(dname) ret-value */
@@ -376,18 +372,10 @@ static void handle_local_packet(void) {
         }
     }
 
-    int query_timerfd = new_once_timerfd(g_upstream_timeout_sec);
-    struct epoll_event ev = {.events = EPOLLIN, .data.u32 = (unique_msgid << BIT_SHIFT_LEN) | TIMER_FD_MARK};
-    if (epoll_ctl(g_epollfd, EPOLL_CTL_ADD, query_timerfd, &ev)) {
-        LOGERR("[handle_local_packet] failed to register timeout event: (%d) %s", errno, strerror(errno));
-        close(query_timerfd);
-        return;
-    }
-
     queryctx_t *context = malloc(sizeof(queryctx_t));
     context->unique_msgid = unique_msgid;
     context->origin_msgid = origin_msgid;
-    context->query_timerfd = query_timerfd;
+    context->request_time = time(NULL);
     context->trustdns_buf = NULL;
     context->chinadns_got = !g_fair_mode;
     context->dnlmatch_ret = dnlmatch_ret;
@@ -476,19 +464,14 @@ SEND_REPLY:
         LOGERR("[handle_remote_packet] failed to send dns reply packet to %s#%hu: (%d) %s", g_ipaddrstring_buffer, source_port, errno, strerror(errno));
     }
     MYHASH_DEL(g_query_context_hashtbl, context);
-    close(context->query_timerfd);
     free(context->trustdns_buf);
     free(context);
 }
 
 /* handle upstream reply timeout event */
-static void handle_timeout_event(uint16_t msg_id) {
-    queryctx_t *context = NULL;
-    MYHASH_GET(g_query_context_hashtbl, context, &msg_id, sizeof(msg_id));
-    if (!context) return; /* due to timing issues, the query context has actually been released */
-    LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", msg_id);
+static void handle_timeout_event(queryctx_t *context) {
+    LOGERR("[handle_timeout_event] upstream dns server reply timeout, unique msgid: %hu", context->unique_msgid);
     MYHASH_DEL(g_query_context_hashtbl, context); /* delete query context from the hashtable */
-    close(context->query_timerfd); /* epoll will automatically remove the associated event */
     free(context->trustdns_buf); /* release the buffer that stores the trust-dns reply */
     free(context);
 }
@@ -564,22 +547,25 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    int timeout_ms = -1;
+    int now, remain_sec;
+    queryctx_t *cur, *tmp;
+
     /* run event loop (blocking here) */
-    while (true) {
-        int event_count = epoll_wait(g_epollfd, events, EPOLL_MAXEVENTS, -1);
+    for (;;) {
+        int event_count = epoll_wait(g_epollfd, events, EPOLL_MAXEVENTS, timeout_ms);
 
-        if (event_count < 0) {
+        if (event_count < 0)
             LOGERR("[main] epoll_wait() reported an error: (%d) %s", errno, strerror(errno));
-            continue;
-        }
 
+        /* handle socket event */
         for (int i = 0; i < event_count; ++i) {
             uint32_t curr_event = events[i].events;
             uint32_t curr_data = events[i].data.u32;
 
             if (curr_event & EPOLLERR) {
                 /* an error occurred */
-                switch (curr_data & IDX_MARK_MASK) {
+                switch (curr_data) {
                     case CHINADNS1_IDX:
                         LOGERR("[main] upstream server socket error(%s): (%d) %s", g_remote_ipports[CHINADNS1_IDX], errno, strerror(errno));
                         break;
@@ -595,13 +581,10 @@ int main(int argc, char *argv[]) {
                     case BINDSOCK_MARK:
                         LOGERR("[main] local udp listen socket error: (%d) %s", errno, strerror(errno));
                         break;
-                    case TIMER_FD_MARK:
-                        LOGERR("[main] query timeout timer fd error: (%d) %s", errno, strerror(errno));
-                        break;
                 }
             } else if (curr_event & EPOLLIN) {
                 /* handle readable event */
-                switch (curr_data & IDX_MARK_MASK) {
+                switch (curr_data) {
                     case CHINADNS1_IDX:
                         handle_remote_packet(CHINADNS1_IDX);
                         break;
@@ -617,12 +600,22 @@ int main(int argc, char *argv[]) {
                     case BINDSOCK_MARK:
                         handle_local_packet();
                         break;
-                    case TIMER_FD_MARK:
-                        handle_timeout_event(curr_data >> BIT_SHIFT_LEN);
-                        break;
                 }
             }
         }
+
+        /* handle timeout event */
+        now = time(NULL);
+        MYHASH_FOR(g_query_context_hashtbl, cur, tmp) {
+            remain_sec = cur->request_time + ((int)g_upstream_timeout_sec) - now;
+            if (remain_sec <= 0) {
+                handle_timeout_event(cur); //remove current entry
+            } else {
+                timeout_ms = remain_sec * 1000;
+                break;
+            }
+        }
+        if (MYHASH_CNT(g_query_context_hashtbl) <= 0U) timeout_ms = -1;
     }
 
     return 0;
