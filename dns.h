@@ -12,9 +12,15 @@
 /* dns packet max size (in bytes) */
 #define DNS_PACKET_MAXSIZE 1472 /* compatible with edns */
 
-/* domain name max len (including separator '.' and '\0') */
-/* example: "www.example.com", length = 16 (including '\0') */
-#define DNS_DOMAIN_NAME_MAXLEN 254 /* eg: char namebuf[DNS_DOMAIN_NAME_MAXLEN] */
+#define DNS_PACKET_MINSIZE (sizeof(dns_header_t) + DNS_NAME_ENC_MINLEN + sizeof(dns_query_t))
+
+/* name max len (ASCII name) */
+/* "www.example.com" length:15 */
+#define DNS_NAME_MAXLEN 253
+
+/* encoded length range */
+#define DNS_NAME_ENC_MINLEN 1 /* "\0" (root domain) */
+#define DNS_NAME_ENC_MAXLEN 255 /* "\3www\7example\3com\0" */
 
 #define DNS_QR_QUERY 0
 #define DNS_QR_REPLY 1
@@ -71,11 +77,25 @@ typedef struct {
     uint16_t rclass; // record class: internet=0x0001
     uint32_t rttl; // record ttl value (in seconds)
     uint16_t rdatalen; // record data length
-    uint8_t  rdataptr[]; // record data pointer (sizeof=0)
+    uint8_t  rdata[]; // record data pointer (sizeof=0)
 } __attribute__((packed)) dns_record_t;
 
 /* check dns query, `name_buf` used to get domain name, return true if valid */
-bool dns_query_check(const void *packet_buf, ssize_t packet_len, char *name_buf, uint16_t *qtype);
+bool dns_query_check(const void *restrict packet_buf, ssize_t packet_len, char *restrict name_buf, size_t *restrict p_namelen);
 
 /* check dns reply, `name_buf` used to get domain name, return true if accept */
-bool dns_reply_check(const void *packet_buf, ssize_t packet_len, char *name_buf, bool chk_ipset);
+bool dns_reply_check(const void *restrict packet_buf, ssize_t packet_len, char *restrict name_buf, size_t *restrict p_namelen);
+
+/* result of dns_chnip_check() */
+#define DNS_IPCHK_IS_CHNIP 0
+#define DNS_IPCHK_NOT_CHNIP 1
+#define DNS_IPCHK_NOT_FOUND 2
+#define DNS_IPCHK_BAD_PACKET 3
+
+/* check if the answer ip is in the chnroute ipset (check qtype before call) */
+int dns_chnip_check(const void *restrict packet_buf, ssize_t packet_len, size_t namelen);
+
+#define dns_qtype(buf, namelen) ({ \
+    const dns_query_t *q = (buf) + sizeof(dns_header_t) + (namelen); \
+    ntohs(q->qtype); \
+})

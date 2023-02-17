@@ -459,7 +459,7 @@ static const char *dname_trim(const char *dname) {
     return dname;
 }
 
-/* used by dnl_ismatch() */
+/* used by get_name_tag() */
 /* "a.www.google.com.hk" => ["hk", "com.hk", "google.com.hk", "www.google.com.hk"], arraylen=LABEL_MAXCNT */
 static unsigned dname_split(const char *dname, unsigned dnamelen, const char *sub_dnames[], unsigned sub_dnamelens[]) {
     if (dname[0] == '.') return 0; //root-domain
@@ -485,15 +485,15 @@ size_t dnl_init(const char *filename, bool is_gfwlist) {
     } else {
         fp = fopen(filename, "rb");
         if (!fp) {
-            LOGERR("[dnl_init] failed to open '%s': (%d) %s", filename, errno, strerror(errno));
+            LOGE("failed to open '%s': (%d) %s", filename, errno, strerror(errno));
             exit(errno);
         }
     }
 
     u32_t nitems = 0, addr0 = 0;
-    char buf[DNS_DOMAIN_NAME_MAXLEN + 1];
+    char buf[DNS_NAME_MAXLEN + 1];
 
-    while (fscanf(fp, "%" literal(DNS_DOMAIN_NAME_MAXLEN) "s", buf) > 0) {
+    while (fscanf(fp, "%" literal(DNS_NAME_MAXLEN) "s", buf) > 0) {
         const char *name = dname_trim(buf);
         if (name) {
             u32_t nameaddr = add_to_namepool(name);
@@ -520,19 +520,19 @@ size_t dnl_init(const char *filename, bool is_gfwlist) {
 }
 
 /* check if the given domain name matches */
-u8_t dnl_ismatch(const char *dname, bool is_gfwlist_first) {
+u8_t get_name_tag(const char *dname, bool is_gfwlist_first) {
     const char *sub_dnames[LABEL_MAXCNT];
     unsigned sub_dnamelens[LABEL_MAXCNT];
 
     unsigned arraylen = dname_split(dname, strlen(dname), sub_dnames, sub_dnamelens);
     if (arraylen <= 0)
-        return DNL_MRESULT_NOMATCH;
+        return NAME_TAG_NONE;
 
     const dnl_s *dnl = is_gfwlist_first ? &g_gfwlist : &g_chnlist;
     if (!dnl_is_null(dnl)) {
         for (unsigned i = 0; i < arraylen; ++i) {
             if (exists_in_dnl(dnl, sub_dnames[i], sub_dnamelens[i]))
-                return is_gfwlist_first ? DNL_MRESULT_GFWLIST : DNL_MRESULT_CHNLIST;
+                return is_gfwlist_first ? NAME_TAG_GFW : NAME_TAG_CHN;
         }
     }
 
@@ -540,9 +540,9 @@ u8_t dnl_ismatch(const char *dname, bool is_gfwlist_first) {
     if (!dnl_is_null(dnl)) {
         for (unsigned i = 0; i < arraylen; ++i) {
             if (exists_in_dnl(dnl, sub_dnames[i], sub_dnamelens[i]))
-                return is_gfwlist_first ? DNL_MRESULT_CHNLIST : DNL_MRESULT_GFWLIST;
+                return is_gfwlist_first ? NAME_TAG_CHN : NAME_TAG_GFW;
         }
     }
 
-    return DNL_MRESULT_NOMATCH;
+    return NAME_TAG_NONE;
 }

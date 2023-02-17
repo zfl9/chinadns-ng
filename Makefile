@@ -3,7 +3,7 @@ CC = gcc
 CFLAGS = -std=c99 -Wall -Wextra -Wstrict-aliasing -fstrict-aliasing -O3 -DNDEBUG
 # LDFLAGS =
 LDFLAGS = -s
-SRCS = main.c dns.c dnl.c net.c
+SRCS = main.c opt.c dns.c dnl.c net.c
 OBJS = $(SRCS:.c=.o)
 LIBS = -lm
 MAIN = chinadns-ng

@@ -4,13 +4,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* dnl_ismatch() return value */
-#define DNL_MRESULT_NOMATCH 0 // did not match
-#define DNL_MRESULT_GFWLIST 1 // hit the gfwlist
-#define DNL_MRESULT_CHNLIST 2 // hit the chnlist
+#define NAME_TAG_NONE 0 // did not match any list
+#define NAME_TAG_GFW 1 // hit the gfwlist
+#define NAME_TAG_CHN 2 // hit the chnlist
 
 /* initialize domain-name-list from file */
 size_t dnl_init(const char *filename, bool is_gfwlist);
 
-/* check if the given domain name matches */
-uint8_t dnl_ismatch(const char *dname, bool is_gfwlist_first);
+/* get name tag by dnl match */
+uint8_t get_name_tag(const char *dname, bool is_gfwlist_first);
