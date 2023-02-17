@@ -1,0 +1,25 @@
+version: '3.9'
+
+services:
+  chinadns-ng:
+    image: pexcn/docker-images:chinadns-ng
+    container_name: chinadns-ng
+    restart: unless-stopped
+    network_mode: host
+    privileged: true
+    environment:
+      TZ: Asia/Taipei
+    volumes:
+      - ./chinadns-ng-data:/etc/chinadns-ng
+    command: >
+      --bind-addr 0.0.0.0
+      --bind-port 5353
+      --china-dns 223.5.5.5,119.29.29.29
+      --trust-dns 127.0.0.1#5300
+      --gfwlist-file /etc/chinadns-ng/gfwlist.txt
+      --chnlist-file /etc/chinadns-ng/chinalist.txt
+      --timeout-sec 3
+      --repeat-times 2
+      --fair-mode
+      --reuse-port
+      --noip-as-chnip
