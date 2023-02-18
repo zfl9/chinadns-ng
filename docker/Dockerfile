@@ -40,5 +40,7 @@ RUN curl -sSL --create-dirs --output-dir /etc/chinadns-ng \
 COPY --from=builder /usr/local/bin/chinadns-ng /usr/local/bin/
 COPY chinadns-ng.sh /usr/local/bin/
 
+ENV RULES_UPDATE_INTERVAL=0
+
 ENTRYPOINT ["chinadns-ng"]
 CMD ["--help"]
