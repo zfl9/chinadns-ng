@@ -9,13 +9,14 @@ services:
     privileged: true
     environment:
       TZ: Asia/Taipei
-    volumes:
-      - ./chinadns-ng-data:/etc/chinadns-ng
+      RULES_UPDATE_INTERVAL: 0
+    #volumes:
+    #  - ./chinadns-ng-data:/etc/chinadns-ng
     command: >
       --bind-addr 0.0.0.0
       --bind-port 5353
       --china-dns 223.5.5.5,119.29.29.29
-      --trust-dns 127.0.0.1#5300
+      --trust-dns 8.8.8.8#53
       --gfwlist-file /etc/chinadns-ng/gfwlist.txt
       --chnlist-file /etc/chinadns-ng/chinalist.txt
       --timeout-sec 3
