@@ -48,8 +48,10 @@ load_ipsets() {
   local ipset4="chnroute"
   if _is_exist_ipset $ipset4; then
     ipset flush $ipset4
+    info "ipset4: $ipset4 flushed."
   else
     ipset create $ipset4 hash:net hashsize 64 family inet
+    info "ipset4: $ipset4 created."
   fi
   ipset restore <<-EOF
 	$(sed "s/^/add $ipset4 /" </etc/chinadns-ng/chnroute.txt)
@@ -59,8 +61,10 @@ load_ipsets() {
   local ipset6="chnroute6"
   if _is_exist_ipset $ipset6; then
     ipset flush $ipset6
+    info "ipset6: $ipset6 flushed."
   else
     ipset create $ipset6 hash:net hashsize 64 family inet6
+    info "ipset6: $ipset6 created."
   fi
   ipset restore <<-EOF
 	$(sed "s/^/add $ipset6 /" </etc/chinadns-ng/chnroute6.txt)
@@ -68,32 +72,16 @@ load_ipsets() {
   info "ipset6: load to $ipset6 done."
 }
 
-_clear_ipset() {
-  local name="$1"
-  local is_destroy="$2"
-  ipset flush "$name"
-  [ "$is_destroy" = 1 ] && ipset destroy "$name" || return 0
-}
-
-# FIXME: don't hardcode ipset name.
-flush_ipsets() {
-  local ipset4="chnroute"
-  _clear_ipset $ipset4
-  info "ipset4: $ipset4 flushed."
-
-  local ipset6="chnroute6"
-  _clear_ipset $ipset6
-  info "ipset6: $ipset6 flushed."
-}
-
 # FIXME: don't hardcode ipset name.
 destroy_ipsets() {
   local ipset4="chnroute"
-  _clear_ipset $ipset4 1
+  ipset flush "$ipset4"
+  ipset destroy "$ipset4"
   info "ipset4: $ipset4 destroyed."
 
   local ipset6="chnroute6"
-  _clear_ipset $ipset6 1
+  ipset flush "$ipset6"
+  ipset destroy "$ipset6"
   info "ipset6: $ipset6 destroyed."
 }
 
@@ -157,7 +145,6 @@ start_chinadns_ng() {
       if update_rules; then
         warn "update rules success, restart chinadns-ng..."
         stop_process
-        flush_ipsets
         load_ipsets
         start_process "$@"
       else
