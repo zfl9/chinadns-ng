@@ -16,11 +16,11 @@ services:
       --bind-addr 0.0.0.0
       --bind-port 5353
       --china-dns 223.5.5.5,119.29.29.29
-      --trust-dns 8.8.8.8#53
+      --trust-dns 8.8.8.8,1.1.1.1
       --gfwlist-file /etc/chinadns-ng/gfwlist.txt
       --chnlist-file /etc/chinadns-ng/chinalist.txt
       --timeout-sec 3
-      --repeat-times 2
+      --repeat-times 4
       --fair-mode
       --reuse-port
       --noip-as-chnip
