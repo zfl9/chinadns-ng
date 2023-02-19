@@ -43,13 +43,8 @@ _is_exist_ipset() {
   ipset list -n "$1" >/dev/null 2>&1
 }
 
-_destroy_ipset() {
-  ipset flush "$1" 2>/dev/null
-  ipset destroy "$1" 2>/dev/null
-}
-
-# FIXME: don't hardcode ipset name, should be parse from args.
-create_ipsets() {
+# FIXME: don't hardcode ipset name.
+load_ipsets() {
   local ipset4="chnroute"
   if _is_exist_ipset $ipset4; then
     ipset flush $ipset4
@@ -59,7 +54,7 @@ create_ipsets() {
   ipset restore <<-EOF
 	$(sed "s/^/add $ipset4 /" </etc/chinadns-ng/chnroute.txt)
 	EOF
-  info "ipset4: import to $ipset4 done."
+  info "ipset4: load to $ipset4 done."
 
   local ipset6="chnroute6"
   if _is_exist_ipset $ipset6; then
@@ -70,17 +65,64 @@ create_ipsets() {
   ipset restore <<-EOF
 	$(sed "s/^/add $ipset6 /" </etc/chinadns-ng/chnroute6.txt)
 	EOF
-  info "ipset6: import to $ipset6 done."
+  info "ipset6: load to $ipset6 done."
 }
 
-# FIXME: don't hardcode ipset name, should be parse from args.
+_clear_ipset() {
+  local name="$1"
+  local is_destroy="$2"
+  ipset flush "$name"
+  [ "$is_destroy" = 1 ] && ipset destroy "$name" || return 0
+}
+
+# FIXME: don't hardcode ipset name.
+flush_ipsets() {
+  local ipset4="chnroute"
+  _clear_ipset $ipset4
+  info "ipset4: $ipset4 flushed."
+
+  local ipset6="chnroute6"
+  _clear_ipset $ipset6
+  info "ipset6: $ipset6 flushed."
+}
+
+# FIXME: don't hardcode ipset name.
 destroy_ipsets() {
   local ipset4="chnroute"
-  _destroy_ipset $ipset4
+  _clear_ipset $ipset4 1
   info "ipset4: $ipset4 destroyed."
+
   local ipset6="chnroute6"
-  _destroy_ipset $ipset6
+  _clear_ipset $ipset6 1
   info "ipset6: $ipset6 destroyed."
+}
+
+_is_reuse_port() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -r | --reuse-port) return 0 ;;
+      *) shift ;;
+    esac
+  done
+  return 1
+}
+
+_get_cpu_cores() {
+  grep -c "^processor" /proc/cpuinfo
+}
+
+start_process() {
+  local cores="$(_get_cpu_cores)"
+  if _is_reuse_port "$@" && [ "$cores" -gt 1 ]; then
+    info "start $cores chinadns-ng processes."
+    # shellcheck disable=SC2034
+    for i in $(seq 1 "$cores"); do
+      chinadns-ng "$@" &
+    done
+  else
+    info "start chinadns-ng process."
+    chinadns-ng "$@" &
+  fi
 }
 
 stop_process() {
@@ -92,8 +134,9 @@ stop_process() {
 }
 
 graceful_stop() {
-  destroy_ipsets
+  warn "caught SIGTERM or SIGINT signal, graceful stopping..."
   stop_process
+  destroy_ipsets
 
   # exit infinite loop
   exit 0
@@ -102,19 +145,23 @@ graceful_stop() {
 start_chinadns_ng() {
   trap 'graceful_stop' TERM INT
 
-  create_ipsets
+  load_ipsets
+  start_process "$@"
 
   if [ "$RULES_UPDATE_INTERVAL" = 0 ]; then
-    chinadns-ng "$@" &
     wait
   else
-    chinadns-ng "$@" &
     while true; do
       sleep "$RULES_UPDATE_INTERVAL" &
       wait $!
       if update_rules; then
+        warn "update rules success, restart chinadns-ng..."
         stop_process
-        chinadns-ng "$@" &
+        flush_ipsets
+        load_ipsets
+        start_process "$@"
+      else
+        error "update rules failed, skip restart chinadns-ng."
       fi
     done
   fi

@@ -9,7 +9,7 @@ services:
     privileged: true
     environment:
       TZ: Asia/Taipei
-      RULES_UPDATE_INTERVAL: 0
+      RULES_UPDATE_INTERVAL: 86400
     #volumes:
     #  - ./chinadns-ng-data:/etc/chinadns-ng
     command: >
