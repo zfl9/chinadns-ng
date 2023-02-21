@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "opt.h"
 #include <getopt.h>
 #include <string.h>
@@ -8,30 +9,30 @@
 
 /* limits.h */
 #ifndef PATH_MAX
-  #define PATH_MAX 4096
+  #define PATH_MAX 4096 /* include \0 */
 #endif
 
-bool        g_verbose                                          = false;
-bool        g_reuse_port                                       = false;
-bool        g_fair_mode                                        = false; /* default: fast-mode */
-bool        g_noip_as_chnip                                    = false; /* default: see as not-china-ip */
-uint8_t     g_noaaaa_query                                    = 0; /* disable AAAA query (bit flags) */
+bool    g_verbose       = false;
+bool    g_reuse_port    = false;
+bool    g_fair_mode     = false; /* default: fast-mode */
+bool    g_noip_as_chnip = false; /* default: see as not-china-ip */
+uint8_t g_noaaaa_query  = 0; /* disable AAAA query (bit flags) */
 
-const char *g_gfwlist_fname                                    = NULL; /* gfwlist dnamelist filename */
-const char *g_chnlist_fname                                    = NULL; /* chnlist dnamelist filename */
-bool        g_gfwlist_first                                    = true; /* match gfwlist dnamelist first */
+const char *g_gfwlist_fname = NULL; /* gfwlist dnamelist filename */
+const char *g_chnlist_fname = NULL; /* chnlist dnamelist filename */
+bool        g_gfwlist_first = true; /* match gfwlist dnamelist first */
 
-char        g_ipset_setname4[IPSET_MAXNAMELEN]                 = "chnroute"; /* ipset setname for ipv4 */
-char        g_ipset_setname6[IPSET_MAXNAMELEN]                 = "chnroute6"; /* ipset setname for ipv6 */
+char g_ipset_setname4[IPSET_MAXNAMELEN] = "chnroute"; /* ipset setname for ipv4 */
+char g_ipset_setname6[IPSET_MAXNAMELEN] = "chnroute6"; /* ipset setname for ipv6 */
 
-char        g_bind_ipstr[INET6_ADDRSTRLEN]                     = "127.0.0.1";
-portno_t    g_bind_portno                                      = 65353;
-skaddr_u    g_bind_skaddr;
+char     g_bind_ipstr[INET6_ADDRSTRLEN] = "127.0.0.1";
+portno_t g_bind_portno                  = 65353;
+skaddr_u g_bind_skaddr                  = {{0}};
 
-char        g_remote_ipports[SERVER_MAXCOUNT][ADDRPORT_STRLEN];
-skaddr_u    g_remote_skaddrs[SERVER_MAXCOUNT];
-int         g_upstream_timeout_sec                             = 5;
-uint8_t     g_repeat_times                                     = 1; /* used by trust-dns only */
+char     g_remote_ipports[SERVER_MAXCNT][ADDRPORT_STRLEN] = {[CHINADNS1_IDX] = "114.114.114.114", [TRUSTDNS1_IDX] = "8.8.8.8"};
+skaddr_u g_remote_skaddrs[SERVER_MAXCNT]                  = {{{0}}};
+int      g_upstream_timeout_sec                           = 5;
+uint8_t  g_repeat_times                                   = 1; /* used by trust-dns only */
 
 typedef struct {
     char c;
@@ -42,10 +43,10 @@ static const nov6_opt_s s_nov6_opts[] = {
     {'a', NOAAAA_ALL},
     {'g', NOAAAA_TAG_GFW},
     {'m', NOAAAA_TAG_CHN},
-    {'o', NOAAAA_TAG_NONE},
+    {'n', NOAAAA_TAG_NONE},
     {'c', NOAAAA_CHINA_DNS},
     {'t', NOAAAA_TRUST_DNS},
-    {0, 0}
+    {0, 0},
 };
 
 #define OPT_BIND_ADDR 'b'
@@ -98,7 +99,7 @@ static const struct option s_options[] = {
     {"ipset-name4",   required_argument, NULL, OPT_IPSET_NAME4},
     {"ipset-name6",   required_argument, NULL, OPT_IPSET_NAME6},
     {"gfwlist-file",  required_argument, NULL, OPT_GFWLIST_FILE},
-    {"chnlist-file",  required_argument, NULL, OPT_CHNLIST_FIRST},
+    {"chnlist-file",  required_argument, NULL, OPT_CHNLIST_FILE},
     {"timeout-sec",   required_argument, NULL, OPT_TIMEOUT_SEC},
     {"repeat-times",  required_argument, NULL, OPT_REPEAT_TIMES},
     {"no-ipv6",       optional_argument, NULL, OPT_NO_IPV6},
@@ -109,7 +110,7 @@ static const struct option s_options[] = {
     {"verbose",       no_argument,       NULL, OPT_VERBOSE},
     {"version",       no_argument,       NULL, OPT_VERSION},
     {"help",          no_argument,       NULL, OPT_HELP},
-    {NULL,            0,                 NULL,  0 },
+    {NULL,            0,                 NULL, 0},
 };
 
 static void show_help(void) {
@@ -144,44 +145,45 @@ static void show_help(void) {
 }
 
 #define err_exit(fmt, args...) ({ \
-    printf(fmt, ##args); \
+    printf("[%s] " fmt "\n", __func__, ##args); \
     show_help(); \
     exit(1); \
 })
 
 static void parse_upstream_addrs(char *arg, bool is_chinadns) {
-    size_t cnt = 0;
+    int cnt = 0;
 
     for (char *ipstr = strtok(arg, ","); ipstr; ipstr = strtok(NULL, ",")) {
-        if (++cnt > 2)
-            err_exit("[parse_upstream_addrs] %s dns servers max count is 2\n", is_chinadns ? "china" : "trust");
+        if (++cnt > SERVER_GROUP_CNT)
+            err_exit("%s dns servers max count is %d", is_chinadns ? "china" : "trust", SERVER_GROUP_CNT);
 
         portno_t port = 53;
         char *port_str = strchr(ipstr, '#');
         if (port_str) {
             *port_str++ = 0;
             if (strlen(port_str) + 1 > PORTSTR_MAXLEN)
-                err_exit("[parse_upstream_addrs] port number max length is 5: %s\n", port_str);
+                err_exit("port number max length is %d: %s", PORTSTR_MAXLEN - 1, port_str);
             port = strtoul(port_str, NULL, 10);
             if (port == 0)
-                err_exit("[parse_upstream_addrs] invalid server port number: %s\n", port_str);
+                err_exit("invalid server port number: %s", port_str);
         }
 
         if (strlen(ipstr) + 1 > INET6_ADDRSTRLEN)
-            err_exit("[parse_upstream_addrs] ip address max length is 45: %s\n", ipstr);
+            err_exit("ip address max length is %d: %s", INET6_ADDRSTRLEN - 1, ipstr);
 
         int family = get_ipstr_family(ipstr);
         if (family == -1)
-            err_exit("[parse_upstream_addrs] invalid server ip address: %s\n", ipstr);
+            err_exit("invalid server ip address: %s", ipstr);
 
         int idx = (is_chinadns ? CHINADNS1_IDX : TRUSTDNS1_IDX) + cnt - 1;
-        sprintf(g_remote_ipports[idx], "%s#%u", ipstr, port);
+        sprintf(g_remote_ipports[idx], "%s#%u", ipstr, (unsigned)port);
         build_socket_addr(family, &g_remote_skaddrs[idx], ipstr, port);
     }
 }
 
 void opt_parse(int argc, char *argv[]) {
     opterr = 0; /* disable default error msg */
+
     int optindex = -1;
     int shortopt = -1;
 
@@ -191,22 +193,18 @@ void opt_parse(int argc, char *argv[]) {
     while ((shortopt = getopt_long(argc, argv, s_shortopts, s_options, &optindex)) != -1) {
         switch (shortopt) {
             case OPT_BIND_ADDR:
-                if (strlen(optarg) + 1 > INET6_ADDRSTRLEN) {
-                    err_exit("[opt_parse] ip address max length is 45: %s\n", optarg);
-                }
-                if (get_ipstr_family(optarg) == -1) {
-                    err_exit("[opt_parse] invalid listen ip address: %s\n", optarg);
-                }
+                if (strlen(optarg) + 1 > INET6_ADDRSTRLEN)
+                    err_exit("ip address max length is %d: %s", INET6_ADDRSTRLEN - 1, optarg);
+                if (get_ipstr_family(optarg) == -1)
+                    err_exit("invalid listen ip address: %s", optarg);
                 strcpy(g_bind_ipstr, optarg);
                 break;
             case OPT_BIND_PORT:
-                if (strlen(optarg) + 1 > PORTSTR_MAXLEN) {
-                    err_exit("[opt_parse] port number max length is 5: %s\n", optarg);
-                }
+                if (strlen(optarg) + 1 > PORTSTR_MAXLEN)
+                    err_exit("port number max length is %d: %s", PORTSTR_MAXLEN - 1, optarg);
                 g_bind_portno = strtoul(optarg, NULL, 10);
-                if (g_bind_portno == 0) {
-                    err_exit("[opt_parse] invalid listen port number: %s\n", optarg);
-                }
+                if (g_bind_portno == 0)
+                    err_exit("invalid listen port number: %s", optarg);
                 break;
             case OPT_CHINA_DNS:
                 chinadns_optarg = optarg;
@@ -215,43 +213,34 @@ void opt_parse(int argc, char *argv[]) {
                 trustdns_optarg = optarg;
                 break;
             case OPT_IPSET_NAME4:
-                if (strlen(optarg) + 1 > IPSET_MAXNAMELEN) {
-                    err_exit("[opt_parse] ipset setname max length is 31: %s\n", optarg);
-                }
+                if (strlen(optarg) + 1 > IPSET_MAXNAMELEN)
+                    err_exit("ipset setname max length is %d: %s", IPSET_MAXNAMELEN - 1, optarg);
                 strcpy(g_ipset_setname4, optarg);
                 break;
             case OPT_IPSET_NAME6:
-                if (strlen(optarg) + 1 > IPSET_MAXNAMELEN) {
-                    err_exit("[opt_parse] ipset setname max length is 31: %s\n", optarg);
-                }
+                if (strlen(optarg) + 1 > IPSET_MAXNAMELEN)
+                    err_exit("ipset setname max length is %d: %s", IPSET_MAXNAMELEN - 1, optarg);
                 strcpy(g_ipset_setname6, optarg);
                 break;
             case OPT_GFWLIST_FILE:
-                if (strlen(optarg) + 1 > PATH_MAX) {
-                    err_exit("[opt_parse] file path max length is 4095: %s\n", optarg);
-                }
+                if (strlen(optarg) + 1 > PATH_MAX)
+                    err_exit("file path max length is %d: %s", PATH_MAX - 1, optarg);
                 g_gfwlist_fname = optarg;
                 break;
             case OPT_CHNLIST_FILE:
-                if (strlen(optarg) + 1 > PATH_MAX) {
-                    err_exit("[opt_parse] file path max length is 4095: %s\n", optarg);
-                }
+                if (strlen(optarg) + 1 > PATH_MAX)
+                    err_exit("file path max length is %d: %s", PATH_MAX - 1, optarg);
                 g_chnlist_fname = optarg;
                 break;
             case OPT_TIMEOUT_SEC:
                 g_upstream_timeout_sec = strtoul(optarg, NULL, 10);
-                if (g_upstream_timeout_sec <= 0) {
-                    err_exit("[opt_parse] invalid upstream timeout sec: %s\n", optarg);
-                }
+                if (g_upstream_timeout_sec <= 0)
+                    err_exit("invalid upstream timeout sec: %s", optarg);
                 break;
             case OPT_REPEAT_TIMES:
                 g_repeat_times = strtoul(optarg, NULL, 10);
-                if (g_repeat_times == 0) {
-                    err_exit("[opt_parse] repeat times min value is 1: %s\n", optarg);
-                }
-                break;
-            case OPT_CHNLIST_FIRST:
-                g_gfwlist_first = false;
+                if (g_repeat_times == 0)
+                    err_exit("invalid trustdns repeat times: %s", optarg);
                 break;
             case OPT_NO_IPV6:
                 if (!optarg) {
@@ -271,6 +260,9 @@ void opt_parse(int argc, char *argv[]) {
                     }
                 }
                 break;
+            case OPT_CHNLIST_FIRST:
+                g_gfwlist_first = false;
+                break;
             case OPT_FAIR_MODE:
                 g_fair_mode = true;
                 break;
@@ -284,7 +276,7 @@ void opt_parse(int argc, char *argv[]) {
                 g_verbose = true;
                 break;
             case OPT_VERSION:
-                printf(CHINADNS_VERSION"\n");
+                printf(CHINADNS_VERSION "\n");
                 exit(0);
                 break;
             case OPT_HELP:
@@ -293,27 +285,26 @@ void opt_parse(int argc, char *argv[]) {
                 break;
             case ':':
                 /* missing argument */
-                err_exit("[opt_parse] missing optarg: '%s'\n", argv[optind - 1]);
+                err_exit("missing optarg: '%s'", argv[optind - 1]);
                 break;
             case '?':
                 /* unknown option */
                 if (optopt) {
                     /* short opt */
-                    err_exit("[opt_parse] unknown option: '-%c'\n", optopt);
+                    err_exit("unknown option: '-%c'", (char)optopt);
                 } else {
                     /* long opt */
-                    char *longopt = argv[optind - 1];
+                    const char *longopt = argv[optind - 1];
                     const char *p = strchr(longopt, '=');
                     int len = p ? p - longopt : (int)strlen(longopt);
-                    err_exit("[opt_parse] unknown option: '%.*s'\n", len, longopt);
+                    err_exit("unknown option: '%.*s'", len, longopt);
                 }
                 break;
         }
     }
 
-    if (g_gfwlist_fname && g_chnlist_fname && strcmp(g_gfwlist_fname, "-") == 0 && strcmp(g_chnlist_fname, "-") == 0) {
-        err_exit("[opt_parse] gfwlist:%s and chnlist:%s are both STDIN\n", g_gfwlist_fname, g_chnlist_fname);
-    }
+    if (g_gfwlist_fname && g_chnlist_fname && strcmp(g_gfwlist_fname, "-") == 0 && strcmp(g_chnlist_fname, "-") == 0)
+        err_exit("gfwlist:%s and chnlist:%s are both STDIN", g_gfwlist_fname, g_chnlist_fname);
 
     build_socket_addr(get_ipstr_family(g_bind_ipstr), &g_bind_skaddr, g_bind_ipstr, g_bind_portno);
 
@@ -322,7 +313,6 @@ void opt_parse(int argc, char *argv[]) {
         strcpy(buf, chinadns_optarg);
         parse_upstream_addrs(buf, true);
     } else {
-        strcpy(g_remote_ipports[CHINADNS1_IDX], "114.114.114.114#53");
         build_socket_addr(AF_INET, &g_remote_skaddrs[CHINADNS1_IDX], "114.114.114.114", 53);
     }
 
@@ -331,7 +321,6 @@ void opt_parse(int argc, char *argv[]) {
         strcpy(buf, trustdns_optarg);
         parse_upstream_addrs(buf, false);
     } else {
-        strcpy(g_remote_ipports[TRUSTDNS1_IDX], "8.8.8.8#53");
         build_socket_addr(AF_INET, &g_remote_skaddrs[TRUSTDNS1_IDX], "8.8.8.8", 53);
     }
 }

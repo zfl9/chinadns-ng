@@ -2,14 +2,12 @@
 #include "dns.h"
 #include "net.h"
 #include "log.h"
-#include "opt.h"
 #include "misc.h"
 #include <stddef.h>
 #include <string.h>
-#include <netinet/in.h>
 
 /* "\3www\6google\3com\0" => "www.google.com" */
-static bool decode_name(char *restrict out, const char *restrict src, ssize_t len) {
+static bool decode_name(char *noalias out, const char *noalias src, ssize_t len) {
     /* root domain ? */
     if (len <= DNS_NAME_ENC_MINLEN) {
         out[0] = '.';
@@ -52,8 +50,8 @@ static bool decode_name(char *restrict out, const char *restrict src, ssize_t le
 
 /* check dns packet */
 static bool check_packet(bool is_query,
-    const void *restrict packet_buf, ssize_t packet_len,
-    char *restrict name_buf, size_t *restrict p_namelen)
+    const void *noalias packet_buf, ssize_t packet_len,
+    char *noalias name_buf, size_t *noalias p_namelen)
 {
     /* check packet length */
     unlikely_if (packet_len < (ssize_t)DNS_PACKET_MINSIZE) {
@@ -68,7 +66,7 @@ static bool check_packet(bool is_query,
     /* check header */
     const dns_header_t *header = packet_buf;
     unlikely_if (header->qr != (is_query ? DNS_QR_QUERY : DNS_QR_REPLY)) {
-        LOGE("this is a %s packet, but header->qr != %d", is_query ? "query" : "reply", is_query ? DNS_QR_QUERY : DNS_QR_REPLY);
+        LOGE("this is a %s packet, but header->qr is %u", is_query ? "query" : "reply", (unsigned)header->qr);
         return false;
     }
     unlikely_if (header->opcode != DNS_OPCODE_QUERY) {
@@ -135,8 +133,8 @@ static bool check_packet(bool is_query,
 /*      \2cn\0 => normal domain */
 /*     [ptr:2] => fully compress */
 /* \2cn[ptr:2] => partial compress */
-static bool skip_name(const void *restrict *restrict p_ptr, ssize_t *restrict p_len) {
-    const void *restrict ptr = *p_ptr;
+static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len) {
+    const void *noalias ptr = *p_ptr;
     ssize_t len = *p_len;
 
     while (len > 0) {
@@ -149,12 +147,12 @@ static bool skip_name(const void *restrict *restrict p_ptr, ssize_t *restrict p_
             ptr += 2;
             len -= 2;
             break;
-        } else unlikely_if (label_len > DNS_DNAME_LABEL_MAXLEN) {
-            LOGE("label length is too long: %u", label_len);
-            return false;
-        } else { /* normal label */
+        } else if (label_len <= DNS_DNAME_LABEL_MAXLEN) {
             ptr += 1 + label_len;
             len -= 1 + label_len;
+        } else {
+            LOGE("label length is too long: %u", label_len);
+            return false;
         }
     }
 
@@ -168,8 +166,7 @@ static bool skip_name(const void *restrict *restrict p_ptr, ssize_t *restrict p_
     return true;
 }
 
-/* check if the answer ip is in the chnroute ipset (check qtype before call) */
-int dns_chnip_check(const void *restrict packet_buf, ssize_t packet_len, size_t namelen) {
+int dns_chnip_check(const void *noalias packet_buf, ssize_t packet_len, size_t namelen) {
     const dns_header_t *h = packet_buf;
     uint16_t answer_count = ntohs(h->answer_count);
 
@@ -218,12 +215,10 @@ int dns_chnip_check(const void *restrict packet_buf, ssize_t packet_len, size_t 
     return DNS_IPCHK_NOT_FOUND;
 }
 
-/* check dns query, `name_buf` used to get domain name, return true if valid */
-bool dns_query_check(const void *restrict packet_buf, ssize_t packet_len, char *restrict name_buf, size_t *restrict p_namelen) {
+bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, size_t *noalias p_namelen) {
     return check_packet(true, packet_buf, packet_len, name_buf, p_namelen);
 }
 
-/* check dns reply, `name_buf` used to get domain name, return true if accept */
-bool dns_reply_check(const void *restrict packet_buf, ssize_t packet_len, char *restrict name_buf, size_t *restrict p_namelen) {
+bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, size_t *noalias p_namelen) {
     return check_packet(false, packet_buf, packet_len, name_buf, p_namelen);
 }

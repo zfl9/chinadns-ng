@@ -4,13 +4,19 @@
 #include <stdbool.h>
 #include <netinet/in.h>
 #include "net.h"
+#include "misc.h"
 
 /* socket idx/mark */
 #define CHINADNS1_IDX 0
 #define CHINADNS2_IDX 1
 #define TRUSTDNS1_IDX 2
 #define TRUSTDNS2_IDX 3
-#define BINDSOCK_MARK 4
+#define SERVER_MAXIDX TRUSTDNS2_IDX
+#define SERVER_MAXCNT (SERVER_MAXIDX + 1)
+#define BINDSOCK_MARK (SERVER_MAXIDX + 1)
+
+/* max number of chinadns or trustdns */
+#define SERVER_GROUP_CNT 2
 
 #define is_chinadns_idx(idx) ((idx) == CHINADNS1_IDX || (idx) == CHINADNS2_IDX)
 
@@ -24,9 +30,6 @@
 
 #define is_filter_all_v6(flags) ((flags) == (__typeof__(flags))NOAAAA_ALL)
 
-/* upstream max count */
-#define SERVER_MAXCOUNT 4
-
 /* setname max len (include \0) */
 #define IPSET_MAXNAMELEN 32
 
@@ -37,7 +40,7 @@
 #define ADDRPORT_STRLEN (INET6_ADDRSTRLEN + PORTSTR_MAXLEN)
 
 /* is enable verbose logging */
-#define IF_VERBOSE if (g_verbose)
+#define IF_VERBOSE unlikely_if (g_verbose)
 
 extern bool        g_verbose;
 extern bool        g_reuse_port;
@@ -56,8 +59,8 @@ extern char        g_bind_ipstr[INET6_ADDRSTRLEN];
 extern portno_t    g_bind_portno;
 extern skaddr_u    g_bind_skaddr;
 
-extern char        g_remote_ipports[SERVER_MAXCOUNT][ADDRPORT_STRLEN];
-extern skaddr_u    g_remote_skaddrs[SERVER_MAXCOUNT];
+extern char        g_remote_ipports[SERVER_MAXCNT][ADDRPORT_STRLEN];
+extern skaddr_u    g_remote_skaddrs[SERVER_MAXCNT];
 extern int         g_upstream_timeout_sec;
 extern uint8_t     g_repeat_times;
 
