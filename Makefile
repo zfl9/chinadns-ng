@@ -1,8 +1,8 @@
 CC = gcc
-# CFLAGS = -std=c99 -Wall -Wextra -Wstrict-aliasing -fstrict-aliasing -Og -ggdb3
-CFLAGS = -std=c99 -Wall -Wextra -Wstrict-aliasing -fstrict-aliasing -O3 -DNDEBUG
-# LDFLAGS =
-LDFLAGS = -s
+# CFLAGS = -pipe -std=c99 -Wall -Wextra -Og -ggdb3
+CFLAGS = -pipe -std=c99 -Wall -Wextra -O3 -flto -flto-partition=none -DNDEBUG
+# LDFLAGS = -pipe
+LDFLAGS = -pipe -O3 -flto -flto-partition=none -s
 SRCS = main.c opt.c dns.c dnl.c net.c
 OBJS = $(SRCS:.c=.o)
 LIBS = -lm

@@ -88,28 +88,28 @@ static void handle_local_packet(void) {
 
     if (g_noaaaa_query & (NOAAAA_TAG_GFW | NOAAAA_TAG_CHN | NOAAAA_TAG_NONE) && qtype == DNS_RECORD_TYPE_AAAA) {
         bool filter = false;
-        const char *filter_type = "(null)";
+        const char *reason = "(null)";
         if (is_filter_all_v6(g_noaaaa_query)) {
             filter = true;
-            filter_type = "all";
+            reason = "all";
         } else {
             switch (name_tag) {
                 case NAME_TAG_GFW:
                     filter = g_noaaaa_query & NOAAAA_TAG_GFW;
-                    filter_type = "tag_gfw";
+                    reason = "tag_gfw";
                     break;
                 case NAME_TAG_CHN:
                     filter = g_noaaaa_query & NOAAAA_TAG_CHN;
-                    filter_type = "tag_chn";
+                    reason = "tag_chn";
                     break;
                 case NAME_TAG_NONE:
                     filter = g_noaaaa_query & NOAAAA_TAG_NONE;
-                    filter_type = "tag_none";
+                    reason = "tag_none";
                     break;
             }
         }
         if (filter) {
-            LOGV("filter [%s] AAAA query, filter_type: %s", s_name_buf, filter_type);
+            LOGV("filter [%s] AAAA query, reason: %s", s_name_buf, reason);
             dns_header_t *header = s_packet_buf;
             header->qr = DNS_QR_REPLY;
             header->rcode = DNS_RCODE_NOERROR;
@@ -174,7 +174,7 @@ static inline bool accept_chinadns_reply(const void *noalias packet_buf, ssize_t
 /* handle remote socket readable event */
 static void handle_remote_packet(int index) {
     int remote_sockfd = s_remote_sockfds[index];
-    const char *noalias remote_ipport = g_remote_ipports[index];
+    const char *remote_ipport = g_remote_ipports[index];
     ssize_t packet_len = recv(remote_sockfd, s_packet_buf, DNS_PACKET_MAXSIZE, 0);
 
     if (packet_len < 0) {
@@ -274,13 +274,13 @@ int main(int argc, char *argv[]) {
 
     if (is_filter_all_v6(g_noaaaa_query))
         LOGI("filter AAAA query for all name");
-    else {
+    else if (g_noaaaa_query != 0) {
         if (g_noaaaa_query & NOAAAA_TAG_GFW)
             LOGI("filter AAAA query for gfwlist name");
         if (g_noaaaa_query & NOAAAA_TAG_CHN)
             LOGI("filter AAAA query for chnlist name");
         if (g_noaaaa_query & NOAAAA_TAG_NONE)
-            LOGI("filter AAAA query for other name");
+            LOGI("filter AAAA query for tag_none name");
         if (g_noaaaa_query & NOAAAA_CHINA_DNS)
             LOGI("filter AAAA query for china upstream");
         if (g_noaaaa_query & NOAAAA_TRUST_DNS)
@@ -289,7 +289,7 @@ int main(int argc, char *argv[]) {
 
     if (g_repeat_times > 1) LOGI("enable repeat mode, times: %u", (unsigned)g_repeat_times);
     if (g_reuse_port) LOGI("enable `SO_REUSEPORT` feature");
-    if (g_verbose) LOGI("print the verbose running log");
+    LOGV("print the verbose running log");
 
     /* init ipset netlink socket */
     ipset_init_nlsocket();

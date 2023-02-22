@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <time.h>
 #include "opt.h"
-#include "misc.h"
 
 #define LOGI(fmt, args...) ({ \
     struct tm *tm = localtime(&(time_t){time(NULL)}); \
@@ -22,5 +21,5 @@
 })
 
 #define LOGV(fmt, args...) ({ \
-    unlikely_if (g_verbose) LOGI(fmt, ##args); \
+    IF_VERBOSE LOGI(fmt, ##args); \
 })
