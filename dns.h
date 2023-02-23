@@ -12,22 +12,24 @@
 #define DNS_PACKET_MINSIZE (sizeof(dns_header_t) + DNS_NAME_ENC_MINLEN + sizeof(dns_query_t))
 
 /* name max len (ASCII name) */
-/* "www.example.com" length:15 */
-#define DNS_NAME_MAXLEN 253
+#define DNS_NAME_MAXLEN 253 /* "www.example.com" length:15 */
 
 /* encoded length range */
 #define DNS_NAME_ENC_MINLEN 1 /* "\0" (root domain) */
 #define DNS_NAME_ENC_MAXLEN 255 /* "\3www\7example\3com\0" */
+
+#define DNS_NAME_LABEL_MAXLEN 63 /* 0011,1111 */
+#define DNS_NAME_PTR_MINVAL 192 /* 1100,0000 */
 
 #define DNS_QR_QUERY 0
 #define DNS_QR_REPLY 1
 #define DNS_OPCODE_QUERY 0
 #define DNS_RCODE_NOERROR 0
 #define DNS_CLASS_INTERNET 1
+
+/* qtype(rtype) */
 #define DNS_RECORD_TYPE_A 1 /* ipv4 address */
 #define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
-#define DNS_DNAME_LABEL_MAXLEN 63 /* domain-name label maxlen */
-#define DNS_DNAME_COMPRESSION_MINVAL 192 /* domain-name compression minval */
 
 /* dns header structure (fixed length) */
 typedef struct {
@@ -77,10 +79,10 @@ typedef struct {
 } __attribute__((packed)) dns_record_t;
 
 /* check dns query, `name_buf` used to get domain name, return true if valid */
-bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, size_t *noalias p_namelen);
+bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
 
 /* check dns reply, `name_buf` used to get domain name, return true if valid */
-bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, size_t *noalias p_namelen);
+bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
 
 /* result of dns_chnip_check() */
 #define DNS_IPCHK_IS_CHNIP 0
@@ -89,9 +91,17 @@ bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *n
 #define DNS_IPCHK_BAD_PACKET 3
 
 /* check if the answer ip is in the chnroute ipset (check qtype before call) */
-int dns_chnip_check(const void *noalias packet_buf, ssize_t packet_len, size_t namelen);
+int dns_chnip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen);
 
 #define dns_qtype(buf, namelen) ({ \
-    const dns_query_t *q = (void *)(buf) + sizeof(dns_header_t) + (namelen); \
-    ntohs(q->qtype); \
+    const dns_query_t *q_ = (void *)(buf) + sizeof(dns_header_t) + (namelen); \
+    ntohs(q_->qtype); \
+})
+
+/* "\0" => 0 */
+/* "\1x\0" => 1 */
+/* "\3foo\3com\0" => 7 */
+#define dns_ascii_namelen(namelen) ({ \
+    int n_ = (int)(namelen) - 2; \
+    n_ > 0 ? n_ : 0; \
 })

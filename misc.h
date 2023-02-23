@@ -21,5 +21,10 @@
 */
 #define noalias restrict
 
-typedef signed char schar;
-typedef unsigned char uchar;
+typedef signed char byte; /* >= 8 bits */
+typedef unsigned char ubyte; /* >= 8 bits */
+typedef unsigned short ushort; /* >= 16 bits */
+typedef unsigned int uint; /* >= 16 bits */
+typedef unsigned long ulong; /* >= 32 bits */
+typedef long long llong; /* >= 64 bits */
+typedef unsigned long long ullong; /* >= 64 bits */

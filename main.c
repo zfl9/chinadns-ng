@@ -74,16 +74,18 @@ static void handle_local_packet(void) {
     }
 
     char *name_buf = (g_verbose || g_gfwlist_fname || g_chnlist_fname) ? s_name_buf : NULL;
-    size_t namelen = 0;
+    int namelen = 0;
     unlikely_if (!dns_query_check(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
     uint16_t qtype = dns_qtype(s_packet_buf, namelen);
-    uint8_t name_tag = (g_gfwlist_fname || g_chnlist_fname) ? get_name_tag(s_name_buf, g_gfwlist_first) : NAME_TAG_NONE;
+    int ascii_namelen = dns_ascii_namelen(namelen);
+    uint8_t name_tag = ascii_namelen > 0 && (g_gfwlist_fname || g_chnlist_fname)
+        ? get_name_tag(s_name_buf, ascii_namelen, g_gfwlist_first) : NAME_TAG_NONE;
 
     IF_VERBOSE {
         portno_t port = 0;
         parse_socket_addr(&source_addr, s_ipstr_buf, &port);
-        LOGI("query [%s] from %s#%u (%u)", s_name_buf, s_ipstr_buf, (unsigned)port, (unsigned)s_unique_msgid);
+        LOGI("query [%s] from %s#%u (%u)", s_name_buf, s_ipstr_buf, (uint)port, (uint)s_unique_msgid);
     }
 
     if (g_noaaaa_query & (NOAAAA_TAG_GFW | NOAAAA_TAG_CHN | NOAAAA_TAG_NONE) && qtype == DNS_RECORD_TYPE_AAAA) {
@@ -116,7 +118,7 @@ static void handle_local_packet(void) {
             unlikely_if (sendto(s_bind_sockfd, s_packet_buf, packet_len, 0, &source_addr.sa, source_addrlen) < 0) {
                 portno_t port = 0;
                 parse_socket_addr(&source_addr, s_ipstr_buf, &port);
-                LOGE("failed to send dns reply packet to %s#%u: (%d) %s", s_ipstr_buf, (unsigned)port, errno, strerror(errno));
+                LOGE("failed to send dns reply packet to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
             }
             return;
         }
@@ -156,7 +158,7 @@ static void handle_local_packet(void) {
     MYHASH_ADD(s_context_list, context, &context->unique_msgid, sizeof(context->unique_msgid));
 }
 
-static inline bool accept_chinadns_reply(const void *noalias packet_buf, ssize_t packet_len, size_t namelen) {
+static inline bool accept_chinadns_reply(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
     uint16_t qtype = dns_qtype(packet_buf, namelen);
     if (qtype != DNS_RECORD_TYPE_A && qtype != DNS_RECORD_TYPE_AAAA)
         return true; /* only filter A/AAAA reply */
@@ -184,14 +186,14 @@ static void handle_remote_packet(int index) {
     }
 
     char *name_buf = g_verbose ? s_name_buf : NULL;
-    size_t namelen = 0;
+    int namelen = 0;
     unlikely_if (!dns_reply_check(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
     queryctx_t *context = NULL;
     dns_header_t *dns_header = s_packet_buf;
     MYHASH_GET(s_context_list, context, &dns_header->id, sizeof(dns_header->id));
     if (!context) {
-        LOGV("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (unsigned)dns_header->id);
+        LOGV("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
         return;
     }
 
@@ -200,13 +202,13 @@ static void handle_remote_packet(int index) {
 
     if (is_chinadns_idx(index)) {
         if (context->name_tag == NAME_TAG_CHN || accept_chinadns_reply(s_packet_buf, packet_len, namelen)) {
-            LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (unsigned)dns_header->id);
+            LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
             if (context->trustdns_buf)
-                LOGV("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (unsigned)dns_header->id);
+                LOGV("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
         } else {
-            LOGV("reply [%s] from %s (%u), result: filter", s_name_buf, remote_ipport, (unsigned)dns_header->id);
+            LOGV("reply [%s] from %s (%u), result: filter", s_name_buf, remote_ipport, (uint)dns_header->id);
             if (context->trustdns_buf) {
-                LOGV("reply [%s] from <previous-trustdns> (%u), result: accept", s_name_buf, (unsigned)dns_header->id);
+                LOGV("reply [%s] from <previous-trustdns> (%u), result: accept", s_name_buf, (uint)dns_header->id);
                 reply_buffer = context->trustdns_buf->buf;
                 reply_length = context->trustdns_buf->len;
             } else {
@@ -216,13 +218,13 @@ static void handle_remote_packet(int index) {
         }
     } else {
         if (context->name_tag == NAME_TAG_GFW || context->chinadns_got) {
-            LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (unsigned)dns_header->id);
+            LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
         } else {
             /* trustdns returns before chinadns */
             if (context->trustdns_buf) {
-                LOGV("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (unsigned)dns_header->id);
+                LOGV("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
             } else {
-                LOGV("reply [%s] from %s (%u), result: delay", s_name_buf, remote_ipport, (unsigned)dns_header->id);
+                LOGV("reply [%s] from %s (%u), result: delay", s_name_buf, remote_ipport, (uint)dns_header->id);
                 context->trustdns_buf = malloc(sizeof(*context->trustdns_buf) + packet_len);
                 context->trustdns_buf->len = packet_len; /* dns reply length */
                 memcpy(context->trustdns_buf->buf, s_packet_buf, packet_len);
@@ -237,14 +239,14 @@ static void handle_remote_packet(int index) {
     unlikely_if (sendto(s_bind_sockfd, reply_buffer, reply_length, 0, &context->source_addr.sa, source_addrlen) < 0) {
         portno_t port = 0;
         parse_socket_addr(&context->source_addr, s_ipstr_buf, &port);
-        LOGE("failed to send dns reply packet to %s#%u: (%d) %s", s_ipstr_buf, (unsigned)port, errno, strerror(errno));
+        LOGE("failed to send dns reply packet to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
     }
     free_context(context);
 }
 
 /* handle upstream reply timeout event */
 static void handle_timeout_event(queryctx_t *context) {
-    LOGE("upstream dns server reply timeout, unique msgid: %u", (unsigned)context->unique_msgid);
+    LOGE("upstream dns server reply timeout, unique msgid: %u", (uint)context->unique_msgid);
     free_context(context);
 }
 
@@ -254,7 +256,7 @@ int main(int argc, char *argv[]) {
     opt_parse(argc, argv);
 
     /* show startup information */
-    LOGI("local listen addr: %s#%u", g_bind_ipstr, (unsigned)g_bind_portno);
+    LOGI("local listen addr: %s#%u", g_bind_ipstr, (uint)g_bind_portno);
 
     if (*g_remote_ipports[CHINADNS1_IDX]) LOGI("chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
     if (*g_remote_ipports[CHINADNS2_IDX]) LOGI("chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
@@ -264,8 +266,8 @@ int main(int argc, char *argv[]) {
     LOGI("ipset ip4 setname: %s", g_ipset_setname4);
     LOGI("ipset ip6 setname: %s", g_ipset_setname6);
 
-    if (g_gfwlist_fname) LOGI("gfwlist entries count: %zu", dnl_init(g_gfwlist_fname, true));
-    if (g_chnlist_fname) LOGI("chnlist entries count: %zu", dnl_init(g_chnlist_fname, false));
+    if (g_gfwlist_fname) LOGI("gfwlist entries count: %lu", (ulong)dnl_init(g_gfwlist_fname, true));
+    if (g_chnlist_fname) LOGI("chnlist entries count: %lu", (ulong)dnl_init(g_chnlist_fname, false));
     if (g_gfwlist_fname && g_chnlist_fname) LOGI("%s have higher priority", g_gfwlist_first ? "gfwlist" : "chnlist");
 
     LOGI("cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
@@ -287,7 +289,7 @@ int main(int argc, char *argv[]) {
             LOGI("filter AAAA query for trust upstream");
     }
 
-    if (g_repeat_times > 1) LOGI("enable repeat mode, times: %u", (unsigned)g_repeat_times);
+    if (g_repeat_times > 1) LOGI("enable repeat mode, times: %u", (uint)g_repeat_times);
     if (g_reuse_port) LOGI("enable `SO_REUSEPORT` feature");
     LOGV("print the verbose running log");
 

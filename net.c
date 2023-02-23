@@ -201,9 +201,9 @@ static void ipset_prebuild_nlmsg(bool is_ipv4) {
 
     /* ipset_protocol attr */
     struct nlattr *ipset_protocol_attr = buffer + netlink_msg->nlmsg_len;
-    ipset_protocol_attr->nla_len = NLMSG_ALIGN(sizeof(struct nlattr)) + sizeof(uchar);
+    ipset_protocol_attr->nla_len = NLMSG_ALIGN(sizeof(struct nlattr)) + sizeof(ubyte);
     ipset_protocol_attr->nla_type = IPSET_ATTR_PROTOCOL;
-    *((uchar *)ipset_protocol_attr + NLMSG_ALIGN(sizeof(struct nlattr))) = IPSET_PROTOCOL;
+    *((ubyte *)ipset_protocol_attr + NLMSG_ALIGN(sizeof(struct nlattr))) = IPSET_PROTOCOL;
     netlink_msg->nlmsg_len += NLMSG_ALIGN(ipset_protocol_attr->nla_len); // update netlink msglen
 
     /* ipset_setname attr */

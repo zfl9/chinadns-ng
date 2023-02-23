@@ -18,9 +18,9 @@ bool    g_fair_mode     = false; /* default: fast-mode */
 bool    g_noip_as_chnip = false; /* default: see as not-china-ip */
 uint8_t g_noaaaa_query  = 0; /* disable AAAA query (bit flags) */
 
-const char *g_gfwlist_fname = NULL; /* gfwlist dnamelist filename */
-const char *g_chnlist_fname = NULL; /* chnlist dnamelist filename */
-bool        g_gfwlist_first = true; /* match gfwlist dnamelist first */
+const char *g_gfwlist_fname = NULL; /* gfwlist filename */
+const char *g_chnlist_fname = NULL; /* chnlist filename */
+bool        g_gfwlist_first = true; /* match gfwlist first */
 
 char g_ipset_setname4[IPSET_MAXNAMELEN] = "chnroute"; /* ipset setname for ipv4 */
 char g_ipset_setname6[IPSET_MAXNAMELEN] = "chnroute6"; /* ipset setname for ipv6 */
@@ -176,7 +176,7 @@ static void parse_upstream_addrs(char *arg, bool is_chinadns) {
             err_exit("invalid server ip address: %s", ipstr);
 
         int idx = (is_chinadns ? CHINADNS1_IDX : TRUSTDNS1_IDX) + cnt - 1;
-        sprintf(g_remote_ipports[idx], "%s#%u", ipstr, (unsigned)port);
+        sprintf(g_remote_ipports[idx], "%s#%u", ipstr, (uint)port);
         build_socket_addr(family, &g_remote_skaddrs[idx], ipstr, port);
     }
 }
