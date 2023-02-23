@@ -274,12 +274,16 @@ static u32_t     s_bucket_poolused = 0;
     /* repair the list it is in */ \
     bucket_s *head_ = concat(mapN, _bucket_by_nameaddr(dnl, newbody_->name)); \
     assert(bucket_is_head(head_)); \
+    int found_ = 0; \
     foreach_list(map_, head_, cur) { \
         if (cur->next == oldbodyidx_) { \
             cur->next = newbodyidx_; \
+            found_ = 1; \
             break; \
         } \
     } \
+    (void)found_; /* avoid unused warning */ \
+    assert(found_); \
     /* change it to head node */ \
     store_as_head(oldbody, headnameaddr); \
 })
@@ -296,7 +300,7 @@ static void resize_map2(dnl_s *dnl) {
 
     // foreach part 1
     for (u32_t idx = 0, n = map_cap(map) >> 1; idx < n; ++idx) {
-        bucket_s *head = get_bucket(map, idx);
+        bucket_s *const head = get_bucket(map, idx);
 
         // ignore non-head node
         if (!bucket_is_head(head)) continue;
@@ -318,18 +322,19 @@ static void resize_map2(dnl_s *dnl) {
                 u32_t nextidx = cur->next;
                 bucket_s *next = next_bucket(map, cur);
 
+                // remove from old list
                 if (!prev) {
                     /* cur node is head */
                     assert(cur == head);
-                    assert(bucket_is_head(head));
+                    assert(bucket_is_head(cur));
                     if (next) {
                         /* next_node => head */
-                        head->name = next->name; // copy next node to head
-                        head->next = next->next; // copy next node to head
+                        cur->name = next->name; // copy next node to head
+                        cur->next = next->next; // copy next node to head
                         free_bucket(map, next); // free next node
                     } else {
                         /* list_size == 1 (only the head) */
-                        free_bucket(map, head); // free it
+                        free_bucket(map, cur); // free it
                         cur = NULL; // foreach end
                     }
                 } else {
@@ -467,7 +472,6 @@ static const char *name_trim(const char *name) {
 
 /* "a.www.google.com.hk" => ["hk", "com.hk", "google.com.hk", "www.google.com.hk"], arraylen=LABEL_MAXCNT */
 static int name_split(const char *noalias name, int namelen, const char *noalias sub_names[noalias], int sub_namelens[noalias]) {
-    if (*name == '.') return 0; /* root-domain */
     int n = 0;
     const char *p, *end;
     p = end = name + namelen;
@@ -532,9 +536,9 @@ u8_t get_name_tag(const char *noalias name, int namelen, bool is_gfwlist_first) 
     const char *noalias sub_names[LABEL_MAXCNT];
     int sub_namelens[LABEL_MAXCNT];
 
+    assert(namelen > 0);
     int n = name_split(name, namelen, sub_names, sub_namelens);
-    if (n <= 0)
-        return NAME_TAG_NONE;
+    assert(n > 0);
 
     const dnl_s *dnl = is_gfwlist_first ? &s_gfwlist : &s_chnlist;
     if (!dnl_is_null(dnl)) {
