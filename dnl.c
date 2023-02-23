@@ -440,7 +440,7 @@ static void add_to_dnl(dnl_s *dnl, u32_t nameaddr) {
     exists_; \
 })
 
-static bool exists_in_dnl(const dnl_s *dnl, const char *name, namelen_t namelen) {
+static bool exists_in_dnl(const dnl_s *dnl, const char *noalias name, namelen_t namelen) {
     hashv_t hashv = calc_hashv(name, namelen);
     bucket_s *head = map1_bucket_by_hashv(dnl, hashv);
     if (bucket_is_head(head)) {
