@@ -73,14 +73,14 @@ static void handle_local_packet(void) {
         return;
     }
 
-    char *name_buf = (g_verbose || g_gfwlist_fname || g_chnlist_fname) ? s_name_buf : NULL;
+    char *name_buf = (g_verbose || g_gfwlist_cnt || g_chnlist_cnt) ? s_name_buf : NULL;
     int namelen = 0;
     unlikely_if (!dns_query_check(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
     uint16_t qtype = dns_qtype(s_packet_buf, namelen);
     int ascii_namelen = dns_ascii_namelen(namelen);
-    uint8_t name_tag = ascii_namelen > 0 && (g_gfwlist_fname || g_chnlist_fname)
-        ? get_name_tag(s_name_buf, ascii_namelen, g_gfwlist_first) : NAME_TAG_NONE;
+    uint8_t name_tag = ascii_namelen > 0 && (g_gfwlist_cnt || g_chnlist_cnt)
+        ? get_name_tag(s_name_buf, ascii_namelen) : NAME_TAG_NONE;
 
     IF_VERBOSE {
         portno_t port = 0;
@@ -266,9 +266,11 @@ int main(int argc, char *argv[]) {
     LOGI("ipset ip4 setname: %s", g_ipset_setname4);
     LOGI("ipset ip6 setname: %s", g_ipset_setname6);
 
-    if (g_gfwlist_fname) LOGI("gfwlist entries count: %lu", (ulong)dnl_init(g_gfwlist_fname, true));
-    if (g_chnlist_fname) LOGI("chnlist entries count: %lu", (ulong)dnl_init(g_chnlist_fname, false));
-    if (g_gfwlist_fname && g_chnlist_fname) LOGI("%s have higher priority", g_gfwlist_first ? "gfwlist" : "chnlist");
+    dnl_init();
+
+    if (g_gfwlist_cnt) LOGI("gfwlist entries count: %lu", (ulong)g_gfwlist_cnt);
+    if (g_chnlist_cnt) LOGI("chnlist entries count: %lu", (ulong)g_chnlist_cnt);
+    if (g_gfwlist_cnt && g_chnlist_cnt) LOGI("%s have higher priority", g_gfwlist_first ? "gfwlist" : "chnlist");
 
     LOGI("cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
     LOGI("%s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
