@@ -8,8 +8,7 @@
 #define NAME_TAG_CHN 1 // hit the chnlist
 #define NAME_TAG_NONE 2 // did not match any list
 
-extern uint32_t g_gfwlist_cnt;
-extern uint32_t g_chnlist_cnt;
+extern uint32_t g_dnl_nitems;
 
 /* initialize domain-name-list from file */
 void dnl_init(void);

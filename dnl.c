@@ -57,8 +57,7 @@ typedef struct map {
     u32_t nitems; // nitems stored in buckets
 } map_s;
 
-u32_t g_gfwlist_cnt = 0;
-u32_t g_chnlist_cnt = 0;
+u32_t g_dnl_nitems = 0; /* total (gfw + chn) */
 
 static map_s s_map1 = {0}; /* L1 map (<= MAX_COLLISION) */
 static map_s s_map2 = {0}; /* L2 map (> MAX_COLLISION) */
@@ -544,21 +543,29 @@ static bool load_list(const char *noalias filename, u32_t *noalias p_addr0, u32_
 }
 
 static u32_t add_list(u8_t nametag, u32_t addr0, u32_t nitems) {
-    u32_t old_cnt = dnl_nitems();
+    u32_t old_nitems = dnl_nitems();
     for (u32_t i = 0, nameaddr = addr0; i < nitems; ++i) {
         add_to_dnl(nametag, nameaddr);
         nameaddr += get_namesz(nameaddr);
     }
-    return dnl_nitems() - old_cnt;
+    return dnl_nitems() - old_nitems;
 }
 
 /* initialize domain-name-list from file */
 void dnl_init(void) {
     u32_t gfw_addr0 = 0, gfw_nitems = 0;
     bool has_gfw = g_gfwlist_fname && load_list(g_gfwlist_fname, &gfw_addr0, &gfw_nitems);
+    if (has_gfw) {
+        double cost = (double)(poolcap(name) - gfw_addr0) / 1024.0;
+        LOGI("gfwlist-name %lu %.3fk", (ulong)gfw_nitems, cost);
+    }
 
     u32_t chn_addr0 = 0, chn_nitems = 0;
     bool has_chn = g_chnlist_fname && load_list(g_chnlist_fname, &chn_addr0, &chn_nitems);
+    if (has_chn) {
+        double cost = (double)(poolcap(name) - chn_addr0) / 1024.0;
+        LOGI("chnlist-name %lu %.3fk", (ulong)chn_nitems, cost);
+    }
 
     if (!has_gfw && !has_chn) return;
 
@@ -570,18 +577,37 @@ void dnl_init(void) {
 
     if (has_gfw && has_chn) {
         if (g_gfwlist_first) {
-            g_gfwlist_cnt = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
-            g_chnlist_cnt = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
+            gfw_nitems = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
+            chn_nitems = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
         } else {
-            g_chnlist_cnt = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
-            g_gfwlist_cnt = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
+            chn_nitems = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
+            gfw_nitems = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
         }
     } else if (has_gfw) {
-        g_gfwlist_cnt = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
+        gfw_nitems = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
     } else {
         assert(has_chn);
-        g_chnlist_cnt = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
+        chn_nitems = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
     }
+
+    g_dnl_nitems = dnl_nitems();
+    assert(g_dnl_nitems == gfw_nitems + chn_nitems);
+
+    if (has_gfw) {
+        double cost = (double)(sizeof(bucket_s) * gfw_nitems) / 1024.0;
+        LOGI("gfwlist-bucket %lu %.3fk", (ulong)gfw_nitems, cost);
+    }
+    if (has_chn) {
+        double cost = (double)(sizeof(bucket_s) * chn_nitems) / 1024.0;
+        LOGI("chnlist-bucket %lu %.3fk", (ulong)chn_nitems, cost);
+    }
+    u32_t n = poolcap(bucket) - g_dnl_nitems;
+    double cost = (double)(sizeof(bucket_s) * n) / 1024.0;
+    LOGI("other-bucket %lu %.3fk", (ulong)n, cost);
+
+    double name_cost = (double)poolcap(name) / 1024.0;
+    double bucket_cost = (double)(poolcap(bucket) * sizeof(bucket_s)) / 1024.0;
+    LOGI("name_cost: %.3f bucket_cost: %.3f", name_cost, bucket_cost);
 }
 
 /* check if the given domain name matches */
