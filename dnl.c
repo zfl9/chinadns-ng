@@ -577,9 +577,11 @@ void dnl_init(void) {
 
     if (has_gfw && has_chn) {
         if (g_gfwlist_first) {
+            LOGI("gfwlist have higher priority");
             gfw_nitems = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
             chn_nitems = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
         } else {
+            LOGI("chnlist have higher priority");
             chn_nitems = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
             gfw_nitems = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
         }
@@ -604,10 +606,6 @@ void dnl_init(void) {
     u32_t n = poolcap(bucket) - g_dnl_nitems;
     double cost = (double)(sizeof(bucket_s) * n) / 1024.0;
     LOGI("other-bucket %lu %.3fk", (ulong)n, cost);
-
-    double name_cost = (double)poolcap(name) / 1024.0;
-    double bucket_cost = (double)(poolcap(bucket) * sizeof(bucket_s)) / 1024.0;
-    LOGI("name_cost: %.3f bucket_cost: %.3f", name_cost, bucket_cost);
 }
 
 /* check if the given domain name matches */
