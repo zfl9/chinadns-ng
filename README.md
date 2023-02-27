@@ -16,6 +16,8 @@ make && sudo make install
 chinadns-ng 默认安装到 `/usr/local/bin` 目录，可安装到其它目录，如 `make install DESTDIR=/opt/local/bin`。<br>
 交叉编译时只需指定 CC 变量，如 `make CC=aarch64-linux-gnu-gcc`（如有问题，请执行 `make clean`，然后再试）。
 
+> 如果是版本升级，建议先 `make clean` 再编译，避免出现奇怪的问题。
+
 ## Docker
 本项目也支持 Docker，只需要执行以下命令：
 ```bash
@@ -35,7 +37,7 @@ docker run -d \
 ```
 
 # 命令选项
-```
+```console
 $ chinadns-ng --help
 usage: chinadns-ng <options...>. the existing options are as follows:
  -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1
@@ -48,8 +50,15 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin
  -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
  -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1
+ -N, --no-ipv6=[rules]                filter AAAA query, rules can be a seq of:
+                                      rule a: filter all domain name (default)
+                                      rule g: filter the name with tag gfw
+                                      rule m: filter the name with tag chn
+                                      rule n: filter the name with tag none
+                                      rule c: do not forward to china upstream
+                                      rule t: do not forward to trust upstream
+                                      if no rules is given, it defaults to a
  -M, --chnlist-first                  match chnlist first, default: <disabled>
- -N, --no-ipv6                        disable ipv6-address query (qtype: AAAA)
  -f, --fair-mode                      enable `fair` mode, default: <fast-mode>
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
  -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)
@@ -68,6 +77,14 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
 - `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
 - `no-ipv6` 选项表示过滤 IPv6-Address(AAAA) 查询，默认不设置此选项。
+  - `2023.02.27`版本开始，允许指定一个可选的"规则串"，目前有如下规则：
+  - `a`：过滤所有域名的v6查询，同之前
+  - `g`：过滤gfwlist域名的v6查询
+  - `m`：过滤chnlist域名的v6查询
+  - `n`：过滤非gfwlist、非chnlist域名的v6查询
+  - `c`：禁止向chinadns上游转发v6查询
+  - `t`：禁止向trustdns上游转发v6查询
+  - 如`-N=gt`/`--no-ipv6=gt`：过滤gfwlist域名的v6、禁止向trustdns转发v6。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
 - `fair-mode` 选项表示启用"公平模式"而非默认的"抢答模式"，见后文。
@@ -85,7 +102,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 当从上游套接字收到上游服务器的 DNS 响应时，将按照如下逻辑过滤收到的上游 DNS 响应：
   - 如果关联的查询是命中了黑白名单的，则直接将其转发给请求客户端，并释放相关上下文。
   - 如果关联的查询是未命中黑白名单的，则检查国内 DNS 返回的是否为国内 IP（即是否命中 chnroute/chnroute6）；如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果。如果可信 DNS 有一定概率会比国内 DNS 先返回的话，请务必启用"公平模式"（默认是"抢答模式"），也即指定选项 `-f/--fair-mode`。但也不是说无论何时都要启用公平模式，如果国内 DNS 绝大多数情况下都比可信 DNS 先返回的话，是不需要启用公平模式的，当然你启用公平模式也不会有任何问题以及性能损失。其实按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式。
-- 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心黑白名单的查询效率问题，条目数量的多少只会影响一点儿内存占用，对查询速度是没有影响的，另外也不必担心内存占用会很多，我在`CentOS7`上实测的数据是：加载`5000+`条黑名单和`70000+`条白名单后，`chinadns-ng`占用`6.4M`内存，如果仅加载黑名单的话则只占用了`1.1M`内存。当然如果内存确实比较吃紧，那么仅加载黑名单也是没有问题的。
+- 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心黑白名单的查询效率问题，条目数量的多少只会影响一点儿内存占用，对查询速度是没有影响的，另外也不必担心内存占用会很多，我在`Linux x86-64 (CentOS 7)`上实测的数据是：1)没有黑白名单时，内存为`140`字节；2)加载5700+条gfwlist时，内存为`304`字节；3)加载5700+条gfwlist以及73300+条chnlist时，内存为`2424`字节。注：这些内存占用未计算libc.so、libm.so，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，实际上根本用不到这么多。
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是先匹配黑名单(gfwlist)，若命中，则标记命中黑名单并返回函数，若未命中，则接着匹配白名单(chnlist)，若命中，则标记命中白名单并返回函数，若未命中，则标记未命中任何名单并返回函数。也就是说黑名单的优先级是比白名单的优先级高的，如果想让白名单的优先级比黑名单的优先级高，指定选项 `-M/--chnlist-first` 即可。
 - 域名黑白名单文件是按行分隔的域名模式，所谓域名模式其实就是普通的域名后缀，格式如：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最少要有`2`个，最多只能`4`个，过短的会被忽略（如`net`），过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），当然这么做的目的还是为了尽量提高域名的匹配性能。UPDATE：从b25版本开始，顶级域名不再被忽略（如`cn`、`hk`），因此`label`数量可以为`1~N`个（目前N为4，见`dnl.c`中的`LABEL_MAXCNT`常量）。
 - 光靠 `chinadns-ng` 其实是做不到防 DNS 污染的，防 DNS 污染应该是可信 DNS 上游的任务，`chinadns-ng` 只负责 DNS 查询和 DNS 响应的简单处理，不修改任何 dns-query、dns-reply。同理，`chinadns-ng` 只是兼容 EDNS 请求和响应，并不提供 EDNS 的任何相关特性，任何 DNS 特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常 `chinadns-ng` 都是与其它 dns 工具或代理工具一起使用的，具体与什么搭配，以及如何搭配，这里不展开讨论，由各位自由发挥。
@@ -255,7 +272,7 @@ ipset -R -exist <chnroute6.ipset
 
 3、注意，chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset` 文件，启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。
 
-4、如果你指定的 china-dns 上游为个人、组织内部的 DNS 服务器，且该 DNS 服务器会返回某些特殊的解析记录（即：包含保留地址的解析记录，比如使用内网 DNS 服务器作为国内上游 DNS），且你希望 chinadns-ng 会接受这些特殊的 DNS 响应（即将它们判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
+4、如果你指定的 china-dns 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受此国内上游的响应（即判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
 
 5、`received an error code from kernel: (-2) No such file or directory`<br>
 意思是指定的 ipset 不存在；如果是 `[ipset_addr4_is_exists]` 函数提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 函数提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
@@ -275,7 +292,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 9、如何更新 gfwlist.txt？进入项目根目录执行 `./update-gfwlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt` 文件的行数，一般有 5000+ 行，然后重新启动 chinadns-ng 生效。chnlist.txt 的更新处理也是一样的，也可以自己定制 gfwlist.txt 和 chnlist.txt，具体看个人喜好。
 
-10、`--noip-as-chnip` 选项的作用？首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、AAAA（查询给定域名的 IPv6 地址）、CNAME（查询给定域名的别名）、MX（查询给定域名的邮件服务器）；chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对国内 DNS，可信 DNS 不存在任何过滤），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
+10、`--noip-as-chnip` 选项的作用？首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、AAAA（查询给定域名的 IPv6 地址）、CNAME（查询给定域名的别名）、MX（查询给定域名的邮件服务器）；chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对国内 DNS，可信 DNS 不存在任何过滤；另外此过滤也仅针对`非gfwlist && 非chnlist`域名），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
 ```bash
 $ dig @114.114.114.114 yys.163.com A
 
