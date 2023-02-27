@@ -1,15 +1,16 @@
 #pragma once
 
 #include <stdint.h>
-#include <stdbool.h>
 #include "misc.h"
 
-#define NAME_TAG_NONE 0 // did not match any list
-#define NAME_TAG_GFW 1 // hit the gfwlist
-#define NAME_TAG_CHN 2 // hit the chnlist
+#define NAME_TAG_GFW 0 // hit the gfwlist
+#define NAME_TAG_CHN 1 // hit the chnlist
+#define NAME_TAG_NONE 2 // did not match any list
+
+extern uint32_t g_dnl_nitems;
 
 /* initialize domain-name-list from file */
-uint32_t dnl_init(const char *noalias filename, bool is_gfwlist);
+void dnl_init(void);
 
 /* get name tag by dnl match */
-uint8_t get_name_tag(const char *noalias name, int namelen, bool is_gfwlist_first);
+uint8_t get_name_tag(const char *noalias name, int namelen);

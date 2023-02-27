@@ -73,14 +73,14 @@ static void handle_local_packet(void) {
         return;
     }
 
-    char *name_buf = (g_verbose || g_gfwlist_fname || g_chnlist_fname) ? s_name_buf : NULL;
+    char *name_buf = (g_verbose || g_dnl_nitems) ? s_name_buf : NULL;
     int namelen = 0;
     unlikely_if (!dns_query_check(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
     uint16_t qtype = dns_qtype(s_packet_buf, namelen);
     int ascii_namelen = dns_ascii_namelen(namelen);
-    uint8_t name_tag = ascii_namelen > 0 && (g_gfwlist_fname || g_chnlist_fname)
-        ? get_name_tag(s_name_buf, ascii_namelen, g_gfwlist_first) : NAME_TAG_NONE;
+    uint8_t name_tag = (ascii_namelen > 0 && g_dnl_nitems)
+        ? get_name_tag(s_name_buf, ascii_namelen) : NAME_TAG_NONE;
 
     IF_VERBOSE {
         portno_t port = 0;
@@ -90,28 +90,28 @@ static void handle_local_packet(void) {
 
     if (g_noaaaa_query & (NOAAAA_TAG_GFW | NOAAAA_TAG_CHN | NOAAAA_TAG_NONE) && qtype == DNS_RECORD_TYPE_AAAA) {
         bool filter = false;
-        const char *reason = "(null)";
+        const char *rule = "(null)";
         if (is_filter_all_v6(g_noaaaa_query)) {
             filter = true;
-            reason = "all";
+            rule = "all";
         } else {
             switch (name_tag) {
                 case NAME_TAG_GFW:
                     filter = g_noaaaa_query & NOAAAA_TAG_GFW;
-                    reason = "tag_gfw";
+                    rule = "tag_gfw";
                     break;
                 case NAME_TAG_CHN:
                     filter = g_noaaaa_query & NOAAAA_TAG_CHN;
-                    reason = "tag_chn";
+                    rule = "tag_chn";
                     break;
                 case NAME_TAG_NONE:
                     filter = g_noaaaa_query & NOAAAA_TAG_NONE;
-                    reason = "tag_none";
+                    rule = "tag_none";
                     break;
             }
         }
         if (filter) {
-            LOGV("filter [%s] AAAA query, reason: %s", s_name_buf, reason);
+            LOGV("filter [%s] AAAA query, rule: %s", s_name_buf, rule);
             dns_header_t *header = s_packet_buf;
             header->qr = DNS_QR_REPLY;
             header->rcode = DNS_RCODE_NOERROR;
@@ -266,27 +266,25 @@ int main(int argc, char *argv[]) {
     LOGI("ipset ip4 setname: %s", g_ipset_setname4);
     LOGI("ipset ip6 setname: %s", g_ipset_setname6);
 
-    if (g_gfwlist_fname) LOGI("gfwlist entries count: %lu", (ulong)dnl_init(g_gfwlist_fname, true));
-    if (g_chnlist_fname) LOGI("chnlist entries count: %lu", (ulong)dnl_init(g_chnlist_fname, false));
-    if (g_gfwlist_fname && g_chnlist_fname) LOGI("%s have higher priority", g_gfwlist_first ? "gfwlist" : "chnlist");
+    dnl_init();
 
     LOGI("cur judgment mode: %s mode", g_fair_mode ? "fair" : "fast");
     LOGI("%s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
     LOGI("dns query timeout: %d seconds", g_upstream_timeout_sec);
 
     if (is_filter_all_v6(g_noaaaa_query))
-        LOGI("filter AAAA query for all name");
+        LOGI("filter AAAA for all name");
     else if (g_noaaaa_query != 0) {
         if (g_noaaaa_query & NOAAAA_TAG_GFW)
-            LOGI("filter AAAA query for gfwlist name");
+            LOGI("filter AAAA for gfwlist name");
         if (g_noaaaa_query & NOAAAA_TAG_CHN)
-            LOGI("filter AAAA query for chnlist name");
+            LOGI("filter AAAA for chnlist name");
         if (g_noaaaa_query & NOAAAA_TAG_NONE)
-            LOGI("filter AAAA query for tag_none name");
+            LOGI("filter AAAA for tag_none name");
         if (g_noaaaa_query & NOAAAA_CHINA_DNS)
-            LOGI("filter AAAA query for china upstream");
+            LOGI("filter AAAA for china upstream");
         if (g_noaaaa_query & NOAAAA_TRUST_DNS)
-            LOGI("filter AAAA query for trust upstream");
+            LOGI("filter AAAA for trust upstream");
     }
 
     if (g_repeat_times > 1) LOGI("enable repeat mode, times: %u", (uint)g_repeat_times);
