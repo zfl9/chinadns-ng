@@ -1,7 +1,3 @@
-#ifdef NDEBUG
-  #undef NDEBUG
-#endif
-
 #define _GNU_SOURCE
 #include "dnl.h"
 #include "dns.h"
@@ -10,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 #include <math.h>
@@ -19,10 +16,6 @@
 /* token stringize */
 #define _literal(x) #x
 #define literal(x) _literal(x)
-
-/* token concat */
-#define _concat(a, b) a##b
-#define concat(a, b) _concat(a, b)
 
 #define DEFAULT_LCAP 4 /* 2^4 = 16 */
 #define LOAD_FACTOR 0.75
@@ -96,7 +89,7 @@ static u32_t     s_bucket_poolcap = 0;
     if (!pool(tag)) pool(tag) = sbrk_align(tag); \
     size_t nbytes_ = (n) * sizeof(*pool(tag)); \
     void *p_ = sbrk(nbytes_); \
-    unlikely_if (p_ == (void *)(-1)) { \
+    unlikely_if (p_ == (void *)-1) { \
         fprintf(stderr, "can't alloc memory. tag:%s n:%lu bytes:%zu errno:%d %s", \
             #tag, (ulong)(n), nbytes_, errno, strerror(errno)); \
         abort(); \
@@ -204,10 +197,14 @@ static u32_t     s_bucket_poolcap = 0;
 #define map2() (&s_map2)
 
 #define map_is_null(map) (!map()->notnull)
-#define map_set_notnull(map) (map()->notnull = 1)
+#define map_set_notnull(map, init_lcap) ({ \
+    map()->notnull = 1; \
+    map()->lcap = (init_lcap); \
+    map()->buckets = alloc_bucket(map_cap(map)); \
+})
 
 #define dnl_is_null() map_is_null(map1)
-#define dnl_set_notnull() map_set_notnull(map1)
+#define dnl_set_notnull(init_lcap) map_set_notnull(map1, init_lcap)
 
 #define map_nitems(map) (map()->nitems)
 #define dnl_nitems() (map_nitems(map1) + map_nitems(map2))
@@ -392,11 +389,8 @@ static void resize_map2(void) {
 })
 
 static void add_to_map2(u8_t nametag, u32_t nameaddr) {
-    if (map_is_null(map2)) {
-        map_set_notnull(map2);
-        map2()->lcap = DEFAULT_LCAP;
-        map2()->buckets = alloc_bucket(map_cap(map2));
-    }
+    if (map_is_null(map2))
+        map_set_notnull(map2, DEFAULT_LCAP);
     bucket_s *head;
 redo:
     head = bucket_by_nameaddr(map2, nameaddr);
@@ -571,9 +565,7 @@ void dnl_init(void) {
 
     /* first load_list() and then add_list() is friendly to malloc/realloc */
 
-    dnl_set_notnull();
-    map1()->lcap = calc_lcap(gfw_nitems + chn_nitems);
-    map1()->buckets = alloc_bucket(map_cap(map1));
+    dnl_set_notnull(calc_lcap(gfw_nitems + chn_nitems));
 
     if (has_gfw && has_chn) {
         if (g_gfwlist_first) {

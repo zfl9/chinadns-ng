@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include <stdbool.h>
 #include "misc.h"
 
 #define NAME_TAG_GFW 0 // hit the gfwlist
