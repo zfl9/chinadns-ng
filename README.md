@@ -112,7 +112,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 注：这些内存占用未计算`libc.so`、`libm.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多；
   - 如果确实内存吃紧，那只加载`gfwlist`就ok了，绝对能满足日常需求，因为`chnlist`更多的我觉得是寻求一个心里安慰。或者你也可以寻找更加精简的chnlist替代源。
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
-- 域名黑白名单文件是按行分隔的域名模式，所谓域名模式其实就是域名后缀，格式如：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最少要有`2`个，最多只能`4`个，过短的会被忽略（如`net`），过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），当然这么做的目的还是为了尽量提高域名的匹配性能。UPDATE：从b25版本开始，顶级域名不再被忽略（如`cn`、`hk`），因此`label`数量可以为`1~N`个（目前N为4，见`dnl.c`中的`LABEL_MAXCNT`常量）。
+- 域名黑白名单文件是按行分隔的域名模式，所谓域名模式其实就是域名后缀，格式如：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最少要有`2`个，最多只能`4`个，过短的会被忽略（如`net`），过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），当然这么做的目的还是为了尽量提高域名的匹配性能。UPDATE：从b25版本开始，顶级域名不再被忽略（如`cn`、`hk`），因此`label`可以为`1~N`个（目前N为4，见源码的`LABEL_MAXCNT`常量）。
 - 光靠 `chinadns-ng` 其实是做不到防 DNS 污染的，防 DNS 污染应该是可信 DNS 上游的任务，`chinadns-ng` 只负责 DNS 查询和 DNS 响应的简单处理，不修改任何 dns-query、dns-reply。同理，`chinadns-ng` 只是兼容 EDNS 请求和响应，并不提供 EDNS 的任何相关特性，任何 DNS 特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常 `chinadns-ng` 都是与其它 dns 工具或代理工具一起使用的，具体与什么搭配，以及如何搭配，这里不展开讨论，由各位自由发挥。
 
 # 简单测试
