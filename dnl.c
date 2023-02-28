@@ -12,6 +12,7 @@
 #include <math.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 /* token stringize */
 #define _literal(x) #x
@@ -66,35 +67,40 @@ static u32_t     s_bucket_poolcap = 0;
 #define pool(tag)     s_##tag##_pool
 #define poolcap(tag)  s_##tag##_poolcap
 
-#define sbrk_align(tag) ({ \
+static inline void *inc_brk(intptr_t inc) {
+    static void *curbrk = NULL;
+    if (!curbrk)
+        curbrk = (void *)syscall(SYS_brk, NULL);
+    if (inc == 0)
+        return curbrk;
+    curbrk += inc;
+    unlikely_if ((void *)syscall(SYS_brk, curbrk) != curbrk) {
+        fprintf(stderr, "failed to set brk, old:%p inc:%lld\n", curbrk - inc, (llong)inc);
+        abort();
+    }
+    return curbrk - inc;
+}
+
+#define align_brk(tag) ({ \
     size_t align_ = __alignof__(*pool(tag)); \
-    uintptr_t p_ = (uintptr_t)sbrk(0); \
+    uintptr_t p_ = (uintptr_t)inc_brk(0); \
     size_t n_ = p_ % align_; \
     if (n_) { \
         n_ = align_ - n_; \
         p_ += n_; \
+        inc_brk(n_); \
         assert(p_ % align_ == 0); \
-        unlikely_if (sbrk(n_) == (void *)-1) { \
-            fprintf(stderr, "can't align to %zu. tag:%s errno:%d %s", \
-                align_, #tag, errno, strerror(errno)); \
-            abort(); \
-        } \
-        assert(sbrk(0) == (void *)p_); \
+        assert(inc_brk(0) == (void *)p_); \
     } \
     (void *)p_; \
 })
 
 // return addr in pool (idx)
 #define pool_alloc(tag, n) ({ \
-    if (!pool(tag)) pool(tag) = sbrk_align(tag); \
-    size_t nbytes_ = (n) * sizeof(*pool(tag)); \
-    void *p_ = sbrk(nbytes_); \
-    unlikely_if (p_ == (void *)-1) { \
-        fprintf(stderr, "can't alloc memory. tag:%s n:%lu bytes:%zu errno:%d %s", \
-            #tag, (ulong)(n), nbytes_, errno, strerror(errno)); \
-        abort(); \
-    } \
+    if (!pool(tag)) pool(tag) = align_brk(tag); \
+    void *p_ = inc_brk((n) * sizeof(*pool(tag))); \
     assert(p_ == pool(tag) + poolcap(tag)); \
+    (void)p_; /* avoid unused warning */ \
     poolcap(tag) += (n); \
     poolcap(tag) - (n); \
 })
