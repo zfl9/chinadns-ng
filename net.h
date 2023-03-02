@@ -27,7 +27,7 @@ typedef uint16_t portno_t;
 void set_reuse_port(int sockfd);
 
 /* create a udp socket (v4/v6) */
-int new_udp_socket(int family, const skaddr_u *noalias dst_addr);
+int new_udp_socket(int family);
 
 /* AF_INET or AF_INET6 or -1(invalid) */
 int get_ipstr_family(const char *noalias ipstr);

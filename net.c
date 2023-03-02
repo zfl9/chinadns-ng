@@ -101,7 +101,7 @@ void set_reuse_port(int sockfd) {
 }
 
 /* create a udp socket (v4/v6) */
-int new_udp_socket(int family, const skaddr_u *noalias dst_addr) {
+int new_udp_socket(int family) {
     int sockfd = socket(family, SOCK_DGRAM | SOCK_NONBLOCK, 0); /* since Linux 2.6.27 */
     unlikely_if (sockfd < 0) {
         LOGE("failed to create udp%c socket: (%d) %s", family == AF_INET ? '4' : '6', errno, strerror(errno));
@@ -109,10 +109,6 @@ int new_udp_socket(int family, const skaddr_u *noalias dst_addr) {
     }
     if (family == AF_INET6) set_ipv6_only(sockfd);
     set_reuse_addr(sockfd);
-    if (dst_addr && connect(sockfd, &dst_addr->sa, skaddr_size(dst_addr)) < 0) {
-        LOGE("failed to connect to target v%c address: (%d) %s", family == AF_INET ? '4' : '6', errno, strerror(errno));
-        exit(errno);
-    }
     return sockfd;
 }
 
