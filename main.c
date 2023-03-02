@@ -179,7 +179,7 @@ static inline bool accept_chinadns_reply(const void *noalias packet_buf, ssize_t
 static void handle_remote_packet(int index) {
     int remote_sockfd = s_remote_sockfds[index];
     const char *remote_ipport = g_remote_ipports[index];
-    ssize_t packet_len = recv(remote_sockfd, s_packet_buf, DNS_PACKET_MAXSIZE, 0);
+    ssize_t packet_len = recvfrom(remote_sockfd, s_packet_buf, DNS_PACKET_MAXSIZE, 0, NULL, NULL);
 
     if (packet_len < 0) {
         unlikely_if (errno != EAGAIN && errno != EWOULDBLOCK)

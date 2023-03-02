@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CHINADNS_VERSION "ChinaDNS-NG 2023.02.28 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG 2023.03.02 <https://github.com/zfl9/chinadns-ng>"
 
 /* limits.h */
 #ifndef PATH_MAX
