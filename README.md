@@ -57,9 +57,10 @@ usage: chinadns-ng <options...>. the existing options are as follows:
                                       rule n: filter the name with tag none
                                       rule c: do not forward to china upstream
                                       rule t: do not forward to trust upstream
+                                      rule C: check answer ip of china upstream
                                       if no rules is given, it defaults to a
  -M, --chnlist-first                  match chnlist first, default: <disabled>
- -f, --fair-mode                      enable `fair` mode, default: <fast-mode>
+ -f, --fair-mode                      enable fair mode (nop, only fair mode now)
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
  -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)
  -v, --verbose                        print the verbose log, default: <disabled>
@@ -84,10 +85,11 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - `n`：过滤非gfwlist、非chnlist域名的v6查询
   - `c`：禁止向chinadns上游转发v6查询
   - `t`：禁止向trustdns上游转发v6查询
+  - `C`：若一个AAAA查询只转发给了chinadns上游(即：非gfwlist域名 && 非chnlist域名 && trustdns被禁用v6查询)，是否要对chinadns上游的响应进行chnip判断(即：过滤非chnip的reply)。默认不判断（即：直接接受），除非设置此规则
   - 如`-N=gt`/`--no-ipv6=gt`：过滤gfwlist域名的v6、禁止向trustdns转发v6。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
-- `fair-mode` 选项表示启用"公平模式"而非默认的"抢答模式"，见后文。
+- `fair-mode` ~~选项表示启用"公平模式"而非默认的"抢答模式"，见后文~~(`2023.03.06`版本开始，只有公平模式了，指不指定该选项都一样)。
 - `noip-as-chnip` 选项表示接受 qtype 为 A/AAAA 但却没有 IP 的 reply。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
@@ -104,7 +106,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 如果关联的查询是未命中黑白名单的，则检查国内 DNS 返回的是否为国内 IP（即是否命中 chnroute/chnroute6）：
     - 如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；
     - 如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果；
-    - 如果可信 DNS 可能会比国内 DNS 先返回，请启用"公平模式"（默认"抢答模式"），即选项 `-f/--fair-mode`。按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式。
+    - ~~如果可信 DNS 可能会比国内 DNS 先返回，请启用"公平模式"（默认"抢答模式"），即选项 `-f/--fair-mode`。按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式~~（`2023.03.06`版本开始，只有公平模式）。
 - 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心黑白名单的查询效率问题，条目数量的多少只会影响一点儿内存占用，对查询速度是没有影响的，另外也不必担心内存占用会很多，我在`Linux x86-64 (CentOS 7)`上实测的数据如下：
   - 没有黑白名单时，内存为`140`KB；
   - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
@@ -112,8 +114,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 注：这些内存占用未计算`libc.so`、`libm.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多；
   - 如果确实内存吃紧，那只加载`gfwlist`就ok了，绝对能满足日常需求，因为`chnlist`更多的我觉得是寻求一个心里安慰。或者你也可以寻找更加精简的chnlist替代源。
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
-- 域名黑白名单文件是按行分隔的域名模式，所谓域名模式其实就是域名后缀，格式如：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最少要有`2`个，最多只能`4`个，过短的会被忽略（如`net`），过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），当然这么做的目的还是为了尽量提高域名的匹配性能。UPDATE：从b25版本开始，顶级域名不再被忽略（如`cn`、`hk`），因此`label`可以为`1~N`个（目前N为4，见源码的`LABEL_MAXCNT`常量）。
-- 光靠 `chinadns-ng` 其实是做不到防 DNS 污染的，防 DNS 污染应该是可信 DNS 上游的任务，`chinadns-ng` 只负责 DNS 查询和 DNS 响应的简单处理，不修改任何 dns-query、dns-reply。同理，`chinadns-ng` 只是兼容 EDNS 请求和响应，并不提供 EDNS 的任何相关特性，任何 DNS 特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常 `chinadns-ng` 都是与其它 dns 工具或代理工具一起使用的，具体与什么搭配，以及如何搭配，这里不展开讨论，由各位自由发挥。
+- 域名黑白名单文件是按行分隔的**域名后缀**，格式：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最多只能`4`个，过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），这么做是为了尽量减少域名的匹配次数，如果需要，可以改源码的`LABEL_MAXCNT`常量。
+- 光靠 `chinadns-ng` 无法防止 DNS 污染，防污染是**可信DNS上游**的任务，`chinadns-ng` 只负责 DNS 查询和 DNS 响应的简单处理，不修改任何 dns-query、dns-reply。同理，`chinadns-ng` 只是兼容 EDNS 请求和响应，并不提供 EDNS 的任何相关特性，任何 DNS 特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常 `chinadns-ng` 都是与其它 dns 工具或代理工具一起使用的，具体与什么搭配，以及如何搭配，这里不展开讨论，由各位自由发挥（保证**可信DNS上游**的结果没有被污染即可，比如套一个`ss-tunnel`，或者让可信DNS上游在过墙时套上代理）。
 
 # 简单测试
 使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
