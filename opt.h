@@ -21,12 +21,13 @@
 #define is_chinadns_idx(idx) ((idx) == CHINADNS1_IDX || (idx) == CHINADNS2_IDX)
 
 /* no-ipv6 bit flag */
-#define NOAAAA_ALL       (-1) /* max value of unsigned integer of any width, all bits are 1 */
-#define NOAAAA_TAG_GFW   (1U)
-#define NOAAAA_TAG_CHN   (1U << 1)
-#define NOAAAA_TAG_NONE  (1U << 2)
-#define NOAAAA_CHINA_DNS (1U << 3)
-#define NOAAAA_TRUST_DNS (1U << 4)
+#define NOAAAA_ALL         (-1) /* max value of unsigned integer of any width, all bits are 1 */
+#define NOAAAA_TAG_GFW     (1U)
+#define NOAAAA_TAG_CHN     (1U << 1)
+#define NOAAAA_TAG_NONE    (1U << 2)
+#define NOAAAA_CHINA_DNS   (1U << 3)
+#define NOAAAA_TRUST_DNS   (1U << 4)
+#define NOAAAA_CHINA_IPCHK (1U << 5)
 
 #define is_filter_all_v6(flags) ((flags) == (__typeof__(flags))NOAAAA_ALL)
 
@@ -44,7 +45,6 @@
 
 extern bool        g_verbose;
 extern bool        g_reuse_port;
-extern bool        g_fair_mode;
 extern bool        g_noip_as_chnip;
 extern uint8_t     g_noaaaa_query;
 

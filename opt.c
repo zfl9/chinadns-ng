@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CHINADNS_VERSION "ChinaDNS-NG 2023.03.02 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG 2023.03.06 <https://github.com/zfl9/chinadns-ng>"
 
 /* limits.h */
 #ifndef PATH_MAX
@@ -14,7 +14,6 @@
 
 bool    g_verbose       = false;
 bool    g_reuse_port    = false;
-bool    g_fair_mode     = false; /* default: fast-mode */
 bool    g_noip_as_chnip = false; /* default: see as not-china-ip */
 uint8_t g_noaaaa_query  = 0; /* disable AAAA query (bit flags) */
 
@@ -33,21 +32,6 @@ char     g_remote_ipports[SERVER_MAXCNT][ADDRPORT_STRLEN] = {[CHINADNS1_IDX] = "
 skaddr_u g_remote_skaddrs[SERVER_MAXCNT]                  = {{{0}}};
 int      g_upstream_timeout_sec                           = 5;
 uint8_t  g_repeat_times                                   = 1; /* used by trust-dns only */
-
-typedef struct {
-    char c;
-    uint8_t f;
-} nov6_opt_s;
-
-static const nov6_opt_s s_nov6_opts[] = {
-    {'a', NOAAAA_ALL},
-    {'g', NOAAAA_TAG_GFW},
-    {'m', NOAAAA_TAG_CHN},
-    {'n', NOAAAA_TAG_NONE},
-    {'c', NOAAAA_CHINA_DNS},
-    {'t', NOAAAA_TRUST_DNS},
-    {0, 0},
-};
 
 #define OPT_BIND_ADDR 'b'
 #define OPT_BIND_PORT 'l'
@@ -132,9 +116,10 @@ static void show_help(void) {
            "                                      rule n: filter the name with tag none\n"
            "                                      rule c: do not forward to china upstream\n"
            "                                      rule t: do not forward to trust upstream\n"
+           "                                      rule C: check answer ip of china upstream\n"
            "                                      if no rules is given, it defaults to a\n"
            " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
-           " -f, --fair-mode                      enable `fair` mode, default: <fast-mode>\n"
+           " -f, --fair-mode                      enable fair mode (nop, only fair mode now)\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
            " -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)\n"
            " -v, --verbose                        print the verbose log, default: <disabled>\n"
@@ -178,6 +163,56 @@ static void parse_upstream_addrs(char *arg, bool is_chinadns) {
         int idx = (is_chinadns ? CHINADNS1_IDX : TRUSTDNS1_IDX) + cnt - 1;
         sprintf(g_remote_ipports[idx], "%s#%u", ipstr, (uint)port);
         build_socket_addr(family, &g_remote_skaddrs[idx], ipstr, port);
+    }
+}
+
+static void parse_noaaaa_rules(const char *rules) {
+    if (!rules) {
+        g_noaaaa_query = NOAAAA_ALL;
+        return;
+    }
+
+    if (*rules == '=')
+        ++rules;
+
+    if (strlen(rules) <= 0)
+        err_exit("'-N/--no-ipv6' requires an argument");
+
+    for (const char *c = rules; *c; ++c) {
+        switch (*c) {
+            case 'a':
+                g_noaaaa_query = NOAAAA_ALL;
+                break;
+            case 'g':
+                g_noaaaa_query |= NOAAAA_TAG_GFW;
+                break;
+            case 'm':
+                g_noaaaa_query |= NOAAAA_TAG_CHN;
+                break;
+            case 'n':
+                g_noaaaa_query |= NOAAAA_TAG_NONE;
+                break;
+            case 'c':
+                g_noaaaa_query |= NOAAAA_CHINA_DNS;
+                break;
+            case 't':
+                g_noaaaa_query |= NOAAAA_TRUST_DNS;
+                break;
+            case 'C':
+                g_noaaaa_query |= NOAAAA_CHINA_IPCHK;
+                break;
+            default:
+                err_exit("invalid no-aaaa rule: '%c'", *c);
+                break;
+        }
+    }
+
+    /* try simplify to NOAAAA_ALL */
+    if (!is_filter_all_v6(g_noaaaa_query)) {
+        if ((g_noaaaa_query & NOAAAA_TAG_GFW) && (g_noaaaa_query & NOAAAA_TAG_CHN) && (g_noaaaa_query & NOAAAA_TAG_NONE))
+            g_noaaaa_query = NOAAAA_ALL;
+        else if ((g_noaaaa_query & NOAAAA_CHINA_DNS) && (g_noaaaa_query & NOAAAA_TRUST_DNS))
+            g_noaaaa_query = NOAAAA_ALL;
     }
 }
 
@@ -243,28 +278,13 @@ void opt_parse(int argc, char *argv[]) {
                     err_exit("invalid trustdns repeat times: %s", optarg);
                 break;
             case OPT_NO_IPV6:
-                if (!optarg) {
-                    g_noaaaa_query = NOAAAA_ALL;
-                } else {
-                    for (const nov6_opt_s *opt = s_nov6_opts; opt->c; ++opt) {
-                        if (strchr(optarg, opt->c))
-                            g_noaaaa_query |= opt->f;
-                    }
-                    /* try simplify to NOAAAA_ALL */
-                    if (!is_filter_all_v6(g_noaaaa_query)) {
-                        const uint8_t flags = g_noaaaa_query;
-                        if ((flags & NOAAAA_TAG_GFW) && (flags & NOAAAA_TAG_CHN) && (flags & NOAAAA_TAG_NONE))
-                            g_noaaaa_query = NOAAAA_ALL;
-                        else if ((flags & NOAAAA_CHINA_DNS) && (flags & NOAAAA_TRUST_DNS))
-                            g_noaaaa_query = NOAAAA_ALL;
-                    }
-                }
+                parse_noaaaa_rules(optarg);
                 break;
             case OPT_CHNLIST_FIRST:
                 g_gfwlist_first = false;
                 break;
             case OPT_FAIR_MODE:
-                g_fair_mode = true;
+                /* no operation */
                 break;
             case OPT_REUSE_PORT:
                 g_reuse_port = true;
