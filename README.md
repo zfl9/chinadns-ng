@@ -85,11 +85,11 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - `n`：过滤非gfwlist、非chnlist域名的v6查询
   - `c`：禁止向chinadns上游转发v6查询
   - `t`：禁止向trustdns上游转发v6查询
-  - `C`：若一个AAAA查询只转发给了chinadns上游(即：非gfwlist域名 && 非chnlist域名 && trustdns被禁用v6查询)，是否要对chinadns上游的响应进行chnip判断(即：过滤非chnip的reply)。默认不判断（即：直接接受），除非设置此规则
+  - `C`：若一个AAAA查询只转发给了chinadns上游（即：`非gfwlist域名` && `非chnlist域名` && `trustdns被禁用v6查询`），是否要对chinadns上游的响应进行chnip判断（即：过滤非chnip的reply）。默认不判断（即：直接接受），除非设置此规则
   - 如`-N=gt`/`--no-ipv6=gt`：过滤gfwlist域名的v6、禁止向trustdns转发v6。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
-- `fair-mode` ~~选项表示启用"公平模式"而非默认的"抢答模式"，见后文~~(`2023.03.06`版本开始，只有公平模式了，指不指定该选项都一样)。
+- `fair-mode` `2023.03.06`版本开始，只有公平模式了，指不指定都一样。
 - `noip-as-chnip` 选项表示接受 qtype 为 A/AAAA 但却没有 IP 的 reply。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
@@ -106,7 +106,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 如果关联的查询是未命中黑白名单的，则检查国内 DNS 返回的是否为国内 IP（即是否命中 chnroute/chnroute6）：
     - 如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；
     - 如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果；
-    - ~~如果可信 DNS 可能会比国内 DNS 先返回，请启用"公平模式"（默认"抢答模式"），即选项 `-f/--fair-mode`。按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式~~（`2023.03.06`版本开始，只有公平模式）。
+    - ~~如果可信 DNS 可能会比国内 DNS 先返回，请启用"公平模式"（默认"抢答模式"），即选项 `-f/--fair-mode`。按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式。~~`2023.03.06`版本开始，只有公平模式。
 - 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心黑白名单的查询效率问题，条目数量的多少只会影响一点儿内存占用，对查询速度是没有影响的，另外也不必担心内存占用会很多，我在`Linux x86-64 (CentOS 7)`上实测的数据如下：
   - 没有黑白名单时，内存为`140`KB；
   - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
