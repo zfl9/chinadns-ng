@@ -623,5 +623,5 @@ u8_t get_name_tag(const char *noalias name, int namelen) {
             return name_tag;
     }
 
-    return NAME_TAG_NONE;
+    return g_default_tag;
 }

@@ -7,6 +7,25 @@
 #define NAME_TAG_CHN 1 // hit the chnlist
 #define NAME_TAG_NONE 2 // did not match any list
 
+#define nametag_val2name(tag) ({ \
+    const char *name_; \
+    switch (tag) { \
+        case NAME_TAG_GFW: \
+            name_ = "gfw"; \
+            break; \
+        case NAME_TAG_CHN: \
+            name_ = "chn"; \
+            break; \
+        case NAME_TAG_NONE: \
+            name_ = "none"; \
+            break; \
+        default: \
+            name_ = "(null)"; \
+            break; \
+    } \
+    name_; \
+})
+
 extern uint32_t g_dnl_nitems;
 
 /* initialize domain-name-list from file */

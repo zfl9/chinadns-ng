@@ -47,6 +47,7 @@ extern bool        g_verbose;
 extern bool        g_reuse_port;
 extern bool        g_noip_as_chnip;
 extern uint8_t     g_noaaaa_query;
+extern uint8_t     g_default_tag;
 
 extern const char *g_gfwlist_fname;
 extern const char *g_chnlist_fname;

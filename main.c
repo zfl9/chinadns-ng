@@ -109,7 +109,7 @@ static void handle_local_packet(void) {
     uint16_t qtype = dns_qtype(s_packet_buf, namelen);
     int ascii_namelen = dns_ascii_namelen(namelen);
     uint8_t name_tag = (ascii_namelen > 0 && g_dnl_nitems)
-        ? get_name_tag(s_name_buf, ascii_namelen) : NAME_TAG_NONE;
+        ? get_name_tag(s_name_buf, ascii_namelen) : g_default_tag;
 
     IF_VERBOSE {
         portno_t port = 0;
@@ -315,6 +315,7 @@ int main(int argc, char *argv[]) {
 
     dnl_init();
 
+    LOGI("default domain name tag: %s", nametag_val2name(g_default_tag));
     LOGI("%s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
     LOGI("dns query timeout: %d seconds", g_upstream_timeout_sec);
 

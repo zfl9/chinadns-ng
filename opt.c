@@ -1,11 +1,12 @@
 #define _GNU_SOURCE
 #include "opt.h"
+#include "dnl.h"
 #include <getopt.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CHINADNS_VERSION "ChinaDNS-NG 2023.03.06 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG 2023.03.08 <https://github.com/zfl9/chinadns-ng>"
 
 /* limits.h */
 #ifndef PATH_MAX
@@ -16,6 +17,7 @@ bool    g_verbose       = false;
 bool    g_reuse_port    = false;
 bool    g_noip_as_chnip = false; /* default: see as not-china-ip */
 uint8_t g_noaaaa_query  = 0; /* disable AAAA query (bit flags) */
+uint8_t g_default_tag   = NAME_TAG_NONE;
 
 const char *g_gfwlist_fname = NULL; /* gfwlist filename */
 const char *g_chnlist_fname = NULL; /* chnlist filename */
@@ -41,6 +43,7 @@ uint8_t  g_repeat_times                                   = 1; /* used by trust-
 #define OPT_IPSET_NAME6 '6'
 #define OPT_GFWLIST_FILE 'g'
 #define OPT_CHNLIST_FILE 'm'
+#define OPT_DEFAULT_TAG 'd'
 #define OPT_TIMEOUT_SEC 'o'
 #define OPT_REPEAT_TIMES 'p'
 #define OPT_CHNLIST_FIRST 'M'
@@ -62,6 +65,7 @@ static const char s_shortopts[] = {
     OPT_IPSET_NAME6, ':', /* required_argument */
     OPT_GFWLIST_FILE, ':', /* required_argument */
     OPT_CHNLIST_FILE, ':', /* required_argument */
+    OPT_DEFAULT_TAG, ':', /* required_argument */
     OPT_TIMEOUT_SEC, ':', /* required_argument */
     OPT_REPEAT_TIMES, ':', /* required_argument */
     OPT_NO_IPV6, ':', ':', /* optional_argument */
@@ -84,6 +88,7 @@ static const struct option s_options[] = {
     {"ipset-name6",   required_argument, NULL, OPT_IPSET_NAME6},
     {"gfwlist-file",  required_argument, NULL, OPT_GFWLIST_FILE},
     {"chnlist-file",  required_argument, NULL, OPT_CHNLIST_FILE},
+    {"default-tag",   required_argument, NULL, OPT_DEFAULT_TAG},
     {"timeout-sec",   required_argument, NULL, OPT_TIMEOUT_SEC},
     {"repeat-times",  required_argument, NULL, OPT_REPEAT_TIMES},
     {"no-ipv6",       optional_argument, NULL, OPT_NO_IPV6},
@@ -107,6 +112,7 @@ static void show_help(void) {
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
            " -g, --gfwlist-file <file-path>       filepath of gfwlist, '-' indicate stdin\n"
            " -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin\n"
+           " -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)\n"
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
            " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
            " -N, --no-ipv6=[rules]                filter AAAA query, rules can be a seq of:\n"
@@ -266,6 +272,16 @@ void opt_parse(int argc, char *argv[]) {
                 if (strlen(optarg) + 1 > PATH_MAX)
                     err_exit("file path max length is %d: %s", PATH_MAX - 1, optarg);
                 g_chnlist_fname = optarg;
+                break;
+            case OPT_DEFAULT_TAG:
+                if (strcmp(optarg, "gfw") == 0)
+                    g_default_tag = NAME_TAG_GFW;
+                else if (strcmp(optarg, "chn") == 0)
+                    g_default_tag = NAME_TAG_CHN;
+                else if (strcmp(optarg, "none") == 0)
+                    g_default_tag = NAME_TAG_NONE;
+                else
+                    err_exit("invalid default domain tag: %s", optarg);
                 break;
             case OPT_TIMEOUT_SEC:
                 g_upstream_timeout_sec = strtoul(optarg, NULL, 10);
