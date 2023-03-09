@@ -1,8 +1,23 @@
 CC = gcc
-# CFLAGS = -pipe -std=c99 -Wall -Wextra -Og -ggdb3
-CFLAGS = -pipe -std=c99 -Wall -Wextra -O3 -flto -flto-partition=none -DNDEBUG
-# LDFLAGS = -pipe
-LDFLAGS = -pipe -O3 -flto -flto-partition=none -s
+
+ifeq ($(findstring clang,$(shell $(CC) --version)),)
+LTOFLAGS = -flto -flto-partition=none
+else
+LTOFLAGS = -flto=full
+endif
+
+ifdef DEBUG
+CFLAGS = -pipe -std=c99 -Wall -Wextra -Og -ggdb3
+LDFLAGS = -pipe
+else
+CFLAGS = -pipe -std=c99 -Wall -Wextra -O3 $(LTOFLAGS) -DNDEBUG
+LDFLAGS = -pipe -O3 $(LTOFLAGS) -s
+endif
+
+ifdef STATIC
+LDFLAGS := -static $(LDFLAGS)
+endif
+
 SRCS = main.c opt.c dns.c dnl.c net.c
 OBJS = $(SRCS:.c=.o)
 LIBS = -lm
