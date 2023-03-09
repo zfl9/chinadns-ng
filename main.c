@@ -341,7 +341,8 @@ int main(int argc, char *argv[]) {
     LOGV("print the verbose running log");
 
     /* init ipset netlink socket */
-    ipset_init_nlsocket();
+    if (g_default_tag == NAME_TAG_NONE)
+        ipset_init_nlsocket();
 
     /* create listen socket */
     s_bind_sockfd = new_udp_socket(skaddr_family(&g_bind_skaddr));
