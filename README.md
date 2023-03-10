@@ -1,4 +1,4 @@
-## ChinaDNS-NG
+## 简介
 
 [ChinaDNS](https://github.com/shadowsocks/ChinaDNS) 的个人重构版本，功能简述：
 
@@ -65,7 +65,7 @@ qemu-aarch64-static ./chinadns-ng -v -l53 -g ./gfwlist.txt -m ./chnlist.txt
 
 由于运行时会访问内核 ipset 子系统，所以 docker run 时请带上 `--privileged`。
 
-建议去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的二进制，就不需要自己 build 了。
+建议去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的musl静态链接二进制，这样就不需要 build 了。
 
 ## 命令选项
 
@@ -392,13 +392,13 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 为何选择 ipset 来处理 chnroute 查询
 
-有多种原因，一是因为使用 ipset 可以与 iptables 规则共用一份 chnroute，避免维护两份 chnroute。二是因为我目前无法自己实现高效率的`ip(cidr)`列表查询，所以借助`ipset`内核模块。
+有多种原因，一是因为使用 ipset 可以与 iptables 规则共用一份 chnroute；二是因为目前无法自己实现高效率的`ip(cidr)`查询，所以借助`ipset`内核模块。
 
 ---
 
 ### 是否支持 nftables 的 set 查询接口
 
-目前还不支持，但已加入 TODO 列表，不出意外的话（主要是还在寻找不依赖任何库的情况下访问`nft set`），应该快了。
+目前还不支持，但已加入 TODO 列表，不出意外应该快了（主要是还在寻找不依赖任何库的情况下访问`nft set`）。
 
 ---
 
@@ -410,7 +410,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 是否打算支持 geosite.dat 等格式的 gfwlist/chnlist
 
-目前也没有这个计划，因为这些二进制格式需要引入 protobuf 等解析库，我不是很想引入依赖，而且 geosite.dat 本身也很大。
+目前也没有这个计划，这些二进制格式需要引入 protobuf 等库，我不是很想引入依赖，而且 geosite.dat 本身也大。
 
 ---
 
@@ -485,9 +485,9 @@ yys.163.com.        1776    IN  CNAME   game-cache.nie.163.com.
 
 ### 如何以普通用户身份运行 chinadns-ng
 
-如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合是需要 `CAP_NET_ADMIN` 特权的，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。
+如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合需要 `CAP_NET_ADMIN` 能力，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。
 
-那么有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
+那有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
 
 ```shell
 # 授予 CAP_NET_ADMIN 特权
