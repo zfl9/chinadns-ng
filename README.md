@@ -340,6 +340,8 @@ ipset -R -exist <chnroute.ipset
 ipset -R -exist <chnroute6.ipset
 ```
 
+---
+
 ### 如何更新 gfwlist.txt、chnlist.txt
 
 ```bash
