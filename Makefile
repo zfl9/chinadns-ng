@@ -7,11 +7,11 @@ LTOFLAGS = -flto
 endif
 
 ifdef DEBUG
-CFLAGS = -pipe -std=c99 -Wall -Wextra -Og -ggdb3
-LDFLAGS = -pipe
+CFLAGS = -pipe -std=c99 -Wall -Wextra -Og -fno-pie -fno-PIE -ggdb3
+LDFLAGS = -pipe -no-pie
 else
-CFLAGS = -pipe -std=c99 -Wall -Wextra -O3 $(LTOFLAGS) -DNDEBUG
-LDFLAGS = -pipe -O3 $(LTOFLAGS) -s
+CFLAGS = -pipe -std=c99 -Wall -Wextra -O3 $(LTOFLAGS) -fno-pie -fno-PIE -DNDEBUG
+LDFLAGS = -pipe -no-pie -O3 $(LTOFLAGS) -s
 endif
 
 ifdef STATIC

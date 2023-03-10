@@ -35,22 +35,28 @@ make && sudo make install
 
 这里推荐两种方法，支持静态链接(musl)，方便部署，避免glibc版本兼容问题：
 
-- <https://ziglang.org>：这里只将 zig 作为 C 编译器来使用，即 `zig cc`（基于clang/llvm）
-- <https://musl.cc>：提供了预先构建好的交叉编译工具链（linux x86 hosted），下载解压即可使用
+- <https://ziglang.org>：将 zig 作为 C 编译器来使用，即 `zig cc`（基于`clang/llvm`）
+- <https://musl.cc>：提供了预先构建好`gcc`工具链（linux x86 hosted），下载解压即可使用
 
 > musl 性能表现在**低端设备/嵌入式环境**下通常比 glibc 更优，但在 x86 架构（aarch64 不确定）可能不如 glibc。
 
-这里以`zig cc`为例（`releases`的二进制就是使用`zig`编译的），为`aarch64`编译静态链接的`chinadns-ng`：
+这里以`musl.cc`为例（`releases`的二进制就是用它编译的），为`aarch64`编译静态链接的`chinadns-ng`：
 
 ```shell
-# 先安装zig (通过包管理器，或者去zig官网下载)
-pacman -S zig # archlinux
+cd /opt
 
-# 支持的 target 可以使用以下命令查看
-zig targets | grep -- -musl
+# 获取下载地址
+curl https://musl.cc # 所有(native + cross)
+curl https://musl.cc | grep cross | grep aarch64 # aarch64
 
-# 这里以 aarch64 为例，并静态链接 musl
-make clean all CC='zig cc -target aarch64-linux-musl' STATIC=1
+# 下载工具链
+wget https://musl.cc/aarch64-linux-musl-cross.tgz
+
+# 解压工具链
+tar xvf aarch64-linux-musl-cross.tgz
+
+# 编译静态版本
+make clean all CC='/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc' STATIC=1
 
 # 然后使用 file 命令检查 chinadns-ng 可执行文件
 file ./chinadns-ng
