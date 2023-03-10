@@ -327,6 +327,8 @@ ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
 (chinadns-ng </dev/null &>>/var/log/chinadns-ng.log &)
 ```
 
+---
+
 ### 如何更新 chnroute.ipset 和 chnroute6.ipset
 
 ```bash
@@ -338,17 +340,25 @@ ipset -R -exist <chnroute.ipset
 ipset -R -exist <chnroute6.ipset
 ```
 
+---
+
 ### chinadns-ng 并不读取 chnroute.ipset、chnroute6.ipset
 
 启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。TODO：支持`nftables sets`。
+
+---
 
 ### 接受 china 上游返回的 IP 为保留地址的解析记录
 
 如果你指定的 china-dns 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受此国内上游的响应（即判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
 
+---
+
 ### received an error code from kernel: (-2) No such file or directory
 
 意思是指定的 ipset 不存在；如果是 `[ipset_addr4_is_exists]` 函数提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 函数提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
+
+---
 
 ### 如何使用 TCP 协议与 DNS 上游进行通信
 
@@ -362,33 +372,49 @@ dns2tcp -L"127.0.0.1#5353" -R"8.8.8.8#53"
 chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 ```
 
+---
+
 ### trust上游存在一定的丢包，怎么缓解
 
 如果 trust-dns 上游存在丢包的情况（特别是 udp-based 类型的代理隧道），可以使用 `--repeat-times` 选项进行一定的缓解。比如设置为 3，则表示：chinadns-ng 从客户端收到一个 query 包后，会同时向 trust-dns 发送 3 个相同的 query 包，向 china-dns 发送 1 个 query 包（所以该选项仅针对 trust-dns）。也就是所谓的 **多倍发包**、**重复发包**，并没有其它魔力。
+
+---
 
 ### 为何选择 ipset 来处理 chnroute 查询
 
 有多种原因，一是因为使用 ipset 可以与 iptables 规则共用一份 chnroute，避免维护两份 chnroute。二是因为我目前无法自己实现高效率的`ip(cidr)`列表查询，所以借助`ipset`内核模块。
 
+---
+
 ### 是否支持 nftables 的 set 查询接口
 
 目前还不支持，但已加入 TODO 列表，不出意外的话（主要是还在寻找不依赖任何库的情况下访问`nft set`），应该快了。
+
+---
 
 ### 是否打算支持 geoip.dat 等格式的 chnroute
 
 目前没有这个计划，因为如果要自己实现 chnroute 集合，那就要实现高性能的数据结构和算法，这有点超出了我的能力范围，至少目前是这样。另外一个原因就是，chinadns-ng 通常与 iptables/nftables 一起使用（配合透明代理），若使用非 ipset/nft-set 实现，会导致两份重复的 chnroute。
 
+---
+
 ### 是否打算支持 geosite.dat 等格式的 gfwlist/chnlist
 
 目前也没有这个计划，因为这些二进制格式需要引入 protobuf 等额外解析库，我不太喜欢引入这些依赖项，而且这些文件本身也挺大的。
+
+---
 
 ### chinadns-ng 原则上只为替代原版 chinadns，非必要功能暂不打算实现
 
 目前个人的用法是：dnsmasq 在前，chinadns-ng 在后；dnsmasq 做 DNS 缓存、ipset（将特定域名解析出来的 IP 动态添加至 ipset 集合，便于 iptables 操作）、以及相关附加服务（如 DHCP）；chinadns-ng 则作为 dnsmasq 的上游服务器，配合 ss-tproxy 透明代理，提供无污染的 DNS 解析服务。
 
+---
+
 ### 如何更新 gfwlist.txt、chnlist.txt
 
 进入项目根目录执行 `./update-gfwlist.sh`、`./update-chnlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt`、`chnlist.txt` 文件的行数，然后重新启动 chinadns-ng 生效。也可以使用其他脚本生成 gfwlist.txt 和 chnlist.txt，看个人喜好。
+
+---
 
 ### --noip-as-chnip 选项的作用
 
@@ -449,6 +475,8 @@ yys.163.com.        1776    IN  CNAME   game-cache.nie.163.com.
 ;; MSG SIZE  rcvd: 81
 ```
 
+---
+
 ### 如何以普通用户身份运行 chinadns-ng
 
 如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合是需要 `CAP_NET_ADMIN` 特权的，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。那么有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
@@ -460,5 +488,7 @@ sudo setcap cap_net_admin+ep /usr/local/bin/chinadns-ng
 # 授予 CAP_NET_ADMIN + CAP_NET_BIND_SERVICE 特权
 sudo setcap cap_net_bind_service,cap_net_admin+ep /usr/local/bin/chinadns-ng
 ```
+
+---
 
 另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.x 编写的，欢迎使用。
