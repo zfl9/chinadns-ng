@@ -338,7 +338,7 @@ ipset -R -exist <chnroute.ipset
 ipset -R -exist <chnroute6.ipset
 ```
 
-### chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset`
+### chinadns-ng 并不读取 chnroute.ipset、chnroute6.ipset
 
 启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。TODO：支持`nftables sets`。
 
@@ -346,7 +346,7 @@ ipset -R -exist <chnroute6.ipset
 
 如果你指定的 china-dns 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受此国内上游的响应（即判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
 
-### `received an error code from kernel: (-2) No such file or directory`
+### received an error code from kernel: (-2) No such file or directory
 
 意思是指定的 ipset 不存在；如果是 `[ipset_addr4_is_exists]` 函数提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 函数提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
 
@@ -390,7 +390,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 进入项目根目录执行 `./update-gfwlist.sh`、`./update-chnlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt`、`chnlist.txt` 文件的行数，然后重新启动 chinadns-ng 生效。也可以使用其他脚本生成 gfwlist.txt 和 chnlist.txt，看个人喜好。
 
-### `--noip-as-chnip` 选项的作用
+### --noip-as-chnip 选项的作用
 
 首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。
 
