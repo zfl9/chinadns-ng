@@ -456,6 +456,7 @@ game-cache.nie.163.com. 30  IN  A   59.111.137.212
 ;; WHEN: Sat Oct 05 10:51:46 CST 2019
 ;; MSG SIZE  rcvd: 113
 ```
+
 ```bash
 $ dig @114.114.114.114 yys.163.com AAAA
 
