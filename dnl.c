@@ -53,8 +53,8 @@ typedef struct map {
 
 u32_t g_dnl_nitems = 0; /* total (gfw + chn) */
 
-static map_s s_map1 = {0}; /* L1 map (<= MAX_COLLISION) */
-static map_s s_map2 = {0}; /* L2 map (> MAX_COLLISION) */
+static map_s s_map1; /* L1 map (<= MAX_COLLISION) */
+static map_s s_map2; /* L2 map (> MAX_COLLISION) */
 
 static char *s_name_pool    = NULL;
 static u32_t s_name_poolcap = 0;

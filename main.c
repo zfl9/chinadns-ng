@@ -92,7 +92,8 @@ static void handle_local_packet(void) {
         return;
     }
 
-    skaddr_u source_addr = {{0}};
+    skaddr_u source_addr;
+    memset(&source_addr, 0, sizeof(source_addr));
     socklen_t source_addrlen = sizeof(source_addr);
     ssize_t packet_len = recvfrom(s_bind_sockfd, s_packet_buf, DNS_PACKET_MAXSIZE, 0, &source_addr.sa, &source_addrlen);
 

@@ -1,25 +1,74 @@
 # ChinaDNS-NG
+
 [ChinaDNS](https://github.com/shadowsocks/ChinaDNS) 的个人重构版本，功能简述：
+
 - 使用 epoll 和 ipset(netlink) 实现，性能更强。
 - 完整支持 IPv4 和 IPv6 协议，兼容 EDNS 请求和响应。
 - 手动指定国内 DNS 和可信 DNS，而非自动识别，更加可控。
 - 修复原版对保留地址的处理问题，去除过时特性，只留核心功能。
 - 修复原版对可信 DNS 先于国内 DNS 返回而导致判断失效的问题。
 - 支持 `gfwlist/chnlist` 黑/白名单匹配模式，效率比 dnsmasq 更高。
+- 支持纯域名分流模式：要么走china上游，要么走trust上游，不依赖ipset。
 
 # 快速编译
+
+> 不想编译的，可以去 [releases](/releases) 页面下载编译好的可执行文件（静态链接musl）。
+
 ```bash
 git clone https://github.com/zfl9/chinadns-ng
 cd chinadns-ng
 make && sudo make install
 ```
-chinadns-ng 默认安装到 `/usr/local/bin` 目录，可安装到其它目录，如 `make install DESTDIR=/opt/local/bin`。<br>
-交叉编译时只需指定 CC 变量，如 `make CC=aarch64-linux-gnu-gcc`（如有问题，请执行 `make clean`，然后再试）。
 
-> 如果是版本升级，建议先 `make clean` 再编译，避免出现奇怪的问题。
+相关`make`变量：
 
-## Docker
+- `CC`：指定编译器，默认是`gcc`，如交叉编译 `make clean all CC=/path/to/aarch64-linux-gnu-gcc`
+- `DEBUG`：编译`debug`版本（`gdb`调试信息），如 `make clean all DEBUG=1`
+- `STATIC`：生成静态链接（包括`libc`）的可执行文件，如 `make clean all STATIC=1`
+- `LDDIRS`：库文件搜索路径，通常用不到，格式 `make clean all LDDIRS=-L/path/to/libs`
+- `MAIN`：可执行文件名，默认是`chinadns-ng`
+- `DESTDIR`：指定安装目录，默认是`/usr/local/bin`
+
+> 如果是版本升级（或者为不同架构交叉编译），建议先 `make clean`，避免出现奇怪的问题。
+
+# 交叉编译
+
+这里推荐两种方法，支持静态链接(musl)，方便部署，避免glibc版本兼容问题：
+
+- <https://ziglang.org>：这里只将 zig 作为 C 编译器来使用，即 `zig cc`（基于clang/llvm）
+- <https://musl.cc>：提供了预先构建好的交叉编译工具链（linux x86 hosted），下载解压即可使用
+
+> musl 性能表现在**低端设备/嵌入式环境**下通常比 glibc 更优，但在 x86 架构（aarch64 不确定）可能不如 glibc。
+
+这里以`zig cc`为例（`releases`的二进制就是使用`zig`编译的），为`aarch64`编译静态链接的`chinadns-ng`：
+
+```shell
+# 先安装zig (通过包管理器，或者去zig官网下载)
+pacman -S zig # archlinux
+
+# 支持的 target 可以使用以下命令查看
+zig targets | grep -- -musl
+
+# 这里以 aarch64 为例，并静态链接 musl
+make clean all CC='zig cc -target aarch64-linux-musl' STATIC=1
+
+# 然后使用 file 命令检查 chinadns-ng 可执行文件
+file ./chinadns-ng
+chinadns-ng: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+
+# 可以使用 qemu-user-static 工具包来检查是否可运行
+pacman -S qemu-user-static # archlinux
+qemu-aarch64-static ./chinadns-ng -v -l53 -g ./gfwlist.txt -m ./chnlist.txt
+```
+
+# Docker
+
 本项目也支持 Docker，只需要执行以下命令：
+
+由于运行时会访问内核 ipset 子系统，所以需要 `--privileged` 权限。
+
+> 也可以去 [releases](/releases) 页面下载编译好的二进制，就没必要 docker 了。
+
 ```bash
 # clone source
 git clone https://github.com/zfl9/chinadns-ng.git
@@ -33,10 +82,12 @@ docker run -d \
   --name chinadns-ng \
   --restart always \
   --net host \
+  --privileged \
   chinadns-ng <args>
 ```
 
 # 命令选项
+
 ```console
 $ chinadns-ng --help
 usage: chinadns-ng <options...>. the existing options are as follows:
@@ -48,6 +99,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6
  -g, --gfwlist-file <file-path>       filepath of gfwlist, '-' indicate stdin
  -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin
+ -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)
  -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
  -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1
  -N, --no-ipv6=[rules]                filter AAAA query, rules can be a seq of:
@@ -77,6 +129,10 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
 - `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
+- `default-tag` 用来"纯域名分流"，可提供比`dnsmasq`更优秀的时空效率。
+  - 通常与`-g`或`-m`一起用，用来实现域名分流，该模式下不执行ipset逻辑。
+  - `-g gfwlist.txt -d chn`：gfw列表的域名走可信上游，其他走国内上游。
+  - `-m chnlist.txt -d gfw`：chn列表的域名走国内上游，其他走可信上游。
 - `no-ipv6` 选项表示过滤 IPv6-Address(AAAA) 查询，默认不设置此选项。
   - `2023.02.27`版本开始，允许指定一个可选的"规则串"，目前有如下规则：
   - `a`：过滤所有域名的v6查询，同之前
@@ -94,39 +150,52 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 # 工作原理
+
 - chinadns-ng 启动后会创建一个监听套接字，N 个上游套接字，N 为上游 DNS 数量。
+
 - 监听套接字用于处理本地请求客户端的 DNS 请求，以及向请求客户端发送 DNS 响应。
+
 - 上游套接字用于向上游 DNS 服务器发送 DNS 请求，以及从上游服务器接收 DNS 响应。
+
 - 当从监听套接字收到请求客户端的 DNS 查询时，将按照如下逻辑转发给对应上游 DNS：
   - 如果启用了黑名单(gfwlist)且查询的域名命中了黑名单，则将该请求转发给可信 DNS。
   - 如果启用了白名单(chnlist)且查询的域名命中了白名单，则将该请求转发给国内 DNS。
   - 如果未启用黑名单、白名单，或未命中黑名单、白名单，则将请求转发给所有上游 DNS。
+
 - 当从上游套接字收到上游服务器的 DNS 响应时，将按照如下逻辑过滤收到的上游 DNS 响应：
   - 如果关联的查询是命中了黑白名单的，则直接将其转发给请求客户端，并释放相关上下文。
   - 如果关联的查询是未命中黑白名单的，则检查国内 DNS 返回的是否为 `chnroute/chnroute6` IP：
     - 如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；
     - 如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果；
     - ~~如果可信 DNS 可能会比国内 DNS 先返回，请启用"公平模式"（默认"抢答模式"），即选项 `-f/--fair-mode`。按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式~~。从`2023.03.06`版本开始，只存在公平模式。
+
 - 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心黑白名单的查询效率问题，条目数量的多少只会影响一点儿内存占用，对查询速度是没有影响的，另外也不必担心内存占用会很多，我在`Linux x86-64 (CentOS 7)`上实测的数据如下：
   - 没有黑白名单时，内存为`140`KB；
   - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
   - 加载 5700+ 条`gfwlist`以及 73300+ 条`chnlist`时，内存为`2424`KB；
   - 注：这些内存占用未计算`libc.so`、`libm.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多；
   - 如果确实内存吃紧，那只加载`gfwlist`就ok了，绝对能满足日常需求，因为`chnlist`更多的我觉得是寻求一个心里安慰。或者你也可以寻找更加精简的chnlist替代源。
+
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
+
 - 域名黑白名单文件是按行分隔的**域名后缀**，格式：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最多只能`4`个，过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），这么做是为了尽量减少域名匹配次数。如果需要，可以修改源码的`LABEL_MAXCNT`常量来调整最大`label`数。
+
 - 光靠 `chinadns-ng` 无法防止 DNS 污染，防污染是**可信DNS上游**的任务，`chinadns-ng` 只负责 DNS 查询和 DNS 响应的简单处理，不修改任何 dns-query、dns-reply。同理，`chinadns-ng` 只是兼容 EDNS 请求和响应，并不提供 EDNS 的任何相关特性，任何 DNS 特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常 `chinadns-ng` 都是与其它 dns 工具或代理工具一起使用的，具体与什么搭配，以及如何搭配，这里不展开讨论，由各位自由发挥（保证**可信DNS上游**的结果没有被污染即可，也就是在过墙时套上代理，如`ss-tunnel`）。
 
 # 简单测试
+
 使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
+
 ```bash
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
 ```
+
 > 只要没有显式的从内核删除 ipset 集合，那么下次运行时就不需要再次导入了。
 
 然后运行 chinadns-ng，注意我是配置了全局代理的，所以 `8.8.8.8` 会走代理出去。
-```bash
+
+```console
 $ chinadns-ng -v
 2019-07-28 09:26:39 INF: [main] local listen addr: 127.0.0.1#65353
 2019-07-28 09:26:39 INF: [main] chinadns server#1: 114.114.114.114#53
@@ -138,7 +207,8 @@ $ chinadns-ng -v
 ```
 
 然后安装 dig 命令，用于测试 chinadns-ng 的工作是否正常，当然其它 dns 工具也可以：
-```bash
+
+```console
 # query A record for www.baidu.com
 $ dig @127.0.0.1 -p65353 www.baidu.com     
 
@@ -164,7 +234,8 @@ www.a.shifen.com.	3577	IN	A	183.232.231.174
 ;; WHEN: Sun Jul 28 09:31:11 CST 2019
 ;; MSG SIZE  rcvd: 104
 ```
-```bash
+
+```console
 # query AAAA record for ipv6.baidu.com
 $ dig @127.0.0.1 -p65353 ipv6.baidu.com AAAA
 
@@ -188,7 +259,8 @@ ipv6.baidu.com.		3559	IN	AAAA	2400:da00:2::29
 ;; WHEN: Sun Jul 28 09:31:15 CST 2019
 ;; MSG SIZE  rcvd: 71
 ```
-```bash
+
+```console
 # the output of chinadns-ng
 2019-07-28 09:31:11 INF: [handle_local_packet] query [www.baidu.com] from 127.0.0.1#20942
 2019-07-28 09:31:11 INF: [handle_remote_packet] reply [www.baidu.com] from 114.114.114.114#53, result: pass
@@ -198,7 +270,7 @@ ipv6.baidu.com.		3559	IN	AAAA	2400:da00:2::29
 2019-07-28 09:31:15 INF: [handle_remote_packet] reply [ipv6.baidu.com] from 8.8.8.8#53, result: pass
 ```
 
-```bash
+```console
 # query A record for www.google.com
 $ dig @127.0.0.1 -p65353 www.google.com     
 
@@ -227,7 +299,8 @@ www.google.com.     3437    IN  A   74.125.24.104
 ;; WHEN: Sun Jul 28 09:31:24 CST 2019
 ;; MSG SIZE  rcvd: 139
 ```
-```bash
+
+```console
 # query AAAA record for ipv6.google.com
 $ dig @127.0.0.1 -p65353 ipv6.google.com AAAA
 
@@ -252,7 +325,8 @@ ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
 ;; WHEN: Sun Jul 28 09:31:34 CST 2019
 ;; MSG SIZE  rcvd: 93
 ```
-```bash
+
+```console
 # the output of chinadns-ng
 2019-07-28 09:31:24 INF: [handle_local_packet] query [www.google.com] from 127.0.0.1#10598
 2019-07-28 09:31:24 INF: [handle_remote_packet] reply [www.google.com] from 114.114.114.114#53, result: drop
@@ -265,12 +339,15 @@ ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
 可以看到，对于国内 DNS 返回非国内 IP 的响应都正常过滤了，无论是 A 记录响应还是 AAAA 记录响应。
 
 # 常见问题
-1、如何以守护进程形式在后台运行 chinadns-ng？
+
+## 如何以守护进程形式在后台运行 chinadns-ng？
+
 ```bash
 (chinadns-ng </dev/null &>>/var/log/chinadns-ng.log &)
 ```
 
-2、如何更新 chnroute.ipset 和 chnroute6.ipset？
+## 如何更新 chnroute.ipset 和 chnroute6.ipset？
+
 ```bash
 ./update-chnroute.sh
 ./update-chnroute6.sh
@@ -280,14 +357,22 @@ ipset -R -exist <chnroute.ipset
 ipset -R -exist <chnroute6.ipset
 ```
 
-3、注意，chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset` 文件，启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。
+## chinadns-ng 并不读取 `chnroute.ipset`、`chnroute6.ipset`
 
-4、如果你指定的 china-dns 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受此国内上游的响应（即判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
+启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。TODO：支持`nftables sets`。
 
-5、`received an error code from kernel: (-2) No such file or directory`<br>
+## 接受china上游返回的IP为保留地址的解析记录
+
+如果你指定的 china-dns 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受此国内上游的响应（即判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
+
+## `received an error code from kernel: (-2) No such file or directory`
+
 意思是指定的 ipset 不存在；如果是 `[ipset_addr4_is_exists]` 函数提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 函数提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
 
-6、如果想通过 TCP 协议来访问上游 DNS（原生只支持 UDP 访问），可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具将 chinadns-ng 向上游发出的 DNS 查询从 UDP 转换为 TCP，`dns2tcp` 是个人利用业余时间写的一个 DNS 实用小工具，专门用于实现 dns 的 udp2tcp 功能（虽然能实现类似功能的工具有很多，但它们大多都附带了我不想要的功能，还是比较喜欢简单专一点的东西）。
+## 能否通过 TCP 协议与 DNS 上游进行通信？
+
+如果想通过 TCP 协议来访问上游 DNS（原生只支持 UDP 访问），可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具将 chinadns-ng 向上游发出的 DNS 查询从 UDP 转换为 TCP，`dns2tcp` 是个人利用业余时间写的一个 DNS 实用小工具，专门用于实现 dns 的 udp2tcp 功能（虽然能实现类似功能的工具有很多，但它们大多都附带了我不想要的功能，还是比较喜欢简单专一点的东西）。
+
 ```bash
 # 运行 dns2tcp
 dns2tcp -L"127.0.0.1#5353" -R"8.8.8.8#53"
@@ -296,13 +381,42 @@ dns2tcp -L"127.0.0.1#5353" -R"8.8.8.8#53"
 chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 ```
 
-7、如果 trust-dns 上游存在丢包的情况（特别是 udp-based 类型的代理隧道），可以使用 `--repeat-times` 选项进行一定的缓解。比如设置为 3，则表示：chinadns-ng 从客户端收到一个 query 包后，会同时向 trust-dns 发送 3 个相同的 query 包，向 china-dns 发送 1 个 query 包（所以该选项仅针对 trust-dns）。也就是所谓的 **多倍发包**、**重复发包**，并没有其它魔力。
+## trust上游存在一定的丢包，怎么缓解？
 
-8、chinadns-ng 原则上只为替代原版 chinadns，非必要的新功能暂不打算实现；目前个人的用法是：dnsmasq 在前，chinadns-ng 在后；dnsmasq 做 DNS 缓存、ipset（将特定域名解析出来的 IP 动态添加至 ipset 集合，便于 iptables 操作）、以及相关附加服务（如 DHCP）；chinadns-ng 则作为 dnsmasq 的上游服务器，配合 ss-tproxy 透明代理，提供无污染的 DNS 解析服务。
+如果 trust-dns 上游存在丢包的情况（特别是 udp-based 类型的代理隧道），可以使用 `--repeat-times` 选项进行一定的缓解。比如设置为 3，则表示：chinadns-ng 从客户端收到一个 query 包后，会同时向 trust-dns 发送 3 个相同的 query 包，向 china-dns 发送 1 个 query 包（所以该选项仅针对 trust-dns）。也就是所谓的 **多倍发包**、**重复发包**，并没有其它魔力。
 
-9、如何更新 gfwlist.txt？进入项目根目录执行 `./update-gfwlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt` 文件的行数，一般有 5000+ 行，然后重新启动 chinadns-ng 生效。chnlist.txt 的更新处理也是一样的，也可以自己定制 gfwlist.txt 和 chnlist.txt，具体看个人喜好。
+## 为何选择 ipset 来处理 chnroute 查询？
 
-10、`--noip-as-chnip` 选项的作用？首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、AAAA（查询给定域名的 IPv6 地址）、CNAME（查询给定域名的别名）、MX（查询给定域名的邮件服务器）；chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对国内 DNS，可信 DNS 不存在任何过滤；另外此过滤也仅针对`非gfwlist && 非chnlist`域名），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
+有多种原因，一是因为使用 ipset 可以与 iptables 规则共用一份 chnroute，避免维护两份 chnroute。二是因为我目前无法自己实现高效率的`ip(cidr)`列表查询，所以借助`ipset`内核模块。
+
+## 是否支持 nftables 的 set 查询接口？
+
+目前还不支持，但已加入 TODO 列表，不出意外的话（主要是还在寻找不依赖任何库的情况下访问`nft set`），应该快了。
+
+## 是否打算支持 geoip.dat 等格式的 chnroute？
+
+目前没有这个计划，因为如果要自己实现 chnroute 集合，那就要实现高性能的数据结构和算法，这有点超出了我的能力范围，至少目前是这样。另外一个原因就是，chinadns-ng 通常与 iptables/nftables 一起使用（配合透明代理），若使用非 ipset/nft-set 实现，会导致两份重复的 chnroute。
+
+## 是否打算支持 geosite.dat 等格式的 gfwlist/chnlist？
+
+目前也没有这个计划，因为这些二进制格式需要引入 protobuf 等额外解析库，我不太喜欢引入这些依赖项，而且这些文件本身也挺大的。
+
+## chinadns-ng 原则上只为替代原版 chinadns，非必要功能暂不打算实现
+
+目前个人的用法是：dnsmasq 在前，chinadns-ng 在后；dnsmasq 做 DNS 缓存、ipset（将特定域名解析出来的 IP 动态添加至 ipset 集合，便于 iptables 操作）、以及相关附加服务（如 DHCP）；chinadns-ng 则作为 dnsmasq 的上游服务器，配合 ss-tproxy 透明代理，提供无污染的 DNS 解析服务。
+
+## 如何更新 gfwlist.txt、chnlist.txt？
+
+进入项目根目录执行 `./update-gfwlist.sh`、`./update-chnlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt`、`chnlist.txt` 文件的行数，然后重新启动 chinadns-ng 生效。也可以使用其他脚本生成 gfwlist.txt 和 chnlist.txt，看个人喜好。
+
+## `--noip-as-chnip` 选项的作用？
+
+首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。
+
+qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、AAAA（查询给定域名的 IPv6 地址）、CNAME（查询给定域名的别名）、MX（查询给定域名的邮件服务器）；
+
+chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对**国内 DNS**，可信 DNS 不存在任何过滤；另外此过滤也仅针对`非gfwlist && 非chnlist`域名），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
+
 ```bash
 $ dig @114.114.114.114 yys.163.com A
 
@@ -354,7 +468,10 @@ yys.163.com.        1776    IN  CNAME   game-cache.nie.163.com.
 ;; MSG SIZE  rcvd: 81
 ```
 
-11、如何以普通用户身份运行 chinadns-ng？如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合是需要 `CAP_NET_ADMIN` 特权的，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。那么有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
+## 如何以普通用户身份运行 chinadns-ng？
+
+如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合是需要 `CAP_NET_ADMIN` 特权的，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。那么有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
+
 ```shell
 # 授予 CAP_NET_ADMIN 特权
 sudo setcap cap_net_admin+ep /usr/local/bin/chinadns-ng

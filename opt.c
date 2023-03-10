@@ -28,10 +28,10 @@ char g_ipset_setname6[IPSET_MAXNAMELEN] = "chnroute6"; /* ipset setname for ipv6
 
 char     g_bind_ipstr[INET6_ADDRSTRLEN] = "127.0.0.1";
 portno_t g_bind_portno                  = 65353;
-skaddr_u g_bind_skaddr                  = {{0}};
+skaddr_u g_bind_skaddr;
 
 char     g_remote_ipports[SERVER_MAXCNT][ADDRPORT_STRLEN] = {[CHINADNS1_IDX] = "114.114.114.114", [TRUSTDNS1_IDX] = "8.8.8.8"};
-skaddr_u g_remote_skaddrs[SERVER_MAXCNT]                  = {{{0}}};
+skaddr_u g_remote_skaddrs[SERVER_MAXCNT];
 int      g_upstream_timeout_sec                           = 5;
 uint8_t  g_repeat_times                                   = 1; /* used by trust-dns only */
 
