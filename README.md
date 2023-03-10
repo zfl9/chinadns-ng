@@ -329,7 +329,7 @@ ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
 
 ---
 
-### 如何更新 chnroute.ipset 和 chnroute6.ipset
+### 如何更新 chnroute.ipset、chnroute6.ipset
 
 ```bash
 ./update-chnroute.sh
@@ -338,6 +338,28 @@ ipset -F chnroute
 ipset -F chnroute6
 ipset -R -exist <chnroute.ipset
 ipset -R -exist <chnroute6.ipset
+```
+
+### 如何更新 gfwlist.txt、chnlist.txt
+
+```bash
+./update-gfwlist.sh
+./update-chnlist.sh
+chinadns-ng -g gfwlist.txt -m chnlist.txt <args...> #重新运行chinadns-ng
+```
+
+---
+
+### 如何使用 TCP 协议与 DNS 上游进行通信
+
+如果想通过 TCP 协议来访问上游 DNS（原生只支持 UDP 访问），可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具将 chinadns-ng 向上游发出的 DNS 查询从 UDP 转换为 TCP，`dns2tcp` 是个人利用业余时间写的一个 DNS 实用小工具，专门用于实现 dns 的 udp2tcp 功能（虽然能实现类似功能的工具有很多，但它们大多都附带了我不想要的功能，还是比较喜欢简单专一点的东西）。
+
+```bash
+# 运行 dns2tcp
+dns2tcp -L"127.0.0.1#5353" -R"8.8.8.8#53"
+
+# 运行 chinadns-ng
+chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 ```
 
 ---
@@ -356,21 +378,9 @@ ipset -R -exist <chnroute6.ipset
 
 ### received an error code from kernel: (-2) No such file or directory
 
-意思是指定的 ipset 不存在；如果是 `[ipset_addr4_is_exists]` 函数提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 函数提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
+意思是指定的 ipset 集合不存在；如果是 `[ipset_addr4_is_exists]` 提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。
 
----
-
-### 如何使用 TCP 协议与 DNS 上游进行通信
-
-如果想通过 TCP 协议来访问上游 DNS（原生只支持 UDP 访问），可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具将 chinadns-ng 向上游发出的 DNS 查询从 UDP 转换为 TCP，`dns2tcp` 是个人利用业余时间写的一个 DNS 实用小工具，专门用于实现 dns 的 udp2tcp 功能（虽然能实现类似功能的工具有很多，但它们大多都附带了我不想要的功能，还是比较喜欢简单专一点的东西）。
-
-```bash
-# 运行 dns2tcp
-dns2tcp -L"127.0.0.1#5353" -R"8.8.8.8#53"
-
-# 运行 chinadns-ng
-chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
-```
+需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
 
 ---
 
@@ -394,13 +404,13 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 是否打算支持 geoip.dat 等格式的 chnroute
 
-目前没有这个计划，因为如果要自己实现 chnroute 集合，那就要实现高性能的数据结构和算法，这有点超出了我的能力范围，至少目前是这样。另外一个原因就是，chinadns-ng 通常与 iptables/nftables 一起使用（配合透明代理），若使用非 ipset/nft-set 实现，会导致两份重复的 chnroute。
+目前没有这个计划，因为如果要自己实现 chnroute 集合，那就要实现高性能的数据结构和算法，这有点超出了我的能力范围。另外一个原因就是，chinadns-ng 通常与 iptables/nftables 一起使用（配合透明代理），若使用非 ipset/nft-set 实现，会导致两份重复的 chnroute。
 
 ---
 
 ### 是否打算支持 geosite.dat 等格式的 gfwlist/chnlist
 
-目前也没有这个计划，因为这些二进制格式需要引入 protobuf 等额外解析库，我不太喜欢引入这些依赖项，而且这些文件本身也挺大的。
+目前也没有这个计划，因为这些二进制格式需要引入 protobuf 等解析库，我不是很想引入依赖，而且 geosite.dat 本身也很大。
 
 ---
 
@@ -410,19 +420,15 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ---
 
-### 如何更新 gfwlist.txt、chnlist.txt
-
-进入项目根目录执行 `./update-gfwlist.sh`、`./update-chnlist.sh` 脚本，脚本内部会使用 perl 进行一些复杂的正则表达式替换，请先检查当前系统是否已安装 perl5。脚本执行完毕后，检查 `gfwlist.txt`、`chnlist.txt` 文件的行数，然后重新启动 chinadns-ng 生效。也可以使用其他脚本生成 gfwlist.txt 和 chnlist.txt，看个人喜好。
-
----
-
 ### --noip-as-chnip 选项的作用
 
 首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。
 
 qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、AAAA（查询给定域名的 IPv6 地址）、CNAME（查询给定域名的别名）、MX（查询给定域名的邮件服务器）；
 
-chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对**国内 DNS**，可信 DNS 不存在任何过滤；另外此过滤也仅针对`非gfwlist && 非chnlist`域名），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
+chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；
+
+默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对**国内 DNS**，可信 DNS 不存在任何过滤；另外此过滤也仅针对`非gfwlist && 非chnlist`域名），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
 
 ```bash
 $ dig @114.114.114.114 yys.163.com A
@@ -479,7 +485,9 @@ yys.163.com.        1776    IN  CNAME   game-cache.nie.163.com.
 
 ### 如何以普通用户身份运行 chinadns-ng
 
-如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合是需要 `CAP_NET_ADMIN` 特权的，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。那么有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
+如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合是需要 `CAP_NET_ADMIN` 特权的，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。
+
+那么有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
 
 ```shell
 # 授予 CAP_NET_ADMIN 特权
