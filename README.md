@@ -56,6 +56,7 @@ wget https://musl.cc/aarch64-linux-musl-cross.tgz
 tar xvf aarch64-linux-musl-cross.tgz
 
 # 编译静态版本
+cd /path/to/chinadns-ng
 make clean all CC='/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc' STATIC=1
 
 # 然后使用 file 命令检查 chinadns-ng 可执行文件
