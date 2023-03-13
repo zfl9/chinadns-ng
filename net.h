@@ -2,7 +2,6 @@
 
 #include "misc.h"
 #include <stdint.h>
-#include <stdbool.h>
 #include <netinet/in.h>
 
 /* ipv4/ipv6 address length (binary) */
@@ -37,9 +36,3 @@ void build_socket_addr(int family, skaddr_u *noalias skaddr, const char *noalias
 
 /* parse ipv4/ipv6 address structure */
 void parse_socket_addr(const skaddr_u *noalias skaddr, char *noalias ipstr, portno_t *noalias portno);
-
-/* init netlink socket for ipset query */
-void ipset_init_nlsocket(void);
-
-/* check given ipaddr is exists in ipset */
-bool ipset_addr_is_exists(const void *noalias addr_ptr, bool is_ipv4);

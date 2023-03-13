@@ -2,6 +2,7 @@
 #include "opt.h"
 #include "log.h"
 #include "net.h"
+#include "ipset.h"
 #include "dns.h"
 #include "dnl.h"
 #include "misc.h"
@@ -19,8 +20,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
 
 #define EPOLL_MAXEVENTS 8
 
@@ -349,16 +348,16 @@ int main(int argc, char *argv[]) {
     s_bind_sockfd = new_udp_socket(skaddr_family(&g_bind_skaddr));
     if (g_reuse_port) set_reuse_port(s_bind_sockfd);
 
-    /* create remote socket */
-    for (int i = 0; i <= SERVER_MAXIDX; ++i) {
-        if (*g_remote_ipports[i])
-            s_remote_sockfds[i] = new_udp_socket(skaddr_family(&g_remote_skaddrs[i]));
-    }
-
     /* bind address to listen socket */
     unlikely_if (bind(s_bind_sockfd, &g_bind_skaddr.sa, skaddr_size(&g_bind_skaddr))) {
         LOGE("failed to bind address to socket: (%d) %s", errno, strerror(errno));
         return errno;
+    }
+
+    /* create remote socket */
+    for (int i = 0; i <= SERVER_MAXIDX; ++i) {
+        if (*g_remote_ipports[i])
+            s_remote_sockfds[i] = new_udp_socket(skaddr_family(&g_remote_skaddrs[i]));
     }
 
     /* create epoll fd */

@@ -1,9 +1,8 @@
 #define _GNU_SOURCE
 #include "dns.h"
 #include "net.h"
+#include "ipset.h"
 #include "log.h"
-#include "misc.h"
-#include <stddef.h>
 #include <string.h>
 
 /* "\3www\6google\3com\0" => "www.google.com" */
