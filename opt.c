@@ -8,19 +8,14 @@
 
 #define CHINADNS_VERSION "ChinaDNS-NG 2023.03.10 <https://github.com/zfl9/chinadns-ng>"
 
-/* limits.h */
-#ifndef PATH_MAX
-  #define PATH_MAX 4096 /* include \0 */
-#endif
-
 bool    g_verbose       = false;
 bool    g_reuse_port    = false;
 bool    g_noip_as_chnip = false; /* default: see as not-china-ip */
 uint8_t g_noaaaa_query  = 0; /* disable AAAA query (bit flags) */
 uint8_t g_default_tag   = NAME_TAG_NONE;
 
-const char *g_gfwlist_fname = NULL; /* gfwlist filename */
-const char *g_chnlist_fname = NULL; /* chnlist filename */
+const char *g_gfwlist_fname = NULL; /* gfwlist filename(s) "a.txt,b.txt,..." */
+const char *g_chnlist_fname = NULL; /* chnlist filename(s) "m.txt,n.txt,..." */
 bool        g_gfwlist_first = true; /* match gfwlist first */
 
 char g_ipset_setname4[IPSET_MAXNAMELEN] = "chnroute"; /* ipset setname for ipv4 */
@@ -264,13 +259,9 @@ void opt_parse(int argc, char *argv[]) {
                 strcpy(g_ipset_setname6, optarg);
                 break;
             case OPT_GFWLIST_FILE:
-                if (strlen(optarg) + 1 > PATH_MAX)
-                    err_exit("file path max length is %d: %s", PATH_MAX - 1, optarg);
                 g_gfwlist_fname = optarg;
                 break;
             case OPT_CHNLIST_FILE:
-                if (strlen(optarg) + 1 > PATH_MAX)
-                    err_exit("file path max length is %d: %s", PATH_MAX - 1, optarg);
                 g_chnlist_fname = optarg;
                 break;
             case OPT_DEFAULT_TAG:
@@ -338,9 +329,6 @@ void opt_parse(int argc, char *argv[]) {
                 break;
         }
     }
-
-    if (g_gfwlist_fname && g_chnlist_fname && strcmp(g_gfwlist_fname, "-") == 0 && strcmp(g_chnlist_fname, "-") == 0)
-        err_exit("gfwlist:%s and chnlist:%s are both STDIN", g_gfwlist_fname, g_chnlist_fname);
 
     build_socket_addr(get_ipstr_family(g_bind_ipstr), &g_bind_skaddr, g_bind_ipstr, g_bind_portno);
 

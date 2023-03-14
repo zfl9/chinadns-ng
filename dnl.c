@@ -508,31 +508,47 @@ static int name_split(const char *noalias name, int namelen, const char *noalias
     return n;
 }
 
-static bool load_list(const char *noalias filename, u32_t *noalias p_addr0, u32_t *noalias p_nitems) {
-    FILE *fp = NULL;
-
-    if (strcmp(filename, "-") == 0) {
-        fp = stdin;
-    } else {
-        fp = fopen(filename, "rb");
-        if (!fp) {
-            LOGE("failed to open '%s': (%d) %s", filename, errno, strerror(errno));
-            return false;
-        }
-    }
-
+static bool load_list(const char *noalias filenames, u32_t *noalias p_addr0, u32_t *noalias p_nitems) {
     u32_t addr0 = 0, nitems = 0;
-    char buf[DNS_NAME_MAXLEN + 1];
 
-    while (fscanf(fp, "%" literal(DNS_NAME_MAXLEN) "s", buf) > 0) {
-        const char *name = name_trim(buf);
-        if (name) {
-            u32_t nameaddr = name_to_pool(name);
-            if (nitems++ == 0) addr0 = nameaddr;
+    for (int has_next = 1; has_next;) {
+        const char *d = strchr(filenames, ',');
+        size_t len = d ? (size_t)(d - filenames) : strlen(filenames);
+
+        char fname[len + 1];
+        memcpy(fname, filenames, len);
+        fname[len] = '\0';
+
+        if (d)
+            filenames += len + 1;
+        else
+            has_next = 0;
+
+        FILE *fp;
+        if (strcmp(fname, "-") == 0) {
+            fp = stdin;
+        } else {
+            fp = fopen(fname, "rb");
+            if (!fp) {
+                LOGE("failed to open '%s': (%d) %s", fname, errno, strerror(errno));
+                continue;
+            }
         }
-    }
 
-    if (fp != stdin) fclose(fp);
+        char buf[DNS_NAME_MAXLEN + 1];
+        while (fscanf(fp, "%" literal(DNS_NAME_MAXLEN) "s", buf) > 0) {
+            const char *name = name_trim(buf);
+            if (name) {
+                u32_t nameaddr = name_to_pool(name);
+                if (nitems++ == 0) addr0 = nameaddr;
+            }
+        }
+
+        if (fp == stdin)
+            freopen("/dev/null", "rb", stdin);
+        else
+            fclose(fp);
+    }
 
     if (nitems <= 0) return false;
 
