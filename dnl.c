@@ -12,7 +12,7 @@
 #include <math.h>
 #include <assert.h>
 #include <unistd.h>
-#include <sys/syscall.h>
+#include <sys/mman.h>
 
 /* token stringize */
 #define _literal(x) #x
@@ -64,44 +64,48 @@ static u32_t     s_bucket_poolcap = 0;
 
 /* ======================== alloc ======================== */
 
-#define pool(tag)     s_##tag##_pool
-#define poolcap(tag)  s_##tag##_poolcap
+static void *s_base = NULL; /* page-aligned */
+static size_t s_cap = 0; /* multiple of page-size */
+static size_t s_end = 0; /* actual range of used */
 
-static inline void *inc_brk(intptr_t inc) {
-    static void *curbrk = NULL;
-    if (!curbrk)
-        curbrk = (void *)syscall(SYS_brk, NULL);
-    if (inc == 0)
-        return curbrk;
-    curbrk += inc;
-    unlikely_if ((void *)syscall(SYS_brk, curbrk) != curbrk) {
-        fprintf(stderr, "failed to set brk, old:%p inc:%lld\n", curbrk - inc, (llong)inc);
-        abort();
+static void *x_realloc(void *p, size_t sz, size_t align) {
+    if (!p) {
+        size_t n = s_end % align;
+        if (n) s_end += align - n;
+        s_end += sz;
+    } else {
+        assert(s_base <= p && p < s_base + s_end);
+        s_end = p + sz - s_base;
     }
-    return curbrk - inc;
+
+    if (s_end > s_cap) {
+        size_t oldcap = s_cap;
+        s_cap = s_end;
+        size_t pagesz = sysconf(_SC_PAGESIZE);
+        size_t n = s_cap % pagesz;
+        if (n) s_cap += pagesz - n;
+        if (!s_base)
+            s_base = mmap(NULL, s_cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        else
+            s_base = mremap(s_base, oldcap, s_cap, MREMAP_MAYMOVE);
+        if (s_base == MAP_FAILED) {
+            fprintf(stderr, "mmap/mremap failed. oldcap:%zu newcap:%zu errno:%d %s\n", oldcap, s_cap, errno, strerror(errno));
+            abort();
+        }
+    }
+
+    return s_base + s_end - sz;
 }
 
-#define align_brk(tag) ({ \
-    size_t align_ = __alignof__(*pool(tag)); \
-    uintptr_t p_ = (uintptr_t)inc_brk(0); \
-    size_t n_ = p_ % align_; \
-    if (n_) { \
-        n_ = align_ - n_; \
-        p_ += n_; \
-        inc_brk(n_); \
-        assert(p_ % align_ == 0); \
-        assert(inc_brk(0) == (void *)p_); \
-    } \
-    (void *)p_; \
-})
+#define pool(tag)       s_##tag##_pool
+#define poolcap(tag)    s_##tag##_poolcap
+#define poolsize(tag)   (poolcap(tag) * sizeof(*pool(tag)))
+#define poolalign(tag)  __alignof__(*pool(tag))
 
 // return addr in pool (idx)
 #define pool_alloc(tag, n) ({ \
-    if (!pool(tag)) pool(tag) = align_brk(tag); \
-    void *p_ = inc_brk((n) * sizeof(*pool(tag))); \
-    assert(p_ == pool(tag) + poolcap(tag)); \
-    (void)p_; /* avoid unused warning */ \
     poolcap(tag) += (n); \
+    pool(tag) = x_realloc(pool(tag), poolsize(tag), poolalign(tag)); \
     poolcap(tag) - (n); \
 })
 
@@ -620,6 +624,9 @@ void dnl_init(void) {
     u32_t n = poolcap(bucket) - g_dnl_nitems;
     double cost = (double)(sizeof(bucket_s) * n) / 1024.0;
     LOGI("other-bucket %lu %.3fk", (ulong)n, cost);
+
+    /* total cost (page-aligned) */
+    LOGI("total memory cost: %.3fk", (double)s_cap / 1024.0);
 }
 
 /* check if the given domain name matches */
