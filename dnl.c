@@ -68,22 +68,28 @@ static void *s_base = NULL; /* page-aligned */
 static size_t s_cap = 0; /* multiple of page-size */
 static size_t s_end = 0; /* actual range of used */
 
+static size_t align_to(size_t sz, size_t align) {
+    size_t n = sz % align;
+    if (n) sz += align - n;
+    return sz;
+}
+
 static void *x_realloc(void *p, size_t sz, size_t align) {
+    assert(sz % align == 0);
+
     if (!p) {
-        size_t n = s_end % align;
-        if (n) s_end += align - n;
+        s_end = align_to(s_end, align);
         s_end += sz;
     } else {
-        assert(s_base <= p && p < s_base + s_end);
-        s_end = p + sz - s_base;
+        size_t start = p - s_base;
+        assert(start % align == 0);
+        assert(start < s_end);
+        s_end = start + sz;
     }
 
     if (s_end > s_cap) {
         size_t oldcap = s_cap;
-        s_cap = s_end;
-        size_t pagesz = sysconf(_SC_PAGESIZE);
-        size_t n = s_cap % pagesz;
-        if (n) s_cap += pagesz - n;
+        s_cap = align_to(s_end, sysconf(_SC_PAGESIZE));
         if (!s_base)
             s_base = mmap(NULL, s_cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         else
