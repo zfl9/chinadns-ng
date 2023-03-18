@@ -23,6 +23,8 @@
 
 #define EPOLL_MAXEVENTS 8
 
+#define PACKET_BUFSZ DNS_PACKET_MAXSIZE
+
 typedef struct u16_buf {
     uint16_t len;
     char buf[];
@@ -46,7 +48,7 @@ static int s_remote_sockfds[] = {[0 ... SERVER_MAXIDX] = -1};
 static uint16_t    s_unique_msgid = 0;
 static queryctx_t *s_context_list = NULL;
 
-static void *noalias s_packet_buf                    = (char [DNS_PACKET_MAXSIZE]){0};
+static void *noalias s_packet_buf                    = (char [PACKET_BUFSZ]){0};
 static char          s_name_buf[DNS_NAME_MAXLEN + 1] = {0};
 static char          s_ipstr_buf[INET6_ADDRSTRLEN]   = {0};
 
@@ -94,7 +96,7 @@ static void handle_local_packet(void) {
     skaddr_u source_addr;
     memset(&source_addr, 0, sizeof(source_addr));
     socklen_t source_addrlen = sizeof(source_addr);
-    ssize_t packet_len = recvfrom(s_bind_sockfd, s_packet_buf, DNS_PACKET_MAXSIZE, 0, &source_addr.sa, &source_addrlen);
+    ssize_t packet_len = recvfrom(s_bind_sockfd, s_packet_buf, PACKET_BUFSZ, 0, &source_addr.sa, &source_addrlen);
 
     if (packet_len < 0) {
         unlikely_if (errno != EAGAIN && errno != EWOULDBLOCK)
@@ -224,7 +226,7 @@ static inline bool accept_chinadns(void *noalias packet_buf, ssize_t *noalias pa
 static void handle_remote_packet(int index) {
     int remote_sockfd = s_remote_sockfds[index];
     const char *remote_ipport = g_remote_ipports[index];
-    ssize_t packet_len = recvfrom(remote_sockfd, s_packet_buf, DNS_PACKET_MAXSIZE, 0, NULL, NULL);
+    ssize_t packet_len = recvfrom(remote_sockfd, s_packet_buf, PACKET_BUFSZ, 0, NULL, NULL);
 
     if (packet_len < 0) {
         unlikely_if (errno != EAGAIN && errno != EWOULDBLOCK)
@@ -342,7 +344,7 @@ int main(int argc, char *argv[]) {
 
     /* init ipset netlink socket */
     if (g_default_tag == NAME_TAG_NONE)
-        ipset_init_nlsocket();
+        ipset_init();
 
     /* create listen socket */
     s_bind_sockfd = new_udp_socket(skaddr_family(&g_bind_skaddr));

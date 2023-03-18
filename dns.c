@@ -197,13 +197,13 @@ int dns_chnip_check(const void *noalias packet_buf, ssize_t packet_len, int name
                     LOGE("rdatalen is not equal to sizeof(ipv4): %u != %d", (uint)rdatalen, IPV4_BINADDR_LEN);
                     return DNS_IPCHK_BAD_PACKET;
                 }
-                return ipset_addr_is_exists(record->rdata, true) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP; /* in chnroute ? */
+                return ipset_addr_exists(record->rdata, true) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP; /* in chnroute ? */
             case DNS_RECORD_TYPE_AAAA:
                 unlikely_if (rdatalen != IPV6_BINADDR_LEN) {
                     LOGE("rdatalen is not equal to sizeof(ipv6): %u != %d", (uint)rdatalen, IPV6_BINADDR_LEN);
                     return DNS_IPCHK_BAD_PACKET;
                 }
-                return ipset_addr_is_exists(record->rdata, false) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP; /* in chnroute6 ? */
+                return ipset_addr_exists(record->rdata, false) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP; /* in chnroute6 ? */
         }
 
         packet_buf += recordlen;

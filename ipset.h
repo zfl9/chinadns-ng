@@ -3,8 +3,8 @@
 #include "misc.h"
 #include <stdbool.h>
 
-/* init netlink socket for ipset query */
-void ipset_init_nlsocket(void);
+void ipset_init(void);
 
-/* check given ipaddr is exists in ipset */
-bool ipset_addr_is_exists(const void *noalias addr_ptr, bool is_ipv4);
+bool ipset_addr_exists(const void *noalias addr, bool is_ipv4);
+
+void ipset_addr_add(const void *noalias addr, bool is_ipv4);
