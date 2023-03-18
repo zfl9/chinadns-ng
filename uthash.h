@@ -1140,7 +1140,7 @@ do {                                                                            
 
 #define HASH_OVERHEAD(hh,head)                                                   \
  (((head) != NULL) ? (                                                           \
- (u32_)(((head)->hh.tbl->num_items   * sizeof(UT_hash_handle))   +             \
+ (size_t)(((head)->hh.tbl->num_items   * sizeof(UT_hash_handle))   +             \
           ((head)->hh.tbl->num_buckets * sizeof(UT_hash_bucket))   +             \
            sizeof(UT_hash_table)                                   +             \
            (HASH_BLOOM_BYTELEN))) : 0U)
