@@ -165,7 +165,9 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
     return true;
 }
 
-int dns_chnip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
+static bool foreach_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen,
+    bool (*f)(const void *noalias ip, bool is_ipv4, void *ud), void *ud)
+{
     const dns_header_t *h = packet_buf;
     uint16_t answer_count = ntohs(h->answer_count);
 
@@ -176,42 +178,43 @@ int dns_chnip_check(const void *noalias packet_buf, ssize_t packet_len, int name
     /* find the first A/AAAA record */
     for (uint16_t i = 0; i < answer_count; ++i) {
         unlikely_if (!skip_name(&packet_buf, &packet_len))
-            return DNS_IPCHK_BAD_PACKET;
+            return false;
 
         const dns_record_t *record = packet_buf;
         unlikely_if (ntohs(record->rclass) != DNS_CLASS_INTERNET) {
             LOGE("only supports standard internet query class: %u", (uint)ntohs(record->rclass));
-            return DNS_IPCHK_BAD_PACKET;
+            return false;
         }
 
         uint16_t rdatalen = ntohs(record->rdatalen);
         ssize_t recordlen = sizeof(dns_record_t) + rdatalen;
         unlikely_if (packet_len < recordlen) {
             LOGE("remaining length is less than sizeof(record): %zd < %zd", packet_len, recordlen);
-            return DNS_IPCHK_BAD_PACKET;
+            return false;
         }
 
         switch (ntohs(record->rtype)) {
             case DNS_RECORD_TYPE_A:
                 unlikely_if (rdatalen != IPV4_BINADDR_LEN) {
                     LOGE("rdatalen is not equal to sizeof(ipv4): %u != %d", (uint)rdatalen, IPV4_BINADDR_LEN);
-                    return DNS_IPCHK_BAD_PACKET;
+                    return false;
                 }
-                return ipset_addr_exists(record->rdata, true) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP; /* in chnroute ? */
+                if (f(record->rdata, true, ud)) return true; /* break if found one */
+                break;
             case DNS_RECORD_TYPE_AAAA:
                 unlikely_if (rdatalen != IPV6_BINADDR_LEN) {
                     LOGE("rdatalen is not equal to sizeof(ipv6): %u != %d", (uint)rdatalen, IPV6_BINADDR_LEN);
-                    return DNS_IPCHK_BAD_PACKET;
+                    return false;
                 }
-                return ipset_addr_exists(record->rdata, false) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP; /* in chnroute6 ? */
+                if (f(record->rdata, false, ud)) return true; /* break if found one */
+                break;
         }
 
         packet_buf += recordlen;
         packet_len -= recordlen;
     }
 
-    /* not found A/AAAA record */
-    return DNS_IPCHK_NOT_FOUND;
+    return true;
 }
 
 bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
@@ -220,4 +223,28 @@ bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *n
 
 bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
     return check_packet(false, packet_buf, packet_len, name_buf, p_namelen);
+}
+
+static bool ip_check(const void *noalias ip, bool is_ipv4, void *ud) {
+    int *res = ud;
+    *res = ipset_ip_exists(ip, is_ipv4) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP;
+    return true; // break foreach
+}
+
+int dns_ip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
+    int res = DNS_IPCHK_NOT_FOUND;
+    unlikely_if (!foreach_ip(packet_buf, packet_len, namelen, ip_check, &res))
+        return DNS_IPCHK_BAD_PACKET;
+    return res;
+}
+
+static bool ip_add(const void *noalias ip, bool is_ipv4, void *ud) {
+    (void)ud;
+    ipset_ip_add(ip, is_ipv4);
+    return false; // not break foreach
+}
+
+void dns_ip_add(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
+    foreach_ip(packet_buf, packet_len, namelen, ip_add, NULL);
+    ipset_ip_add_commit();
 }

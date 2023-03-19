@@ -22,7 +22,7 @@ ifdef LDDIRS
 LDFLAGS += $(LDDIRS)
 endif
 
-SRCS = main.c opt.c dns.c dnl.c net.c ipset.c
+SRCS = main.c opt.c dns.c dnl.c net.c ipset.c nl.c
 OBJS = $(SRCS:.c=.o)
 LDLIBS = -lm
 MAIN = chinadns-ng

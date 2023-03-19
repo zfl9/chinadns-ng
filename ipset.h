@@ -5,6 +5,10 @@
 
 void ipset_init(void);
 
-bool ipset_addr_exists(const void *noalias addr, bool is_ipv4);
+bool ipset_ip_exists(const void *noalias ip, bool is_ipv4);
 
-void ipset_addr_add(const void *noalias addr, bool is_ipv4);
+/* add to cache */
+void ipset_ip_add(const void *noalias ip, bool is_ipv4);
+
+/* commit to kernel */
+void ipset_ip_add_commit(void);

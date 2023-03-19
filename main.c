@@ -190,7 +190,7 @@ static inline bool accept_chinadns(void *noalias packet_buf, ssize_t *noalias pa
     if (only_chinadns && !(g_noaaaa_query & NOAAAA_CHINA_IPCHK))
         return true;
 
-    switch (dns_chnip_check(packet_buf, *packet_len, namelen)) {
+    switch (dns_ip_check(packet_buf, *packet_len, namelen)) {
         case DNS_IPCHK_IS_CHNIP:
             return true;
 
@@ -254,6 +254,10 @@ static void handle_remote_packet(int index) {
             LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
             if (context->trustdns_buf)
                 LOGV("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
+            if (g_add_tagchn_ip && context->name_tag == NAME_TAG_CHN) {
+                LOGV("add the answer ip of name-tag:chn [%s] to ipset", s_name_buf);
+                dns_ip_add(reply_buffer, reply_length, namelen);
+            }
         } else {
             LOGV("reply [%s] from %s (%u), result: filter", s_name_buf, remote_ipport, (uint)dns_header->id);
             if (context->trustdns_buf) { /* trustdns returns before chinadns */
@@ -314,6 +318,7 @@ int main(int argc, char *argv[]) {
 
     LOGI("ipset ip4 setname: %s", g_ipset_setname4);
     LOGI("ipset ip6 setname: %s", g_ipset_setname6);
+    if (g_add_tagchn_ip) LOGI("add ip of name-tag:chn to ipset");
 
     dnl_init();
 

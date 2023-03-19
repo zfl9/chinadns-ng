@@ -52,6 +52,7 @@ extern uint8_t     g_default_tag;
 extern const char *g_gfwlist_fname;
 extern const char *g_chnlist_fname;
 extern bool        g_gfwlist_first;
+extern bool        g_add_tagchn_ip;
 
 extern char        g_ipset_setname4[IPSET_MAXNAMELEN];
 extern char        g_ipset_setname6[IPSET_MAXNAMELEN];

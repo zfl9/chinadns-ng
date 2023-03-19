@@ -83,7 +83,7 @@ static u32_t alloc(u32_t sz, u32_t align) {
         else
             s_base = mremap(s_base, oldcap, s_cap, MREMAP_MAYMOVE);
         if (s_base == MAP_FAILED) {
-            fprintf(stderr, "mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %s\n", (ulong)oldcap, (ulong)s_cap, errno, strerror(errno));
+            LOGE("mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %s", (ulong)oldcap, (ulong)s_cap, errno, strerror(errno));
             abort();
         }
     }

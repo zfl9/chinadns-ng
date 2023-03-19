@@ -3,6 +3,7 @@
 #include "opt.h"
 #include "net.h"
 #include "log.h"
+#include "nl.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -12,21 +13,25 @@
 #include <sys/socket.h>
 #include <linux/netlink.h>
 
-/* #include <linux/netfilter/ipset/ip_set.h> */
-#define NFNETLINK_V0 0
+/* data type */
 #define NFNL_SUBSYS_IPSET 6
-#define IPSET_PROTOCOL 6
-
 #define IPSET_CMD_TEST 11
 #define IPSET_CMD_ADD 9
 
+/* nlattr value */
+#define IPSET_PROTOCOL 6
+
+/* nlattr type */
 #define IPSET_ATTR_PROTOCOL 1
 #define IPSET_ATTR_SETNAME 2
+#define IPSET_ATTR_LINENO 9
+#define IPSET_ATTR_ADT 8
 #define IPSET_ATTR_DATA 7
 #define IPSET_ATTR_IP 1
 #define IPSET_ATTR_IPADDR_IPV4 1
 #define IPSET_ATTR_IPADDR_IPV6 2
 
+/* ipset errcode */
 #define IPSET_ERR_PROTOCOL (-4097)
 #define IPSET_ERR_FIND_TYPE (-4098)
 #define IPSET_ERR_MAX_SETS (-4099)
@@ -85,161 +90,85 @@ static inline const char *ipset_strerror(int errcode) {
     }
 }
 
-/* #include <linux/netfilter/nfnetlink.h> */
-struct nfgenmsg {
-    uint8_t     nfgen_family;   /* AF_xxx */
-    uint8_t     version;        /* nfnetlink version */
-    uint16_t    res_id;         /* resource id */
-};
+#define BUFSZ_REQ NLMSG_ALIGN(512) /* nfgenmsg */
+#define BUFSZ_ACK NLMSG_ALIGN(64) /* nlmsgerr */
 
-#define NLMSG_BUFSZ 256 /* netlink_header + netfilter_header + nlattrs... */
+static void       *s_buffer4        = (char [BUFSZ_REQ]){0}; /* chnroute */
+static void       *s_buffer6        = (char [BUFSZ_REQ]){0}; /* chnroute6 */
+static void       *s_ack_buffer     = (char [BUFSZ_ACK]){0};
+static uint32_t    s_comlen4        = 0; /* nlh + nfh + proto + setname */
+static uint32_t    s_comlen6        = 0; /* nlh + nfh + proto + setname */
+static bool        s_dirty4         = false; /* need to commit (ip_add) */
+static bool        s_dirty6         = false; /* need to commit (ip_add) */
 
-static int         s_nlsocket        = -1;
-static uint32_t    s_nlmsg_seq       = 0;
-static void       *s_send_buffer4    = (char [NLMSG_BUFSZ]){0};
-static void       *s_send_buffer6    = (char [NLMSG_BUFSZ]){0};
-static void       *s_recv_buffer     = (char [NLMSG_BUFSZ]){0};
-static void       *s_ipv4addr_pos    = NULL; /* point to send_buffer4 */
-static void       *s_ipv6addr_pos    = NULL; /* point to send_buffer6 */
+#define nlmsg(is_ipv4) \
+    ((struct nlmsghdr *)((is_ipv4) ? s_buffer4 : s_buffer6))
 
-static void create_nlsocket(void) {
-    /* create netlink socket */
-    s_nlsocket = socket(AF_NETLINK, SOCK_DGRAM, NETLINK_NETFILTER);
-    unlikely_if (s_nlsocket < 0) {
-        LOGE("failed to create netlink socket: (%d) %s", errno, strerror(errno));
-        exit(errno);
-    }
+#define comlen(is_ipv4) \
+    ((is_ipv4) ? s_comlen4 : s_comlen6)
 
-    /* bind netlink address */
-    struct sockaddr_nl self_addr = {.nl_family = AF_NETLINK, .nl_pid = getpid(), .nl_groups = 0};
-    unlikely_if (bind(s_nlsocket, (void *)&self_addr, sizeof(self_addr))) {
-        LOGE("failed to bind address to socket: (%d) %s", errno, strerror(errno));
-        exit(errno);
-    }
+#define pcomlen(is_ipv4) \
+    ((is_ipv4) ? &s_comlen4 : &s_comlen6)
 
-    /* connect to kernel */
-    struct sockaddr_nl kernel_addr = {.nl_family = AF_NETLINK, .nl_pid = 0, .nl_groups = 0};
-    unlikely_if (connect(s_nlsocket, (void *)&kernel_addr, sizeof(kernel_addr))) {
-        LOGE("failed to connect to kernel: (%d) %s", errno, strerror(errno));
-        exit(errno);
-    }
-}
+#define setname(is_ipv4) \
+    ((is_ipv4) ? g_ipset_setname4 : g_ipset_setname6)
 
-#define nla_data(nla) \
-    ((void *)(nla) + NLA_HDRLEN)
-
-#define calc_nla_len(datalen) \
-    (NLA_HDRLEN + (datalen))
-
-#define calc_nla_size(datalen) \
-    (NLA_HDRLEN + NLA_ALIGN(datalen))
-
-#define nlmsg_end(nlmsg) \
-    ((void *)(nlmsg) + (nlmsg)->nlmsg_len)
-
-#define inc_nlmsg_len(nlmsg, nlmsg_maxlen, datalen) ({ \
-    ((nlmsg)->nlmsg_len += NLMSG_ALIGN(datalen)); \
-    unlikely_if ((nlmsg)->nlmsg_len > (nlmsg_maxlen)) { \
-        fprintf(stderr, "BUG: nlmsg_len:%lu > nlmsg_maxlen:%lu\n", \
-            (ulong)(nlmsg)->nlmsg_len, (ulong)(nlmsg_maxlen)); \
-        abort(); \
-    } \
-})
-
-static struct nlattr *add_nla(struct nlmsghdr *noalias nlmsg, size_t nlmsg_maxlen,
-    uint16_t attrtype, const void *noalias data, size_t datalen)
-{
-    struct nlattr *nla = nlmsg_end(nlmsg);
-    inc_nlmsg_len(nlmsg, nlmsg_maxlen, calc_nla_size(datalen));
-    nla->nla_len = calc_nla_len(datalen);
-    nla->nla_type = attrtype;
-    if (data) memcpy(nla_data(nla), data, datalen);
-    return nla;
-}
-
-#define start_nest_nla(nlmsg, nlmsg_maxlen, attrtype) \
-    add_nla(nlmsg, nlmsg_maxlen, (attrtype) | NLA_F_NESTED, NULL, 0)
-
-#define end_nest_nla(nlmsg, container) \
-    ((container)->nla_len = nlmsg_end(nlmsg) - (void *)(container))
+#define setnamelen(is_ipv4) \
+    ((is_ipv4) ? (strlen(g_ipset_setname4) + 1) : (strlen(g_ipset_setname6) + 1))
 
 static void prebuild_nlmsg(bool is_ipv4) {
-    void *buffer = is_ipv4 ? s_send_buffer4 : s_send_buffer6;
-    const char *setname = is_ipv4 ? g_ipset_setname4 : g_ipset_setname6;
-    const size_t setnamelen = strlen(setname) + 1;
-
     /* netlink header */
-    struct nlmsghdr *nlmsg = buffer;
-    nlmsg->nlmsg_len = NLMSG_HDRLEN;
-    nlmsg->nlmsg_type = 0; // set on request
-    nlmsg->nlmsg_flags = 0; // set on request
-    nlmsg->nlmsg_pid = getpid(); /* sender port id */
-    nlmsg->nlmsg_seq = 0; // set on request
+    struct nlmsghdr *nlmsg = nlmsg_init_hdr(nlmsg(is_ipv4), 0, 0);
 
     /* netfilter header */
-    struct nfgenmsg *nfmsg = buffer + nlmsg->nlmsg_len;
-    inc_nlmsg_len(nlmsg, NLMSG_BUFSZ, sizeof(*nfmsg));
+    struct nfgenmsg *nfmsg = nlmsg_add_data(nlmsg, BUFSZ_REQ, NULL, sizeof(*nfmsg));
     nfmsg->nfgen_family = is_ipv4 ? AF_INET : AF_INET6;
     nfmsg->version = NFNETLINK_V0;
     nfmsg->res_id = 0;
 
     /* protocol */
-    add_nla(nlmsg, NLMSG_BUFSZ, IPSET_ATTR_PROTOCOL, &(ubyte){IPSET_PROTOCOL}, sizeof(ubyte));
+    nlmsg_add_nla(nlmsg, BUFSZ_REQ, IPSET_ATTR_PROTOCOL, &(ubyte){IPSET_PROTOCOL}, sizeof(ubyte));
 
     /* setname */
-    add_nla(nlmsg, NLMSG_BUFSZ, IPSET_ATTR_SETNAME, setname, setnamelen);
+    nlmsg_add_nla(nlmsg, BUFSZ_REQ, IPSET_ATTR_SETNAME, setname(is_ipv4), setnamelen(is_ipv4));
 
-    /* data start */
-    struct nlattr *data = start_nest_nla(nlmsg, NLMSG_BUFSZ, IPSET_ATTR_DATA);
-
-    /* ip start */
-    struct nlattr *ip = start_nest_nla(nlmsg, NLMSG_BUFSZ, IPSET_ATTR_IP);
-
-    /* ipaddr */
-    uint16_t attrtype = (is_ipv4 ? IPSET_ATTR_IPADDR_IPV4 : IPSET_ATTR_IPADDR_IPV6) | NLA_F_NET_BYTEORDER;
-    size_t datalen = is_ipv4 ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN;
-    struct nlattr *ipaddr = add_nla(nlmsg, NLMSG_BUFSZ, attrtype, NULL, datalen);
-    *(is_ipv4 ? &s_ipv4addr_pos : &s_ipv6addr_pos) = nla_data(ipaddr);
-
-    /* ip end */
-    end_nest_nla(nlmsg, ip);
-
-    /* data end */
-    end_nest_nla(nlmsg, data);
+    *pcomlen(is_ipv4) = nlmsg->nlmsg_len;
 }
 
 void ipset_init(void) {
-    create_nlsocket();
+    nl_init();
     prebuild_nlmsg(true);
     prebuild_nlmsg(false);
 }
 
-bool ipset_addr_exists(const void *noalias addr, bool is_ipv4) {
-    struct nlmsghdr *nlmsg = is_ipv4 ? s_send_buffer4 : s_send_buffer6;
-    void *addr_pos = is_ipv4 ? s_ipv4addr_pos : s_ipv6addr_pos;
-    size_t addr_sz = is_ipv4 ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN;
+/* nlh | nfh | proto | setname */
+#define reset_nlmsg(is_ipv4, cmd, ack) \
+    nlmsg_set_hdr(nlmsg(is_ipv4), \
+        comlen(is_ipv4), /* msglen */ \
+        (NFNL_SUBSYS_IPSET << 8) | (cmd), /* datatype */ \
+        NLM_F_REQUEST | ((ack) ? NLM_F_ACK : 0) /* flags */ )
 
-    nlmsg->nlmsg_type = (NFNL_SUBSYS_IPSET << 8) | IPSET_CMD_TEST;
-    nlmsg->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-    nlmsg->nlmsg_seq = s_nlmsg_seq++; /* increment seq */
-    memcpy(addr_pos, addr, addr_sz); /* set ipv4/ipv6 addr */
+static void add_ip_nla(bool is_ipv4, const void *noalias ip) {
+    struct nlmsghdr *nlmsg = nlmsg(is_ipv4);
+    struct nlattr *data_nla = nlmsg_add_nest_nla(nlmsg, BUFSZ_REQ, IPSET_ATTR_DATA);
+    struct nlattr *ip_nla = nlmsg_add_nest_nla(nlmsg, BUFSZ_REQ, IPSET_ATTR_IP);
+    if (is_ipv4)
+        nlmsg_add_nla(nlmsg, BUFSZ_REQ, IPSET_ATTR_IPADDR_IPV4|NLA_F_NET_BYTEORDER, ip, IPV4_BINADDR_LEN);
+    else
+        nlmsg_add_nla(nlmsg, BUFSZ_REQ, IPSET_ATTR_IPADDR_IPV6|NLA_F_NET_BYTEORDER, ip, IPV6_BINADDR_LEN);
+    nlmsg_end_nest_nla(nlmsg, ip_nla);
+    nlmsg_end_nest_nla(nlmsg, data_nla);
+}
 
-    unlikely_if (send(s_nlsocket, nlmsg, nlmsg->nlmsg_len, 0) < 0) {
-        LOGE("failed to send v%c addr query: (%d) %s", is_ipv4 ? '4' : '6', errno, strerror(errno));
-        return false;
-    }
+bool ipset_ip_exists(const void *noalias ip, bool is_ipv4) {
+    reset_nlmsg(is_ipv4, IPSET_CMD_TEST, true);
+    add_ip_nla(is_ipv4, ip);
 
-    // todo: check for turncated
-    unlikely_if (recv(s_nlsocket, s_recv_buffer, NLMSG_BUFSZ, 0) < 0) {
-        LOGE("failed to recv v%c addr reply: (%d) %s", is_ipv4 ? '4' : '6', errno, strerror(errno));
-        return false;
-    }
+    unlikely_if (!nlmsg_send(nlmsg(is_ipv4))) return false;
+    unlikely_if (!nlmsg_recv(s_ack_buffer, &(ssize_t){BUFSZ_ACK})) return false;
+    int errcode = nlmsg_errcode(s_ack_buffer);
 
-    /* the data type of the ack msg is also `struct nlmsgerr` */
-    const struct nlmsgerr *res = NLMSG_DATA(s_recv_buffer);
-    const int errcode = res->error;
-
-    if (errcode == 0) { // ack
+    if (errcode == 0) {
         return true; // exists
     } else if (errcode == IPSET_ERR_EXIST) {
         return false; // not exists
@@ -249,17 +178,51 @@ bool ipset_addr_exists(const void *noalias addr, bool is_ipv4) {
     }
 }
 
-void ipset_addr_add(const void *noalias addr, bool is_ipv4) {
-    struct nlmsghdr *nlmsg = is_ipv4 ? s_send_buffer4 : s_send_buffer6;
-    void *addr_pos = is_ipv4 ? s_ipv4addr_pos : s_ipv6addr_pos;
-    size_t addr_sz = is_ipv4 ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN;
+#define is_dirty(is_ipv4) \
+    ((is_ipv4) ? s_dirty4 : s_dirty6)
 
-    nlmsg->nlmsg_type = (NFNL_SUBSYS_IPSET << 8) | IPSET_CMD_ADD;
-    nlmsg->nlmsg_flags = NLM_F_REQUEST;
-    nlmsg->nlmsg_seq = 0; /* no response required */
-    memcpy(addr_pos, addr, addr_sz); /* set ipv4/ipv6 addr */
+#define set_dirty(is_ipv4, dirty) \
+    (*((is_ipv4) ? &s_dirty4 : &s_dirty6) = (dirty))
 
-    // todo: is it possible to add multiple ip at once ?
-    unlikely_if (send(s_nlsocket, nlmsg, nlmsg->nlmsg_len, 0) < 0)
-        LOGE("failed to send v%c addr query: (%d) %s", is_ipv4 ? '4' : '6', errno, strerror(errno));
+#define ip_attr_size(is_ipv4) \
+    (NLA_HDRLEN /* data_nla */ + NLA_HDRLEN /* ip_nla */ + \
+        NLA_HDRLEN + NLA_ALIGN((is_ipv4) ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN) /* ipattr_nla */ )
+
+#define commit_if_full(is_ipv4) ({ \
+    int committed_ = 0; \
+    unlikely_if (!nlmsg_space_ok(nlmsg(is_ipv4), BUFSZ_REQ, ip_attr_size(is_ipv4))) { \
+        ipset_ip_add_commit(); \
+        committed_ = 1; \
+    } \
+    committed_; \
+})
+
+void ipset_ip_add(const void *noalias ip, bool is_ipv4) {
+    if (!is_dirty(is_ipv4) || commit_if_full(is_ipv4)) {
+        struct nlmsghdr *nlmsg = nlmsg(is_ipv4);
+        reset_nlmsg(is_ipv4, IPSET_CMD_ADD, false);
+        nlmsg_add_nla(nlmsg, BUFSZ_REQ, IPSET_ATTR_LINENO, &(uint32_t){0}, sizeof(uint32_t)); /* dummy lineno */
+        nlmsg_add_nest_nla(nlmsg, BUFSZ_REQ, IPSET_ATTR_ADT);
+        set_dirty(is_ipv4, true);
+    }
+    add_ip_nla(is_ipv4, ip);
+}
+
+#define lineno_nla_size() \
+    (NLA_HDRLEN + NLA_ALIGN(sizeof(uint32_t)))
+
+#define adt_nla(is_ipv4) \
+    ((struct nlattr *)((void *)nlmsg(is_ipv4) + comlen(is_ipv4) + lineno_nla_size()))
+
+#define try_commit(is_ipv4) ({ \
+    if (is_dirty(is_ipv4)) { \
+        nlmsg_end_nest_nla(nlmsg(is_ipv4), adt_nla(is_ipv4)); \
+        nlmsg_send(nlmsg(is_ipv4)); \
+        set_dirty(is_ipv4, false); \
+    } \
+})
+
+void ipset_ip_add_commit(void) {
+    try_commit(true);
+    try_commit(false);
 }
