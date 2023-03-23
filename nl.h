@@ -5,31 +5,23 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <linux/netlink.h>
 
-/* #include <linux/netfilter/ipset/ip_set.h> */
-#define NFNETLINK_V0 0 /* nfgenmsg.version */
+extern uint32_t g_nl_seq;
 
-/* #include <linux/netfilter/nfnetlink.h> */
-struct nfgenmsg {
-    uint8_t     nfgen_family;   /* AF_xxx */
-    uint8_t     version;        /* nfnetlink version */
-    uint16_t    res_id;         /* resource id */
-};
-
-void nl_init(void);
+/* create netlink-socket (blocking mode) */
+int nl_sock_create(int protocol, uint32_t *noalias src_portid);
 
 /* nl_header:{data_type} | data_header | data_nlattrs... */
-
-#define nlmsg_set_hdr(nlmsg, msglen, datatype, flags) ({ \
-    (nlmsg)->nlmsg_len = (msglen); \
+#define nlmsg_init(nlmsg, datatype, flags, src_portid) ({ \
+    (nlmsg)->nlmsg_len = NLMSG_HDRLEN; \
     (nlmsg)->nlmsg_type = (datatype); \
     (nlmsg)->nlmsg_flags = (flags); \
+    (nlmsg)->nlmsg_seq = ++g_nl_seq; \
+    (nlmsg)->nlmsg_pid = (src_portid); \
     (nlmsg); \
 })
-
-#define nlmsg_init_hdr(nlmsg, datatype, flags) \
-    nlmsg_set_hdr(nlmsg, NLMSG_HDRLEN, datatype, flags)
 
 #define nlmsg_space_ok(nlmsg, bufsz, datalen) \
     ((nlmsg)->nlmsg_len + NLMSG_ALIGN(datalen) <= (bufsz))
@@ -76,7 +68,7 @@ static inline struct nlattr *nlmsg_add_nla(
 {
     struct nlattr *nla = nlmsg_add_data(nlmsg, bufsz, NULL, nla_size_calc(datalen));
     nla->nla_len = nla_len_calc(datalen);
-    nla->nla_type = (attrtype);
+    nla->nla_type = attrtype;
     if (data) memcpy(nla_data(nla), data, datalen);
     return nla;
 }
@@ -87,10 +79,8 @@ static inline struct nlattr *nlmsg_add_nla(
 #define nlmsg_end_nest_nla(nlmsg, nest_nla) \
     ((nest_nla)->nla_len = nlmsg_dataend(nlmsg) - (void *)(nest_nla))
 
-bool nlmsg_send(struct nlmsghdr *noalias nlmsg);
-
-bool nlmsg_recv(void *noalias buf, ssize_t *noalias sz);
-
 /* nlmsgerr */
-#define nlmsg_errcode(nlmsg) \
-    (((struct nlmsgerr *)NLMSG_DATA(nlmsg))->error)
+#define nlmsg_errcode(nlmsg) ({ \
+    assert(cast(const struct nlmsghdr *, nlmsg)->nlmsg_type == NLMSG_ERROR); \
+    cast(const struct nlmsgerr *, NLMSG_DATA(nlmsg))->error; \
+})

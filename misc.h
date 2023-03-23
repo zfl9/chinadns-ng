@@ -28,3 +28,33 @@ typedef unsigned int uint; /* >= 16 bits */
 typedef unsigned long ulong; /* >= 32 bits */
 typedef long long llong; /* >= 64 bits */
 typedef unsigned long long ullong; /* >= 64 bits */
+
+/* number of elements */
+#define array_n(a) (sizeof(a) / sizeof(*(a)))
+
+#define cast(t, v) ((t)(v))
+
+/* for blocking system calls */
+#define retry_EINTR(call) ({ \
+    __typeof__(call) ret_; \
+    while ((ret_ = (call)) == -1 && errno == EINTR); \
+    ret_; \
+})
+
+/* get arg (1 ~ 10) */
+#define arg1(x, ...) (x)
+#define arg2(_1, x, ...) (x)
+#define arg3(_1, _2, x, ...) (x)
+#define arg4(_1, _2, _3, x, ...) (x)
+#define arg5(_1, _2, _3, _4, x, ...) (x)
+#define arg6(_1, _2, _3, _4, _5, x, ...) (x)
+#define arg7(_1, _2, _3, _4, _5, _6, x, ...) (x)
+#define arg8(_1, _2, _3, _4, _5, _6, _7, x, ...) (x)
+#define arg9(_1, _2, _3, _4, _5, _6, _7, _8, x, ...) (x)
+#define arg10(_1, _2, _3, _4, _5, _6, _7, _8, _9, x, ...) (x)
+
+/* get arg by literal-idx */
+#define argN(idx, args...) arg##idx(args)
+
+/* get arg count (1 ~ 9) */
+#define argc(args...) arg10(args, 9, 8, 7, 6, 5, 4, 3, 2, 1)

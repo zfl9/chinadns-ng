@@ -166,7 +166,7 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
 }
 
 static bool foreach_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen,
-    bool (*f)(const void *noalias ip, bool is_ipv4, void *ud), void *ud)
+    bool (*f)(const void *noalias ip, bool v4, void *ud), void *ud)
 {
     const dns_header_t *h = packet_buf;
     uint16_t answer_count = ntohs(h->answer_count);
@@ -225,9 +225,9 @@ bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *n
     return check_packet(false, packet_buf, packet_len, name_buf, p_namelen);
 }
 
-static bool ip_check(const void *noalias ip, bool is_ipv4, void *ud) {
+static bool ip_check(const void *noalias ip, bool v4, void *ud) {
     int *res = ud;
-    *res = ipset_ip_exists(ip, is_ipv4) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP;
+    *res = ipset_ip_exists(ip, v4) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP;
     return true; // break foreach
 }
 
@@ -238,9 +238,9 @@ int dns_ip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen
     return res;
 }
 
-static bool ip_add(const void *noalias ip, bool is_ipv4, void *ud) {
+static bool ip_add(const void *noalias ip, bool v4, void *ud) {
     (void)ud;
-    ipset_ip_add(ip, is_ipv4);
+    ipset_ip_add(ip, v4);
     return false; // not break foreach
 }
 

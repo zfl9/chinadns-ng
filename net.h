@@ -3,6 +3,7 @@
 #include "misc.h"
 #include <stdint.h>
 #include <netinet/in.h>
+#include <assert.h>
 
 /* ipv4/ipv6 address length (binary) */
 #define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
@@ -36,3 +37,29 @@ void build_socket_addr(int family, skaddr_u *noalias skaddr, const char *noalias
 
 /* parse ipv4/ipv6 address structure */
 void parse_socket_addr(const skaddr_u *noalias skaddr, char *noalias ipstr, portno_t *noalias portno);
+
+/* try to send all for `f(fd, base, len, args...)` (blocking send) */
+#define sendall(f, fd, base, len, args...) ({ \
+    __typeof__(f(fd, base, len, ##args)) nsent_ = 0; \
+    __auto_type base_ = (base); \
+    __typeof__(nsent_) len_ = (len); \
+    assert(len_ > 0); \
+    do { \
+        __auto_type ret_ = retry_EINTR(f(fd, &base_[nsent_], len_ - nsent_, ##args)); \
+        if (ret_ < 0) break; /* error occurs */ \
+        nsent_ += ret_; \
+    } while (nsent_ < len_); \
+    nsent_ == 0 ? (__typeof__(nsent_))-1 : nsent_; \
+})
+
+#define simple_msghdr(msg, iov, buf, sz) ({ \
+    (iov)->iov_base = (buf); \
+    (iov)->iov_len = (sz); \
+    (msg)->msg_name = NULL; \
+    (msg)->msg_namelen = 0; \
+    (msg)->msg_iov = (iov); \
+    (msg)->msg_iovlen = 1; \
+    (msg)->msg_control = NULL; \
+    (msg)->msg_controllen = 0; \
+    (msg)->msg_flags = 0; /* set by recvmsg() | ignored by sendmsg() */ \
+})
