@@ -8,20 +8,8 @@
 #include <assert.h>
 #include <linux/netlink.h>
 
-extern uint32_t g_nl_seq;
-
 /* create netlink-socket (blocking mode) */
 int nl_sock_create(int protocol, uint32_t *noalias src_portid);
-
-/* nl_header:{data_type} | data_header | data_nlattrs... */
-#define nlmsg_init(nlmsg, datatype, flags, src_portid) ({ \
-    (nlmsg)->nlmsg_len = NLMSG_HDRLEN; \
-    (nlmsg)->nlmsg_type = (datatype); \
-    (nlmsg)->nlmsg_flags = (flags); \
-    (nlmsg)->nlmsg_seq = ++g_nl_seq; \
-    (nlmsg)->nlmsg_pid = (src_portid); \
-    (nlmsg); \
-})
 
 #define nlmsg_space_ok(nlmsg, bufsz, datalen) \
     ((nlmsg)->nlmsg_len + NLMSG_ALIGN(datalen) <= (bufsz))
@@ -82,5 +70,5 @@ static inline struct nlattr *nlmsg_add_nla(
 /* nlmsgerr */
 #define nlmsg_errcode(nlmsg) ({ \
     assert(cast(const struct nlmsghdr *, nlmsg)->nlmsg_type == NLMSG_ERROR); \
-    cast(const struct nlmsgerr *, NLMSG_DATA(nlmsg))->error; \
+    -cast(const struct nlmsgerr *, NLMSG_DATA(nlmsg))->error; \
 })

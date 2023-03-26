@@ -4,8 +4,6 @@
 #include <string.h>
 #include <sys/socket.h>
 
-uint32_t g_nl_seq = 0;
-
 int nl_sock_create(int protocol, uint32_t *noalias src_portid) {
     int sock = socket(AF_NETLINK, SOCK_DGRAM, protocol);
     unlikely_if (sock < 0) {

@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <linux/limits.h>
 
 /* token stringize */
 #define _literal(x) #x
@@ -487,12 +488,18 @@ static int split_name(const char *noalias name, int namelen, const char *noalias
 
 static bool load_list(const char *noalias filenames, u32_t *noalias p_addr0, u32_t *noalias p_nitems) {
     u32_t addr0 = 0, nitems = 0;
+    int has_next = 1;
 
-    for (int has_next = 1; has_next;) {
+    do {
         const char *d = strchr(filenames, ',');
         size_t len = d ? (size_t)(d - filenames) : strlen(filenames);
 
-        char fname[len + 1];
+        if (len + 1 > PATH_MAX) {
+            LOGE("path max length is %d: %.*s", PATH_MAX - 1, (int)len, filenames);
+            continue;
+        }
+
+        char fname[PATH_MAX];
         memcpy(fname, filenames, len);
         fname[len] = '\0';
 
@@ -525,7 +532,7 @@ static bool load_list(const char *noalias filenames, u32_t *noalias p_addr0, u32
             freopen("/dev/null", "rb", stdin);
         else
             fclose(fp);
-    }
+    } while (has_next);
 
     if (nitems <= 0) return false;
 

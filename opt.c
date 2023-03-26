@@ -19,17 +19,17 @@ const char *g_chnlist_fname = NULL; /* chnlist filename(s) "m.txt,n.txt,..." */
 bool        g_gfwlist_first = true; /* match gfwlist first */
 bool        g_add_tagchn_ip = true; /* add chnlist answer ip to chnroute */
 
-char g_ipset_setname4[IPSET_MAXNAMELEN] = "chnroute"; /* ipset setname for ipv4 */
-char g_ipset_setname6[IPSET_MAXNAMELEN] = "chnroute6"; /* ipset setname for ipv6 */
+const char *g_ipset_name4 = "chnroute"; /* ipset:"set_name" | nftset:"family_name@table_name@set_name" */
+const char *g_ipset_name6 = "chnroute6"; /* ipset:"set_name" | nftset:"family_name@table_name@set_name" */
 
-char     g_bind_ipstr[INET6_ADDRSTRLEN] = "127.0.0.1";
-portno_t g_bind_portno                  = 65353;
-skaddr_u g_bind_skaddr;
+const char *g_bind_ipstr  = "127.0.0.1";
+portno_t    g_bind_portno = 65353;
+skaddr_u    g_bind_skaddr;
 
-char     g_remote_ipports[SERVER_MAXCNT][ADDRPORT_STRLEN] = {[CHINADNS1_IDX] = "114.114.114.114", [TRUSTDNS1_IDX] = "8.8.8.8"};
-skaddr_u g_remote_skaddrs[SERVER_MAXCNT];
-int      g_upstream_timeout_sec                           = 5;
-uint8_t  g_repeat_times                                   = 1; /* used by trust-dns only */
+const char *g_remote_ipports[SERVER_MAXCNT];
+skaddr_u    g_remote_skaddrs[SERVER_MAXCNT];
+int         g_upstream_timeout_sec          = 5;
+uint8_t     g_repeat_times                  = 1; /* used by trust-dns only */
 
 #define OPT_BIND_ADDR 'b'
 #define OPT_BIND_PORT 'l'
@@ -109,6 +109,8 @@ static void show_help(void) {
            " -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>\n"
            " -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute\n"
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
+           "                                      if it contains @, then use nftables set\n"
+           "                                      format: family_name@table_name@set_name\n"
            " -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin\n"
            " -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin\n"
            " -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)\n"
@@ -122,7 +124,8 @@ static void show_help(void) {
            "                                      rule c: do not forward to china upstream\n"
            "                                      rule t: do not forward to trust upstream\n"
            "                                      rule C: check answer ip of china upstream\n"
-           "                                      if no rules is given, it defaults to a\n"
+           "                                      rule T: check answer ip of trust upstream\n"
+           "                                      if no rules is given, it defaults to 'a'\n"
            " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
            " -I, --no-add-ip                      do not add the ip of name-tag:chn to ipset\n"
            " -f, --fair-mode                      enable fair mode (nop, only fair mode now)\n"
@@ -141,35 +144,51 @@ static void show_help(void) {
     exit(1); \
 })
 
-static void parse_upstream_addrs(char *arg, bool is_chinadns) {
+static void parse_upstream_addrs(const char *arg, bool is_chinadns) {
     int cnt = 0;
+    int has_next = 1;
 
-    for (char *ipstr = strtok(arg, ","); ipstr; ipstr = strtok(NULL, ",")) {
+    do {
         if (++cnt > SERVER_GROUP_CNT)
             err_exit("%s dns servers max count is %d", is_chinadns ? "china" : "trust", SERVER_GROUP_CNT);
+
+        const char *d = strchr(arg, ',');
+        size_t len = d ? (size_t)(d - arg) : strlen(arg);
+
+        if (len + 1 > IP_PORT_STRLEN)
+            err_exit("server addr max length is %d: %.*s", IP_PORT_STRLEN - 1, (int)len, arg);
+
+        /* tmp buffer */
+        char ipstr[IP_PORT_STRLEN];
+        memcpy(ipstr, arg, len);
+        ipstr[len] = '\0';
+
+        /* g_remote_ipports */
+        char *addr = malloc(len + 1);
+        memcpy(addr, arg, len);
+        addr[len] = '\0';
+
+        if (d)
+            arg += len + 1;
+        else
+            has_next = 0;
 
         portno_t port = 53;
         char *port_str = strchr(ipstr, '#');
         if (port_str) {
             *port_str++ = 0;
-            if (strlen(port_str) + 1 > PORTSTR_MAXLEN)
-                err_exit("port number max length is %d: %s", PORTSTR_MAXLEN - 1, port_str);
-            port = strtoul(port_str, NULL, 10);
-            if (port == 0)
+            if ((port = strtoul(port_str, NULL, 10)) == 0)
                 err_exit("invalid server port number: %s", port_str);
         }
-
-        if (strlen(ipstr) + 1 > INET6_ADDRSTRLEN)
-            err_exit("ip address max length is %d: %s", INET6_ADDRSTRLEN - 1, ipstr);
 
         int family = get_ipstr_family(ipstr);
         if (family == -1)
             err_exit("invalid server ip address: %s", ipstr);
 
         int idx = (is_chinadns ? CHINADNS1_IDX : TRUSTDNS1_IDX) + cnt - 1;
-        sprintf(g_remote_ipports[idx], "%s#%u", ipstr, (uint)port);
         build_socket_addr(family, &g_remote_skaddrs[idx], ipstr, port);
-    }
+        g_remote_ipports[idx] = addr;
+    } while (has_next);
 }
 
 static void parse_noaaaa_rules(const char *rules) {
@@ -207,6 +226,9 @@ static void parse_noaaaa_rules(const char *rules) {
             case 'C':
                 g_noaaaa_query |= NOAAAA_CHINA_IPCHK;
                 break;
+            case 'T':
+                g_noaaaa_query |= NOAAAA_TRUST_IPCHK;
+                break;
             default:
                 err_exit("invalid no-aaaa rule: '%c'", *c);
                 break;
@@ -228,23 +250,18 @@ void opt_parse(int argc, char *argv[]) {
     int optindex = -1;
     int shortopt = -1;
 
-    const char *chinadns_optarg = NULL;
-    const char *trustdns_optarg = NULL;
+    const char *chinadns_optarg = "114.114.114.114";
+    const char *trustdns_optarg = "8.8.8.8";
 
     while ((shortopt = getopt_long(argc, argv, s_shortopts, s_options, &optindex)) != -1) {
         switch (shortopt) {
             case OPT_BIND_ADDR:
-                if (strlen(optarg) + 1 > INET6_ADDRSTRLEN)
-                    err_exit("ip address max length is %d: %s", INET6_ADDRSTRLEN - 1, optarg);
                 if (get_ipstr_family(optarg) == -1)
                     err_exit("invalid listen ip address: %s", optarg);
-                strcpy(g_bind_ipstr, optarg);
+                g_bind_ipstr = optarg;
                 break;
             case OPT_BIND_PORT:
-                if (strlen(optarg) + 1 > PORTSTR_MAXLEN)
-                    err_exit("port number max length is %d: %s", PORTSTR_MAXLEN - 1, optarg);
-                g_bind_portno = strtoul(optarg, NULL, 10);
-                if (g_bind_portno == 0)
+                if ((g_bind_portno = strtoul(optarg, NULL, 10)) == 0)
                     err_exit("invalid listen port number: %s", optarg);
                 break;
             case OPT_CHINA_DNS:
@@ -254,14 +271,10 @@ void opt_parse(int argc, char *argv[]) {
                 trustdns_optarg = optarg;
                 break;
             case OPT_IPSET_NAME4:
-                if (strlen(optarg) + 1 > IPSET_MAXNAMELEN)
-                    err_exit("ipset setname max length is %d: %s", IPSET_MAXNAMELEN - 1, optarg);
-                strcpy(g_ipset_setname4, optarg);
+                g_ipset_name4 = optarg;
                 break;
             case OPT_IPSET_NAME6:
-                if (strlen(optarg) + 1 > IPSET_MAXNAMELEN)
-                    err_exit("ipset setname max length is %d: %s", IPSET_MAXNAMELEN - 1, optarg);
-                strcpy(g_ipset_setname6, optarg);
+                g_ipset_name6 = optarg;
                 break;
             case OPT_GFWLIST_FILE:
                 g_gfwlist_fname = optarg;
@@ -280,13 +293,11 @@ void opt_parse(int argc, char *argv[]) {
                     err_exit("invalid default domain tag: %s", optarg);
                 break;
             case OPT_TIMEOUT_SEC:
-                g_upstream_timeout_sec = strtoul(optarg, NULL, 10);
-                if (g_upstream_timeout_sec <= 0)
+                if ((g_upstream_timeout_sec = strtoul(optarg, NULL, 10)) <= 0)
                     err_exit("invalid upstream timeout sec: %s", optarg);
                 break;
             case OPT_REPEAT_TIMES:
-                g_repeat_times = strtoul(optarg, NULL, 10);
-                if (g_repeat_times == 0)
+                if ((g_repeat_times = strtoul(optarg, NULL, 10)) == 0)
                     err_exit("invalid trustdns repeat times: %s", optarg);
                 break;
             case OPT_NO_IPV6:
@@ -339,20 +350,6 @@ void opt_parse(int argc, char *argv[]) {
     }
 
     build_socket_addr(get_ipstr_family(g_bind_ipstr), &g_bind_skaddr, g_bind_ipstr, g_bind_portno);
-
-    if (chinadns_optarg) {
-        char buf[strlen(chinadns_optarg) + 1];
-        strcpy(buf, chinadns_optarg);
-        parse_upstream_addrs(buf, true);
-    } else {
-        build_socket_addr(AF_INET, &g_remote_skaddrs[CHINADNS1_IDX], "114.114.114.114", 53);
-    }
-
-    if (trustdns_optarg) {
-        char buf[strlen(trustdns_optarg) + 1];
-        strcpy(buf, trustdns_optarg);
-        parse_upstream_addrs(buf, false);
-    } else {
-        build_socket_addr(AF_INET, &g_remote_skaddrs[TRUSTDNS1_IDX], "8.8.8.8", 53);
-    }
+    parse_upstream_addrs(chinadns_optarg, true);
+    parse_upstream_addrs(trustdns_optarg, false);
 }

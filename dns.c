@@ -227,7 +227,7 @@ bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *n
 
 static bool ip_check(const void *noalias ip, bool v4, void *ud) {
     int *res = ud;
-    *res = ipset_ip_exists(ip, v4) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP;
+    *res = ipset_test(ip, v4) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP;
     return true; // break foreach
 }
 
@@ -240,11 +240,11 @@ int dns_ip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen
 
 static bool ip_add(const void *noalias ip, bool v4, void *ud) {
     (void)ud;
-    ipset_ip_add(ip, v4);
+    ipset_add(ip, v4);
     return false; // not break foreach
 }
 
 void dns_ip_add(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
     foreach_ip(packet_buf, packet_len, namelen, ip_add, NULL);
-    ipset_ip_add_commit();
+    ipset_end_add();
 }

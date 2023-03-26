@@ -5,6 +5,12 @@
 #include <netinet/in.h>
 #include <assert.h>
 
+/* "65535" (include \0) */
+#define PORT_STRLEN 6
+
+/* "ip#port" (include \0) */
+#define IP_PORT_STRLEN (INET6_ADDRSTRLEN + PORT_STRLEN)
+
 /* ipv4/ipv6 address length (binary) */
 #define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
 #define IPV6_BINADDR_LEN 16 /* 16byte, 128bit */
@@ -52,14 +58,18 @@ void parse_socket_addr(const skaddr_u *noalias skaddr, char *noalias ipstr, port
     nsent_ == 0 ? (__typeof__(nsent_))-1 : nsent_; \
 })
 
-#define simple_msghdr(msg, iov, buf, sz) ({ \
-    (iov)->iov_base = (buf); \
-    (iov)->iov_len = (sz); \
+#define simple_msghdr_iov(msg, iov, iovlen) ({ \
     (msg)->msg_name = NULL; \
     (msg)->msg_namelen = 0; \
     (msg)->msg_iov = (iov); \
-    (msg)->msg_iovlen = 1; \
+    (msg)->msg_iovlen = (iovlen); \
     (msg)->msg_control = NULL; \
     (msg)->msg_controllen = 0; \
     (msg)->msg_flags = 0; /* set by recvmsg() | ignored by sendmsg() */ \
+})
+
+#define simple_msghdr(msg, iov, buf, sz) ({ \
+    (iov)->iov_base = (buf); \
+    (iov)->iov_len = (sz); \
+    simple_msghdr_iov(msg, iov, 1); \
 })

@@ -270,7 +270,7 @@ static void handle_remote_packet(int index) {
             }
         }
     } else {
-        if (context->name_tag == NAME_TAG_GFW || context->chinadns_got) {
+        if (context->name_tag == NAME_TAG_GFW || context->chinadns_got) { // todo: NOAAAA_TRUST_IPCHK
             LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
         } else {
             /* trustdns returns before chinadns */
@@ -311,13 +311,13 @@ int main(int argc, char *argv[]) {
     /* show startup information */
     LOGI("local listen addr: %s#%u", g_bind_ipstr, (uint)g_bind_portno);
 
-    if (*g_remote_ipports[CHINADNS1_IDX]) LOGI("chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
-    if (*g_remote_ipports[CHINADNS2_IDX]) LOGI("chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
-    if (*g_remote_ipports[TRUSTDNS1_IDX]) LOGI("trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
-    if (*g_remote_ipports[TRUSTDNS2_IDX]) LOGI("trustdns server#2: %s", g_remote_ipports[TRUSTDNS2_IDX]);
+    if (g_remote_ipports[CHINADNS1_IDX]) LOGI("chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
+    if (g_remote_ipports[CHINADNS2_IDX]) LOGI("chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
+    if (g_remote_ipports[TRUSTDNS1_IDX]) LOGI("trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
+    if (g_remote_ipports[TRUSTDNS2_IDX]) LOGI("trustdns server#2: %s", g_remote_ipports[TRUSTDNS2_IDX]);
 
-    LOGI("ipset ip4 setname: %s", g_ipset_setname4);
-    LOGI("ipset ip6 setname: %s", g_ipset_setname6);
+    LOGI("ipset ip4 setname: %s", g_ipset_name4);
+    LOGI("ipset ip6 setname: %s", g_ipset_name6);
     if (g_add_tagchn_ip) LOGI("add ip of name-tag:chn to ipset");
 
     dnl_init();
@@ -341,6 +341,8 @@ int main(int argc, char *argv[]) {
             LOGI("filter AAAA for trust upstream");
         if (g_noaaaa_query & NOAAAA_CHINA_IPCHK)
             LOGI("filter AAAA, check ip for chinadns");
+        if (g_noaaaa_query & NOAAAA_TRUST_IPCHK)
+            LOGI("filter AAAA, check ip for trustdns");
     }
 
     if (g_repeat_times > 1) LOGI("enable repeat mode, times: %u", (uint)g_repeat_times);
@@ -363,7 +365,7 @@ int main(int argc, char *argv[]) {
 
     /* create remote socket */
     for (int i = 0; i <= SERVER_MAXIDX; ++i) {
-        if (*g_remote_ipports[i])
+        if (g_remote_ipports[i])
             s_remote_sockfds[i] = new_udp_socket(skaddr_family(&g_remote_skaddrs[i]));
     }
 
@@ -399,7 +401,7 @@ int main(int argc, char *argv[]) {
     int timeout_ms = -1;
 
     for (;;) {
-        int event_count = epoll_wait(s_epollfd, events, EPOLL_MAXEVENTS, timeout_ms);
+        int event_count = retry_EINTR(epoll_wait(s_epollfd, events, EPOLL_MAXEVENTS, timeout_ms));
 
         unlikely_if (event_count < 0)
             LOGE("epoll_wait() reported an error: (%d) %s", errno, strerror(errno));
