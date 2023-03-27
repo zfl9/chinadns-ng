@@ -164,23 +164,29 @@ static void handle_local_packet(void) {
         return;
     }
 
-    bool chinadns_got = false;
-    if (name_tag == NAME_TAG_NONE && g_noaaaa_query & NOAAAA_CHINA_DNS && qtype == DNS_RECORD_TYPE_AAAA)
-        chinadns_got = true;
-
     queryctx_t *context = malloc(sizeof(queryctx_t));
     context->unique_msgid = unique_msgid;
     context->origin_msgid = origin_msgid;
     context->request_time = time(NULL);
     context->trustdns_buf = NULL;
-    context->chinadns_got = chinadns_got;
+    context->chinadns_got = false;
     context->name_tag = name_tag;
     memcpy(&context->source_addr, &source_addr, sizeof(source_addr));
     MYHASH_ADD(s_context_list, context, &context->unique_msgid, sizeof(context->unique_msgid));
 }
 
+static inline void remove_answer(void *noalias packet_buf, ssize_t *noalias packet_len, int namelen) {
+    dns_header_t *h = packet_buf;
+    h->qr = DNS_QR_REPLY;
+    h->rcode = DNS_RCODE_NOERROR;
+    h->answer_count = 0;
+    h->authority_count = 0;
+    h->additional_count = 0;
+    *packet_len = sizeof(dns_header_t) + namelen + sizeof(dns_query_t);
+}
+
 /* name_tag: NAME_TAG_NONE */
-static inline bool accept_chinadns(void *noalias packet_buf, ssize_t *noalias packet_len, int namelen) {
+static inline bool use_china_reply(void *noalias packet_buf, ssize_t *noalias packet_len, int namelen) {
     uint16_t qtype = dns_qtype(packet_buf, namelen);
     if (qtype != DNS_RECORD_TYPE_A && qtype != DNS_RECORD_TYPE_AAAA)
         return true; /* only filter A/AAAA reply */
@@ -197,13 +203,7 @@ static inline bool accept_chinadns(void *noalias packet_buf, ssize_t *noalias pa
         case DNS_IPCHK_NOT_CHNIP:
             if (only_chinadns) {
                 LOGV("answer ip is not china ip, change to no-answer (AAAA)");
-                dns_header_t *h = packet_buf;
-                h->qr = DNS_QR_REPLY;
-                h->rcode = DNS_RCODE_NOERROR;
-                h->answer_count = 0;
-                h->authority_count = 0;
-                h->additional_count = 0;
-                *packet_len = sizeof(dns_header_t) + namelen + sizeof(dns_query_t);
+                remove_answer(packet_buf, packet_len, namelen);
                 return true;
             }
             return false;
@@ -220,6 +220,21 @@ static inline bool accept_chinadns(void *noalias packet_buf, ssize_t *noalias pa
             assert(0);
             return false;
     }
+}
+
+/* name_tag: NAME_TAG_NONE && !chinadns_got */
+static inline bool use_trust_reply(void *noalias packet_buf, ssize_t *noalias packet_len, int namelen) {
+    uint16_t qtype = dns_qtype(packet_buf, namelen);
+
+    bool only_trustdns = g_noaaaa_query & NOAAAA_CHINA_DNS && qtype == DNS_RECORD_TYPE_AAAA;
+    if (!only_trustdns)
+        return false; /* waiting for chinadns return */
+
+    if (g_noaaaa_query & NOAAAA_TRUST_IPCHK && dns_ip_check(packet_buf, *packet_len, namelen) == DNS_IPCHK_NOT_CHNIP) {
+        LOGV("answer ip is not china ip, change to no-answer (AAAA)");
+        remove_answer(packet_buf, packet_len, namelen);
+    }
+    return true;
 }
 
 /* handle remote socket readable event */
@@ -250,7 +265,7 @@ static void handle_remote_packet(int index) {
     ssize_t reply_length = packet_len;
 
     if (is_chinadns_idx(index)) {
-        if (context->name_tag == NAME_TAG_CHN || accept_chinadns(reply_buffer, &reply_length, namelen)) {
+        if (context->name_tag == NAME_TAG_CHN || use_china_reply(reply_buffer, &reply_length, namelen)) {
             LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
             if (context->trustdns_buf)
                 LOGV("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
@@ -270,7 +285,7 @@ static void handle_remote_packet(int index) {
             }
         }
     } else {
-        if (context->name_tag == NAME_TAG_GFW || context->chinadns_got) { // todo: NOAAAA_TRUST_IPCHK
+        if (context->name_tag == NAME_TAG_GFW || context->chinadns_got || use_trust_reply(reply_buffer, &reply_length, namelen)) {
             LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
         } else {
             /* trustdns returns before chinadns */
