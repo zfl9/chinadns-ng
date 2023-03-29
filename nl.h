@@ -11,11 +11,8 @@
 /* create netlink-socket (blocking mode) */
 int nl_sock_create(int protocol, uint32_t *noalias src_portid);
 
-#define nlmsg_space_ok(nlmsg, bufsz, datalen) \
-    ((nlmsg)->nlmsg_len + NLMSG_ALIGN(datalen) <= (bufsz))
-
-#define nlmsg_inc_len(nlmsg, bufsz, datalen) ({ \
-    ((nlmsg)->nlmsg_len += NLMSG_ALIGN(datalen)); \
+#define nlmsg_len_inc(nlmsg, bufsz, datalen) ({ \
+    (nlmsg)->nlmsg_len += NLMSG_ALIGN(datalen); \
     unlikely_if ((nlmsg)->nlmsg_len > (bufsz)) { \
         LOGE("BUG: nlmsg_len:%lu > bufsz:%lu\n", \
             (ulong)(nlmsg)->nlmsg_len, (ulong)(bufsz)); \
@@ -36,7 +33,7 @@ static inline void *nlmsg_add_data(
     const void *noalias data, size_t datalen)
 {
     void *p = nlmsg_dataend(nlmsg);
-    nlmsg_inc_len(nlmsg, bufsz, datalen);
+    nlmsg_len_inc(nlmsg, bufsz, datalen);
     if (data) memcpy(p, data, datalen);
     return p;
 }

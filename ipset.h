@@ -5,10 +5,8 @@
 
 void ipset_init(void);
 
-bool ipset_test(const void *noalias ip, bool v4);
+bool ipset_test_ip(const void *noalias ip, bool v4);
 
-/* add to cache */
-void ipset_add(const void *noalias ip, bool v4);
+void ipset_add_ip(const void *noalias ip, bool v4);
 
-/* commit to kernel */
-void ipset_end_add(void);
+void ipset_end_add_ip(void);

@@ -106,7 +106,7 @@ static void handle_local_packet(void) {
 
     char *name_buf = (g_verbose || g_dnl_nitems) ? s_name_buf : NULL;
     int namelen = 0;
-    unlikely_if (!dns_query_check(s_packet_buf, packet_len, name_buf, &namelen)) return;
+    unlikely_if (!dns_check_query(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
     uint16_t qtype = dns_qtype(s_packet_buf, namelen);
     int ascii_namelen = dns_ascii_namelen(namelen);
@@ -196,7 +196,7 @@ static inline bool use_china_reply(void *noalias packet_buf, ssize_t *noalias pa
     if (only_chinadns && !(g_noaaaa_query & NOAAAA_CHINA_IPCHK))
         return true;
 
-    switch (dns_ip_check(packet_buf, *packet_len, namelen)) {
+    switch (dns_test_ip(packet_buf, *packet_len, namelen)) {
         case DNS_IPCHK_IS_CHNIP:
             return true;
 
@@ -230,7 +230,7 @@ static inline bool use_trust_reply(void *noalias packet_buf, ssize_t *noalias pa
     if (!only_trustdns)
         return false; /* waiting for chinadns return */
 
-    if (g_noaaaa_query & NOAAAA_TRUST_IPCHK && dns_ip_check(packet_buf, *packet_len, namelen) == DNS_IPCHK_NOT_CHNIP) {
+    if (g_noaaaa_query & NOAAAA_TRUST_IPCHK && dns_test_ip(packet_buf, *packet_len, namelen) == DNS_IPCHK_NOT_CHNIP) {
         LOGV("answer ip is not china ip, change to no-answer (AAAA)");
         remove_answer(packet_buf, packet_len, namelen);
     }
@@ -251,7 +251,7 @@ static void handle_remote_packet(int index) {
 
     char *name_buf = g_verbose ? s_name_buf : NULL;
     int namelen = 0;
-    unlikely_if (!dns_reply_check(s_packet_buf, packet_len, name_buf, &namelen)) return;
+    unlikely_if (!dns_check_reply(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
     queryctx_t *context = NULL;
     dns_header_t *dns_header = s_packet_buf;
@@ -271,7 +271,7 @@ static void handle_remote_packet(int index) {
                 LOGV("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
             if (g_add_tagchn_ip && context->name_tag == NAME_TAG_CHN) {
                 LOGV("add the answer ip of name-tag:chn [%s] to ipset", s_name_buf);
-                dns_ip_add(reply_buffer, reply_length, namelen);
+                dns_add_ip(reply_buffer, reply_length, namelen);
             }
         } else {
             LOGV("reply [%s] from %s (%u), result: filter", s_name_buf, remote_ipport, (uint)dns_header->id);

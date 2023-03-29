@@ -217,34 +217,34 @@ static bool foreach_ip(const void *noalias packet_buf, ssize_t packet_len, int n
     return true;
 }
 
-bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
+bool dns_check_query(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
     return check_packet(true, packet_buf, packet_len, name_buf, p_namelen);
 }
 
-bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
+bool dns_check_reply(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
     return check_packet(false, packet_buf, packet_len, name_buf, p_namelen);
 }
 
-static bool ip_check(const void *noalias ip, bool v4, void *ud) {
+static bool test_ip(const void *noalias ip, bool v4, void *ud) {
     int *res = ud;
-    *res = ipset_test(ip, v4) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP;
+    *res = ipset_test_ip(ip, v4) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP;
     return true; // break foreach
 }
 
-int dns_ip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
+int dns_test_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
     int res = DNS_IPCHK_NOT_FOUND;
-    unlikely_if (!foreach_ip(packet_buf, packet_len, namelen, ip_check, &res))
+    unlikely_if (!foreach_ip(packet_buf, packet_len, namelen, test_ip, &res))
         return DNS_IPCHK_BAD_PACKET;
     return res;
 }
 
-static bool ip_add(const void *noalias ip, bool v4, void *ud) {
+static bool add_ip(const void *noalias ip, bool v4, void *ud) {
     (void)ud;
-    ipset_add(ip, v4);
+    ipset_add_ip(ip, v4);
     return false; // not break foreach
 }
 
-void dns_ip_add(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
-    foreach_ip(packet_buf, packet_len, namelen, ip_add, NULL);
-    ipset_end_add();
+void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
+    foreach_ip(packet_buf, packet_len, namelen, add_ip, NULL);
+    ipset_end_add_ip();
 }

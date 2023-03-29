@@ -29,6 +29,10 @@ typedef unsigned long ulong; /* >= 32 bits */
 typedef long long llong; /* >= 64 bits */
 typedef unsigned long long ullong; /* >= 64 bits */
 
+/* to avoid breaking the constant properties of input parameters, do not use __auto_type or __typeof__ */
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
 /* number of elements */
 #define array_n(a) (sizeof(a) / sizeof(*(a)))
 

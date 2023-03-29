@@ -79,22 +79,22 @@ typedef struct {
 } __attribute__((packed)) dns_record_t;
 
 /* check dns query, `name_buf` used to get domain name, return true if valid */
-bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
+bool dns_check_query(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
 
 /* check dns reply, `name_buf` used to get domain name, return true if valid */
-bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
+bool dns_check_reply(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
 
-/* result of dns_ip_check() */
+/* result of dns_test_ip() */
 #define DNS_IPCHK_IS_CHNIP 0
 #define DNS_IPCHK_NOT_CHNIP 1
 #define DNS_IPCHK_NOT_FOUND 2
 #define DNS_IPCHK_BAD_PACKET 3
 
 /* check if the answer ip is in the chnroute ipset (check qtype before call) */
-int dns_ip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen);
+int dns_test_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen);
 
 /* add the answer ip to ipset (chnroute/chnroute6) */
-void dns_ip_add(const void *noalias packet_buf, ssize_t packet_len, int namelen);
+void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen);
 
 #define dns_qtype(buf, namelen) ({ \
     const dns_query_t *q_ = (void *)(buf) + sizeof(dns_header_t) + (namelen); \
