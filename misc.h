@@ -33,6 +33,9 @@ typedef unsigned long long ullong; /* >= 64 bits */
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
+/* compile-time ceil (a,b,res is integer) */
+#define ceili(a, b) (((a) + (b) - 1) / (b))
+
 /* number of elements */
 #define array_n(a) (sizeof(a) / sizeof(*(a)))
 

@@ -15,20 +15,30 @@
 #include <arpa/inet.h>
 #include <assert.h>
 
-/* #include <linux/netfilter/ipset/ip_set.h> */
-#define NFNETLINK_V0 0 /* nfgenmsg.version */
-
 /* #include <linux/netfilter/nfnetlink.h> */
 struct nfgenmsg {
     uint8_t     nfgen_family;   /* AF_xxx */
     uint8_t     version;        /* nfnetlink version */
-    uint16_t    res_id;         /* resource id */
+    uint16_t    res_id;         /* resource id (be) */
 };
 
 /* [nft] nfgen_family */
 #define NFPROTO_INET 1 /* inet(v4/v6) */
 #define NFPROTO_IPV4 2 /* ip */
 #define NFPROTO_IPV6 10 /* ip6 */
+
+/* nfgenmsg.version */
+#define NFNETLINK_V0 0
+
+/* [ipset] include \0 */
+#define IPSET_MAXNAMELEN 32
+
+/* [nft] include \0 */
+#define NFT_NAME_MAXLEN 256
+
+/* [nfnl] nlmsg_type */
+#define NFNL_MSG_BATCH_BEGIN 16
+#define NFNL_MSG_BATCH_END 17
 
 /* [ipset] nlmsg_type (subsys << 8 | cmd) */
 #define NFNL_SUBSYS_IPSET 6
@@ -39,10 +49,6 @@ struct nfgenmsg {
 #define NFNL_SUBSYS_NFTABLES 10
 #define NFT_MSG_GETSETELEM 13
 #define NFT_MSG_NEWSETELEM 12
-
-/* [nfnl_batch] nlmsg_type */
-#define NFNL_MSG_BATCH_BEGIN 16
-#define NFNL_MSG_BATCH_END 17
 
 /* [ipset] nlattr type */
 #define IPSET_ATTR_PROTOCOL 1
@@ -129,11 +135,7 @@ static inline const char *ipset_strerror(int errcode) {
     }
 }
 
-/* include \0 */
-#define IPSET_MAXNAMELEN 32
-
-/* include \0 */
-#define NFT_NAME_MAXLEN 256
+/* ====================================================== */
 
 /* in single add-request (v4/v6) */
 #define N_IP_ADD 10
@@ -208,9 +210,8 @@ static inline const char *ipset_strerror(int errcode) {
 
 static int      s_sock   = -1; /* netlink socket fd */
 static uint32_t s_portid = 0; /* local address (port-id) */
-static uint32_t s_msgseq = 0;
 
-static struct mmsghdr s_mmsgv[N_MSG];
+static struct mmsghdr s_msgv[N_MSG];
 static struct iovec   s_iov[N_IOV];
 
 static void *s_buf_req4 = (char [BUFSZ_4]){0}; /* ip4 request {test_req, add_req} */
@@ -225,17 +226,19 @@ static int      s_add_ip6_n    = 0; /* number of ip6 to be added */
 static uint32_t s_add_initlen4 = 0; /* ipset: msg | nft: batch_begin,msg,batch_end */
 static uint32_t s_add_initlen6 = 0; /* ipset: msg | nft: batch_begin,msg,batch_end */
 
-static bool (*test_res)(bool v4);
-static bool test_res_ipset(bool v4);
-static bool test_res_nft(bool v4);
+static bool (*test_res)(void);
+static bool test_res_ipset(void);
+static bool test_res_nft(void);
 
 static void (*add_ip)(bool v4, const void *noalias ip);
 static void add_ip_ipset(bool v4, const void *noalias ip);
 static void add_ip_nft(bool v4, const void *noalias ip);
 
-static void (*end_add)(bool v4, int *noalias n_req);
-static void end_add_ipset(bool v4, int *noalias n_req);
-static void end_add_nft(bool v4, int *noalias n_req);
+static int (*end_add_ip)(void);
+static int end_add_ip_ipset(void);
+static int end_add_ip_nft(void);
+
+/* ======================== helper ======================== */
 
 /* ipset: "set_name"
    nft: "family_name@table_name@set_name" */
@@ -269,7 +272,7 @@ static void end_add_nft(bool v4, int *noalias n_req);
     (nlmsg)->nlmsg_len = NLMSG_HDRLEN; \
     (nlmsg)->nlmsg_type = (type); \
     (nlmsg)->nlmsg_flags = NLM_F_REQUEST; \
-    (nlmsg)->nlmsg_seq = 0; /* don't forget to modify it */ \
+    (nlmsg)->nlmsg_seq = 0; /* used to track messages */ \
     (nlmsg)->nlmsg_pid = s_portid; \
 })
 
@@ -280,7 +283,7 @@ static void end_add_nft(bool v4, int *noalias n_req);
     nfh_->res_id = htons(resid); \
 })
 
-#define write_ip_ipset(nlmsg, bufsz, ip, v4) ({ \
+#define add_elem_ipset(nlmsg, bufsz, ip, v4) ({ \
     uint16_t attrtype_ = (v4) ? IPSET_ATTR_IPADDR_IPV4 : IPSET_ATTR_IPADDR_IPV6; \
     struct nlattr *data_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, IPSET_ATTR_DATA); \
     struct nlattr *ip_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, IPSET_ATTR_IP); \
@@ -290,7 +293,7 @@ static void end_add_nft(bool v4, int *noalias n_req);
     addr_nla_; \
 })
 
-#define write_ip_nft(nlmsg, bufsz, ip, v4, flags) ({ \
+#define add_elem_nft(nlmsg, bufsz, ip, v4, flags) ({ \
     struct nlattr *elem_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_LIST_ELEM); \
     if (flags) nlmsg_add_nla(nlmsg, bufsz, NFTA_SET_ELEM_FLAGS, &(uint32_t){htonl(flags)}, sizeof(uint32_t)); \
     struct nlattr *key_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_SET_ELEM_KEY); \
@@ -300,6 +303,8 @@ static void end_add_nft(bool v4, int *noalias n_req);
     data_nla_; \
 })
 
+/* ======================== init ======================== */
+
 static void init_req_ipset(bool v4) {
     const char *name = setname(v4);
     size_t namelen = strlen(name) + 1;
@@ -308,7 +313,8 @@ static void init_req_ipset(bool v4) {
         exit(1);
     }
 
-    /* ================= test ================= */
+    /* ============ test ============ */
+
     struct nlmsghdr *nlmsg = t_nlmsg(v4);
     size_t bufsz = t_bufsz(v4);
 
@@ -327,9 +333,10 @@ static void init_req_ipset(bool v4) {
     uint32_t len = nlmsg->nlmsg_len;
 
     /* data { ip { addr } } */
-    t_ipaddr(v4) = nla_data(write_ip_ipset(nlmsg, bufsz, NULL, v4));
+    t_ipaddr(v4) = nla_data(add_elem_ipset(nlmsg, bufsz, NULL, v4));
 
-    /* ================= add ================= */
+    /* ============ add ============ */
+
     nlmsg = memcpy(a_nlmsg(v4), nlmsg, len);
     bufsz = a_bufsz(v4);
 
@@ -393,7 +400,8 @@ static void init_req_nft(bool v4) {
         exit(1);
     }
 
-    /* ================= test ================= */
+    /* ============ test ============ */
+
     struct nlmsghdr *nlmsg = t_nlmsg(v4);
     size_t bufsz = t_bufsz(v4);
 
@@ -415,12 +423,13 @@ static void init_req_nft(bool v4) {
     struct nlattr *elems_nla = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_SET_ELEM_LIST_ELEMENTS);
 
     /* elem */
-    t_ipaddr(v4) = nla_data(write_ip_nft(nlmsg, bufsz, NULL, v4, 0));
+    t_ipaddr(v4) = nla_data(add_elem_nft(nlmsg, bufsz, NULL, v4, 0));
 
     /* elements end */
     nlmsg_end_nest_nla(nlmsg, elems_nla);
 
-    /* ================= add ================= */
+    /* ============ add ============ */
+
     nlmsg = a_nlmsg(v4);
     bufsz = a_bufsz(v4);
 
@@ -440,8 +449,8 @@ static void init_req_nft(bool v4) {
     elems_nla = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_SET_ELEM_LIST_ELEMENTS);
 
     /* elem [start, end) */
-    write_ip_nft(nlmsg, bufsz, NULL, v4, 0);
-    write_ip_nft(nlmsg, bufsz, NULL, v4, NFT_SET_ELEM_INTERVAL_END);
+    add_elem_nft(nlmsg, bufsz, NULL, v4, 0);
+    add_elem_nft(nlmsg, bufsz, NULL, v4, NFT_SET_ELEM_INTERVAL_END);
 
     /* elements end */
     nlmsg_end_nest_nla(nlmsg, elems_nla);
@@ -468,35 +477,37 @@ void ipset_init(void) {
     if (!strchr(g_ipset_name4, '@') && !strchr(g_ipset_name6, '@')) {
         test_res = test_res_ipset;
         add_ip = add_ip_ipset;
-        end_add = end_add_ipset;
+        end_add_ip = end_add_ip_ipset;
         init_req_ipset(true);
         init_req_ipset(false);
     } else {
         test_res = test_res_nft;
         add_ip = add_ip_nft;
-        end_add = end_add_nft;
+        end_add_ip = end_add_ip_nft;
         init_req_nft(true);
         init_req_nft(false);
     }
 }
 
-static bool test_res_ipset(bool v4) {
+/* ======================== test-ip ======================== */
+
+static bool test_res_ipset(void) {
     const struct nlmsghdr *nlmsg = s_buf_res;
     int errcode = nlmsg_errcode(nlmsg);
     assert(errcode);
     if (errcode != IPSET_ERR_EXIST)
-        LOGE("error when querying v%c ip: (%d) %s", v4 ? '4' : '6', errcode, ipset_strerror(errcode));
+        LOGE("error when querying ip: (%d) %s", errcode, ipset_strerror(errcode));
     return false;
 }
 
-static bool test_res_nft(bool v4) {
+static bool test_res_nft(void) {
     const struct nlmsghdr *nlmsg = s_buf_res;
     if (nlmsg->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM))
         return true;
     int errcode = nlmsg_errcode(nlmsg);
     assert(errcode);
     if (errcode != ENOENT) /* ENOENT: table not exists; set not exists; elem not exists */
-        LOGE("error when query v%c ip: (%d) %s", v4 ? '4' : '6', errcode, strerror(errcode));
+        LOGE("error when querying ip: (%d) %s", errcode, strerror(errcode));
     return false;
 }
 
@@ -507,11 +518,10 @@ bool ipset_test_ip(const void *noalias ip, bool v4) {
     struct mmsghdr mmsgv[1];
 
     struct nlmsghdr *nlmsg = t_nlmsg(v4);
-    nlmsg->nlmsg_seq = s_msgseq++; /* increment seq */
     simple_msghdr(&mmsgv[0].msg_hdr, &iov[0], nlmsg, nlmsg->nlmsg_len);
 
     unlikely_if (sendall(sendmmsg, s_sock, mmsgv, array_n(mmsgv), 0) != 1) {
-        LOGE("failed to send v%c nlmsg: (%d) %s", v4 ? '4' : '6', errno, strerror(errno));
+        LOGE("failed to send nlmsg: (%d) %s", errno, strerror(errno));
         return false;
     }
 
@@ -520,18 +530,20 @@ bool ipset_test_ip(const void *noalias ip, bool v4) {
     /* up to one message */
     unlikely_if (recvmmsg(s_sock, mmsgv, array_n(mmsgv), MSG_DONTWAIT, NULL) != 1) {
         likely_if (errno == EAGAIN || errno == EWOULDBLOCK) return true; /* no nlmsg */
-        LOGE("failed to recv v%c nlmsg: (%d) %s", v4 ? '4' : '6', errno, strerror(errno));
+        LOGE("failed to recv nlmsg: (%d) %s", errno, strerror(errno));
         return false;
     }
 
-    return test_res(v4);
+    return test_res();
 }
+
+/* ======================== add-ip ======================== */
 
 static void add_ip_ipset(bool v4, const void *noalias ip) {
     struct nlmsghdr *nlmsg = a_nlmsg(v4);
     if (!a_ip_n(v4)) nlmsg->nlmsg_len = a_initlen(v4);
     size_t bufsz = a_bufsz(v4);
-    write_ip_ipset(nlmsg, bufsz, ip, v4);
+    add_elem_ipset(nlmsg, bufsz, ip, v4);
 }
 
 static void add_ip_nft(bool v4, const void *noalias ip) {
@@ -549,69 +561,6 @@ static void add_ip_nft(bool v4, const void *noalias ip) {
     }
 }
 
-static void end_add_ipset(bool v4, int *noalias n_req) {
-    struct nlmsghdr *nlmsg = a_nlmsg(v4);
-    uint32_t initlen = a_initlen(v4);
-
-    nlmsg->nlmsg_seq = s_msgseq++;
-
-    struct nlattr *adt_nla = (void *)nlmsg + initlen - NLA_HDRLEN;
-    nlmsg_end_nest_nla(nlmsg, adt_nla);
-
-    int i = (*n_req)++;
-    simple_msghdr(&s_mmsgv[i].msg_hdr, &s_iov[i], nlmsg, nlmsg->nlmsg_len);
-}
-
-static void end_add_nft(bool v4, int *noalias n_req) {
-    /* batch_begin|msg|batch_end */
-    struct nlmsghdr *nlmsg = a_nlmsg(v4);
-    uint32_t initlen = a_initlen(v4);
-
-    struct nlmsghdr *real_nlmsg = nlmsg_dataend(nlmsg);
-    real_nlmsg->nlmsg_seq = s_msgseq++;
-
-    /* batch_end */
-    size_t len5 = NLMSG_SPACE(sizeof(struct nfgenmsg));
-    void *base5 = (void *)nlmsg + initlen - len5;
-
-    /* ip_end */
-    size_t len4 = ip_len(v4);
-    void *base4 = NULL;
-
-    /* elem2_nla */
-    size_t len3 = NLA_HDRLEN /* elem_h */ + nla_size_calc(sizeof(uint32_t)) /* flags */ + NLA_HDRLEN /* key_h */ + NLA_HDRLEN /* data_h */;
-    void *base3 = base5 - len4 - len3;
-
-    /* ip_start */
-    size_t len2 = len4;
-    void *base2 = NULL;
-
-    /* batch_begin... */
-    size_t len1 = initlen - len5 - len4 - len3 - len2;
-    void *base1 = nlmsg;
-
-    void *p = (void *)nlmsg + initlen;
-
-    for (int j = 0, n = a_ip_n(v4); j < n; ++j) {
-        base2 = p;
-        base4 = p + len4;
-        p += len4 + len4;
-
-        int i = (*n_req)++;      
-        s_iov[i*5+0].iov_base = base1;
-        s_iov[i*5+0].iov_len  = len1;
-        s_iov[i*5+1].iov_base = base2;
-        s_iov[i*5+1].iov_len  = len2;
-        s_iov[i*5+2].iov_base = base3;
-        s_iov[i*5+2].iov_len  = len3;
-        s_iov[i*5+3].iov_base = base4;
-        s_iov[i*5+3].iov_len  = len4;
-        s_iov[i*5+4].iov_base = base5;
-        s_iov[i*5+4].iov_len  = len5;
-        simple_msghdr_iov(&s_mmsgv[i].msg_hdr, &s_iov[i*5], 5);
-    }
-}
-
 /* todo: for nft, check if it already exists before adding it to avoid range overlap issues affecting performance */
 void ipset_add_ip(const void *noalias ip, bool v4) {
     if (a_ip_n(v4) >= N_IP_ADD) ipset_end_add_ip();
@@ -619,48 +568,162 @@ void ipset_add_ip(const void *noalias ip, bool v4) {
     ++a_ip_n(v4); /* must be after `add_ip` */
 }
 
+/* ======================== end-add-ip ======================== */
+
+static int end_add_ip_ipset(void) {
+    int n_msg = 0;
+    const bool v4vec[] = {true, false};
+
+    for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
+        const bool v4 = v4vec[v4i];
+
+        struct nlmsghdr *nlmsg = a_nlmsg(v4);
+        uint32_t initlen = a_initlen(v4);
+
+        struct nlattr *adt_nla = (void *)nlmsg + initlen - NLA_HDRLEN;
+        nlmsg_end_nest_nla(nlmsg, adt_nla);
+
+        int i = n_msg++;
+        simple_msghdr(&s_msgv[i].msg_hdr, &s_iov[i], nlmsg, nlmsg->nlmsg_len);
+    }
+
+    return n_msg;
+}
+
+// zero `exists` before calling
+static void test_ips_nft(uint8_t exists[noalias]) {
+    int n_msg = 0;
+
+    /* fill ip-test msg */
+    const bool v4vec[] = {true, false};
+    for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
+        const bool v4 = v4vec[v4i];
+
+        void *base1 = (void *)a_nlmsg(v4) + a_initlen(v4); /* {ip,ip_end, ip,ip_end, ...} */
+        int len1 = ip_len(v4);
+
+        struct nlmsghdr *base0 = t_nlmsg(v4);
+        size_t len0 = base0->nlmsg_len - len1;
+
+        for (int ipi = 0, ipn = a_ip_n(v4); ipi < ipn; ++ipi) {
+            int i = n_msg++;
+            s_iov[i*2].iov_base = base0;
+            s_iov[i*2].iov_len = len0;
+            s_iov[i*2+1].iov_base = base1;
+            s_iov[i*2+1].iov_len = len1;
+            simple_msghdr_iov(&s_msgv[i].msg_hdr, &s_iov[i*2], 2);
+            base1 += len1 + len1; /* skip the 'ip_end' */
+        }
+    }
+
+    if (n_msg <= 0) return;
+
+    int n_sent = sendall(sendmmsg, s_sock, s_msgv, n_msg, 0);
+    assert(n_sent != 0);
+    unlikely_if (n_sent != n_msg)
+        LOGE("failed to send nlmsg: %d != %d, (%d) %s", n_sent, n_msg, errno, strerror(errno));
+
+    size_t sz = NLMSG_SPACE(sizeof(struct nlmsgerr));
+    for (int i = 0; i < n_sent; ++i)
+        simple_msghdr(&s_msgv[i].msg_hdr, &s_iov[i], s_buf_res + sz * i, sz);
+
+    int n_recv = recvmmsg(s_sock, s_msgv, n_sent, MSG_DONTWAIT, NULL);
+    assert(n_recv != 0);
+
+    /* save test result to bit-array */
+    for (int i = 0; i < n_recv; ++i) {
+        const struct nlmsghdr *nlmsg = s_iov[i].iov_base;
+        if (nlmsg->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM))
+            exists[i >> 3] |= 1 << (i & 7);
+    }
+}
+
+static int end_add_ip_nft(void) {
+    int n_msg = 0;
+
+    uint8_t exists[ceili(N_IP_ADD * 2, 8)] = {0};
+    test_ips_nft(exists);
+
+    const bool v4vec[] = {true, false};
+    for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
+        const bool v4 = v4vec[v4i];
+
+        /* batch_begin|msg|batch_end */
+        void *nlmsg = a_nlmsg(v4);
+        uint32_t initlen = a_initlen(v4);
+
+        void *basev[5];
+        size_t lenv[5];
+
+        /* batch_end */
+        lenv[4] = NLMSG_SPACE(sizeof(struct nfgenmsg));
+        basev[4] = nlmsg + initlen - lenv[4];
+
+        int iplen = ip_len(v4);
+        /* ip_end */
+        lenv[3] = iplen;
+        basev[3] = nlmsg + initlen + iplen; /* step:2 */
+
+        /* elem2_nla */
+        lenv[2] = NLA_HDRLEN /* elem_h */ + nla_size_calc(sizeof(uint32_t)) /* flags */ + NLA_HDRLEN /* key_h */ + NLA_HDRLEN /* data_h */;
+        basev[2] = basev[4] - lenv[3] - lenv[2];
+
+        /* ip_start */
+        lenv[1] = iplen;
+        basev[1] = nlmsg + initlen; /* step:2 */
+
+        /* batch_begin... */
+        lenv[0] = initlen - lenv[4] - lenv[3] - lenv[2] - lenv[1];
+        basev[0] = nlmsg;
+
+        for (int ip_i = 0, ip_n = a_ip_n(v4); ip_i < ip_n; ++ip_i) {
+            if (exists[ip_i >> 3] & (1 << (ip_i & 7))) {
+                int i = n_msg++;
+                for (int j = 0; j < (int)array_n(basev); ++j) {
+                    s_iov[i*5+j].iov_base = basev[j];
+                    s_iov[i*5+j].iov_len = lenv[j];
+                }
+                simple_msghdr_iov(&s_msgv[i].msg_hdr, &s_iov[i*5], 5);
+            }
+            basev[1] += iplen + iplen;
+            basev[3] += iplen + iplen;
+        }
+    }
+
+    return n_msg;
+}
+
 void ipset_end_add_ip(void) {
     /*
       current dns servers do not carry both A and AAAA answers, but they may in the future.
       see: https://datatracker.ietf.org/doc/html/draft-vavrusa-dnsop-aaaa-for-free-00
     */
-    int n_req = 0;
-    int n_req4 = 0;
-    if (a_ip_n(true)) {
-        end_add(true, &n_req);
-        a_ip_n(true) = 0;
-        n_req4 = n_req;
-    }
-    if (a_ip_n(false)) {
-        end_add(false, &n_req);
-        a_ip_n(false) = 0;
-    }
-    if (n_req <= 0) return;
+    int n_msg = end_add_ip();
+    if (n_msg <= 0) return;
 
-    int n_sent = sendall(sendmmsg, s_sock, s_mmsgv, n_req, 0);
+    int n_sent = sendall(sendmmsg, s_sock, s_msgv, n_msg, 0);
     assert(n_sent != 0);
-    unlikely_if (n_sent != n_req) { /* some failed */
-        LOGE("failed to send nlmsg: n_sent:%d != n_req:%d; errno:%d %s", n_sent, n_req, errno, strerror(errno));
+    unlikely_if (n_sent != n_msg) { /* some failed */
+        LOGE("failed to send nlmsg: n_sent:%d != %d; (%d) %s", n_sent, n_msg, errno, strerror(errno));
         if (n_sent < 0) return; /* all failed */
     }
 
     size_t err_msgsz = NLMSG_SPACE(sizeof(struct nlmsgerr));
     for (int i = 0; i < n_sent; ++i)
-        simple_msghdr(&s_mmsgv[i].msg_hdr, &s_iov[i], s_buf_res + err_msgsz * i, err_msgsz);
+        simple_msghdr(&s_msgv[i].msg_hdr, &s_iov[i], s_buf_res + err_msgsz * i, err_msgsz);
 
     /* recv nlmsgerr */
-    int n_recv = recvmmsg(s_sock, s_mmsgv, n_sent, MSG_DONTWAIT, NULL);
+    int n_recv = recvmmsg(s_sock, s_msgv, n_sent, MSG_DONTWAIT, NULL);
     assert(n_recv != 0);
     likely_if (n_recv < 0) {
         unlikely_if (errno != EAGAIN && errno != EWOULDBLOCK)
-            LOGE("failed to recv nlmsg: errno:%d %s", errno, strerror(errno));
+            LOGE("failed to recv nlmsg: (%d) %s", errno, strerror(errno));
         return;
     }
 
     for (int i = 0; i < n_recv; ++i) {
         const struct nlmsghdr *nlmsg = s_iov[i].iov_base;
         int errcode = nlmsg_errcode(nlmsg);
-        if (errcode != EEXIST) /* when nft detects an overlap, it reports an EEXIST error, ignore it */
-            LOGE("error when adding v%c ip: (%d) %s", i < n_req4 ? '4' : '6', errcode, ipset_strerror(errcode));
+        LOGE("error when adding ip: (%d) %s", errcode, ipset_strerror(errcode));
     }
 }
