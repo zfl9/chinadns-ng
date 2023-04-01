@@ -24,7 +24,7 @@ endif
 
 SRCS = main.c opt.c dns.c dnl.c net.c ipset.c nl.c
 OBJS = $(SRCS:.c=.o)
-LDLIBS = -lm
+LDLIBS =
 MAIN = chinadns-ng
 DESTDIR = /usr/local/bin
 

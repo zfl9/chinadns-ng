@@ -1,6 +1,5 @@
 #pragma once
 
-#include <limits.h>
 #include <stdint.h>
 
 #define likely(x)	__builtin_expect(!!(x), 1)
@@ -36,8 +35,8 @@ typedef unsigned long long ullong; /* >= 64 bits */
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
-/* compile-time ceil (a,b,res is integer) */
-#define ceili(a, b) (((a) + (b) - 1) / (b))
+/* unsigned-integer variant: ceil(a / b) */
+#define ceili(a, b) (((ullong)(a) + (ullong)(b) - 1) / (ullong)(b))
 
 /* number of elements */
 #define array_n(a) (sizeof(a) / sizeof(*(a)))
@@ -69,8 +68,9 @@ typedef unsigned long long ullong; /* >= 64 bits */
 /* get arg count (1 ~ 9) */
 #define argc(args...) arg10(args, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 
-/* octet */
-#define bitvec_sizeof(nbits) ceili(nbits, 8)
+typedef uint8_t bitvec_t;
+
+#define bitvec_n(nbits) ceili(nbits, 8)
 
 #define bitvec_get(vec, i) \
     (!!((vec)[(ullong)(i) >> 3] & (1 << ((ullong)(i) & 7))))

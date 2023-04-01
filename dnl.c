@@ -9,7 +9,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
-#include <math.h>
 #include <assert.h>
 #include <unistd.h>
 #include <sys/mman.h>
@@ -20,7 +19,9 @@
 #define literal(x) _literal(x)
 
 #define DEFAULT_LCAP 4 /* 2^4 = 16 */
-#define LOAD_FACTOR 0.75
+#define LOAD_FACTOR 0.75 /* x/y */
+#define LOAD_FACTOR_X 3
+#define LOAD_FACTOR_Y 4
 #define MAX_COLLISION 4 /* max length of list in map1 */
 
 // "www.google.com.hk"
@@ -163,7 +164,7 @@ static u32_t alloc(u32_t sz, u32_t align) {
 
 #define calc_lcap(nitems) ({ \
     /* cap * factor => max_n_items */ \
-    u32_t r_ = ceil((double)(nitems) / LOAD_FACTOR); \
+    u32_t r_ = ceili((ullong)(nitems) * LOAD_FACTOR_Y, LOAD_FACTOR_X); \
     u32_t cap_ = 1; /* 2^n */ \
     u32_t lcap_ = 0; /* log2(cap), n */ \
     while (cap_ < r_) { cap_ <<= 1; lcap_++; } \
