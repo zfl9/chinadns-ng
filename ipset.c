@@ -475,12 +475,18 @@ void ipset_init(void) {
     s_sock = nl_sock_create(NETLINK_NETFILTER, &s_portid);
 
     if (!strchr(g_ipset_name4, '@') && !strchr(g_ipset_name6, '@')) {
+        LOGI("ipset for ipv4: %s", g_ipset_name4);
+        LOGI("ipset for ipv6: %s", g_ipset_name6);
+        if (g_add_tagchn_ip) LOGI("add ip of tag:chn to ipset");
         test_res = test_res_ipset;
         add_ip = add_ip_ipset;
         end_add_ip = end_add_ip_ipset;
         init_req_ipset(true);
         init_req_ipset(false);
     } else {
+        LOGI("nftset for ipv4: %s", g_ipset_name4);
+        LOGI("nftset for ipv6: %s", g_ipset_name6);
+        if (g_add_tagchn_ip) LOGI("add ip of tag:chn to nftset");
         test_res = test_res_nft;
         add_ip = add_ip_nft;
         end_add_ip = end_add_ip_nft;

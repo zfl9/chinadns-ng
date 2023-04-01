@@ -17,7 +17,7 @@ uint8_t g_default_tag   = NAME_TAG_NONE;
 const char *g_gfwlist_fname = NULL; /* gfwlist filename(s) "a.txt,b.txt,..." */
 const char *g_chnlist_fname = NULL; /* chnlist filename(s) "m.txt,n.txt,..." */
 bool        g_gfwlist_first = true; /* match gfwlist first */
-bool        g_add_tagchn_ip = true; /* add chnlist answer ip to chnroute */
+bool        g_add_tagchn_ip = false; /* add the answer ip of name-tag:chn to ipset/nftset */
 
 const char *g_ipset_name4 = "chnroute"; /* ipset:"set_name" | nftset:"family_name@table_name@set_name" */
 const char *g_ipset_name6 = "chnroute6"; /* ipset:"set_name" | nftset:"family_name@table_name@set_name" */
@@ -43,7 +43,7 @@ uint8_t     g_repeat_times                  = 1; /* used by trust-dns only */
 #define OPT_TIMEOUT_SEC 'o'
 #define OPT_REPEAT_TIMES 'p'
 #define OPT_CHNLIST_FIRST 'M'
-#define OPT_NO_ADD_IP 'I'
+#define OPT_ADD_TAGCHN_IP 'a'
 #define OPT_NO_IPV6 'N'
 #define OPT_FAIR_MODE 'f'
 #define OPT_REUSE_PORT 'r'
@@ -67,7 +67,7 @@ static const char s_shortopts[] = {
     OPT_REPEAT_TIMES, ':', /* required_argument */
     OPT_NO_IPV6, ':', ':', /* optional_argument */
     OPT_CHNLIST_FIRST, /* no_argument */
-    OPT_NO_ADD_IP, /* no_argument */
+    OPT_ADD_TAGCHN_IP, /* no_argument */
     OPT_FAIR_MODE, /* no_argument */
     OPT_REUSE_PORT, /* no_argument */
     OPT_NOIP_AS_CHNIP, /* no_argument */
@@ -91,7 +91,7 @@ static const struct option s_options[] = {
     {"repeat-times",  required_argument, NULL, OPT_REPEAT_TIMES},
     {"no-ipv6",       optional_argument, NULL, OPT_NO_IPV6},
     {"chnlist-first", no_argument,       NULL, OPT_CHNLIST_FIRST},
-    {"no-add-ip",     no_argument,       NULL, OPT_NO_ADD_IP},
+    {"add-tagchn-ip", no_argument,       NULL, OPT_ADD_TAGCHN_IP},
     {"fair-mode",     no_argument,       NULL, OPT_FAIR_MODE},
     {"reuse-port",    no_argument,       NULL, OPT_REUSE_PORT},
     {"noip-as-chnip", no_argument,       NULL, OPT_NOIP_AS_CHNIP},
@@ -127,7 +127,7 @@ static void show_help(void) {
            "                                      rule T: check answer ip of trust upstream\n"
            "                                      if no rules is given, it defaults to 'a'\n"
            " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
-           " -I, --no-add-ip                      do not add the ip of name-tag:chn to ipset\n"
+           " -a, --add-tagchn-ip                  add the ip of name-tag:chn to ipset/nftset\n"
            " -f, --fair-mode                      enable fair mode (nop, only fair mode now)\n"
            " -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>\n"
            " -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)\n"
@@ -306,8 +306,8 @@ void opt_parse(int argc, char *argv[]) {
             case OPT_CHNLIST_FIRST:
                 g_gfwlist_first = false;
                 break;
-            case OPT_NO_ADD_IP:
-                g_add_tagchn_ip = false;
+            case OPT_ADD_TAGCHN_IP:
+                g_add_tagchn_ip = true;
                 break;
             case OPT_FAIR_MODE:
                 /* no operation */

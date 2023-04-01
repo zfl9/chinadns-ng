@@ -323,7 +323,6 @@ int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IOLBF, 256);
     opt_parse(argc, argv);
 
-    /* show startup information */
     LOGI("local listen addr: %s#%u", g_bind_ipstr, (uint)g_bind_portno);
 
     if (g_remote_ipports[CHINADNS1_IDX]) LOGI("chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
@@ -331,9 +330,8 @@ int main(int argc, char *argv[]) {
     if (g_remote_ipports[TRUSTDNS1_IDX]) LOGI("trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
     if (g_remote_ipports[TRUSTDNS2_IDX]) LOGI("trustdns server#2: %s", g_remote_ipports[TRUSTDNS2_IDX]);
 
-    LOGI("ipset ip4 setname: %s", g_ipset_name4);
-    LOGI("ipset ip6 setname: %s", g_ipset_name6);
-    if (g_add_tagchn_ip) LOGI("add ip of name-tag:chn to ipset");
+    bool need_ipset = g_add_tagchn_ip || g_default_tag == NAME_TAG_NONE || g_noaaaa_query & (NOAAAA_CHINA_IPCHK|NOAAAA_TRUST_IPCHK);
+    if (need_ipset) ipset_init();
 
     dnl_init();
 
@@ -363,10 +361,6 @@ int main(int argc, char *argv[]) {
     if (g_repeat_times > 1) LOGI("enable repeat mode, times: %u", (uint)g_repeat_times);
     if (g_reuse_port) LOGI("enable `SO_REUSEPORT` feature");
     LOGV("print the verbose running log");
-
-    /* init ipset netlink socket */
-    if (g_default_tag == NAME_TAG_NONE)
-        ipset_init();
 
     /* create listen socket */
     s_bind_sockfd = new_udp_socket(skaddr_family(&g_bind_skaddr));
