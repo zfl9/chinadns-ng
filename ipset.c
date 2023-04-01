@@ -561,7 +561,6 @@ static void add_ip_nft(bool v4, const void *noalias ip) {
     }
 }
 
-/* todo: for nft, check if it already exists before adding it to avoid range overlap issues affecting performance */
 void ipset_add_ip(const void *noalias ip, bool v4) {
     if (a_ip_n(v4) >= N_IP_ADD) ipset_end_add_ip();
     add_ip(v4, ip);
@@ -572,8 +571,8 @@ void ipset_add_ip(const void *noalias ip, bool v4) {
 
 static int end_add_ip_ipset(void) {
     int n_msg = 0;
-    const bool v4vec[] = {true, false};
 
+    const bool v4vec[] = {true, false};
     for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
         const bool v4 = v4vec[v4i];
 
@@ -620,8 +619,10 @@ static void test_ips_nft(uint8_t exists[noalias]) {
 
     int n_sent = sendall(sendmmsg, s_sock, s_msgv, n_msg, 0);
     assert(n_sent != 0);
-    unlikely_if (n_sent != n_msg)
+    unlikely_if (n_sent != n_msg) { // some failed
         LOGE("failed to send nlmsg: %d != %d, (%d) %s", n_sent, n_msg, errno, strerror(errno));
+        if (n_sent < 0) return; // all failed
+    }
 
     size_t sz = NLMSG_SPACE(sizeof(struct nlmsgerr));
     for (int i = 0; i < n_sent; ++i)
@@ -634,14 +635,14 @@ static void test_ips_nft(uint8_t exists[noalias]) {
     for (int i = 0; i < n_recv; ++i) {
         const struct nlmsghdr *nlmsg = s_iov[i].iov_base;
         if (nlmsg->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM))
-            exists[i >> 3] |= 1 << (i & 7);
+            bitvec_set1(exists, i);
     }
 }
 
 static int end_add_ip_nft(void) {
     int n_msg = 0;
 
-    uint8_t exists[ceili(N_IP_ADD * 2, 8)] = {0};
+    uint8_t exists[bitvec_sizeof(N_IP_ADD * 2)] = {0};
     test_ips_nft(exists);
 
     const bool v4vec[] = {true, false};
@@ -676,8 +677,8 @@ static int end_add_ip_nft(void) {
         lenv[0] = initlen - lenv[4] - lenv[3] - lenv[2] - lenv[1];
         basev[0] = nlmsg;
 
-        for (int ip_i = 0, ip_n = a_ip_n(v4); ip_i < ip_n; ++ip_i) {
-            if (exists[ip_i >> 3] & (1 << (ip_i & 7))) {
+        for (int ipi = 0, ipn = a_ip_n(v4); ipi < ipn; ++ipi) {
+            if (!bitvec_get(exists, ipi)) {
                 int i = n_msg++;
                 for (int j = 0; j < (int)array_n(basev); ++j) {
                     s_iov[i*5+j].iov_base = basev[j];
@@ -699,6 +700,11 @@ void ipset_end_add_ip(void) {
       see: https://datatracker.ietf.org/doc/html/draft-vavrusa-dnsop-aaaa-for-free-00
     */
     int n_msg = end_add_ip();
+
+    /* reset to 0 */
+    a_ip_n(true) = 0;
+    a_ip_n(false) = 0;
+
     if (n_msg <= 0) return;
 
     int n_sent = sendall(sendmmsg, s_sock, s_msgv, n_msg, 0);
@@ -708,9 +714,9 @@ void ipset_end_add_ip(void) {
         if (n_sent < 0) return; /* all failed */
     }
 
-    size_t err_msgsz = NLMSG_SPACE(sizeof(struct nlmsgerr));
+    size_t sz = NLMSG_SPACE(sizeof(struct nlmsgerr));
     for (int i = 0; i < n_sent; ++i)
-        simple_msghdr(&s_msgv[i].msg_hdr, &s_iov[i], s_buf_res + err_msgsz * i, err_msgsz);
+        simple_msghdr(&s_msgv[i].msg_hdr, &s_iov[i], s_buf_res + sz * i, sz);
 
     /* recv nlmsgerr */
     int n_recv = recvmmsg(s_sock, s_msgv, n_sent, MSG_DONTWAIT, NULL);
