@@ -66,6 +66,6 @@ static inline struct nlattr *nlmsg_add_nla(
 
 /* nlmsgerr */
 #define nlmsg_errcode(nlmsg) ({ \
-    assert(cast(const struct nlmsghdr *, nlmsg)->nlmsg_type == NLMSG_ERROR); \
+    assert((nlmsg)->nlmsg_type == NLMSG_ERROR); \
     -cast(const struct nlmsgerr *, NLMSG_DATA(nlmsg))->error; \
 })
