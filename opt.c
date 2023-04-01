@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CHINADNS_VERSION "ChinaDNS-NG 2023.03.10 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG 2023.04.01 <https://github.com/zfl9/chinadns-ng>"
 
 bool    g_verbose       = false;
 bool    g_reuse_port    = false;
