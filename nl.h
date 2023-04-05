@@ -9,14 +9,13 @@
 #include <linux/netlink.h>
 
 /* create netlink-socket (blocking mode) */
-int nl_sock_create(int protocol, uint32_t *noalias src_portid);
+int nl_sock_create(int protocol, u32 *noalias src_portid);
 
 #define nlmsg_len_inc(nlmsg, bufsz, datalen) ({ \
     (nlmsg)->nlmsg_len += NLMSG_ALIGN(datalen); \
     unlikely_if ((nlmsg)->nlmsg_len > (bufsz)) { \
-        LOGE("BUG: nlmsg_len:%lu > bufsz:%lu\n", \
+        log_fatal("nlmsg_len:%lu > bufsz:%lu\n", \
             (ulong)(nlmsg)->nlmsg_len, (ulong)(bufsz)); \
-        abort(); \
     } \
 })
 
@@ -49,7 +48,7 @@ static inline void *nlmsg_add_data(
 
 static inline struct nlattr *nlmsg_add_nla(
     struct nlmsghdr *noalias nlmsg, size_t bufsz,
-    uint16_t attrtype, const void *noalias data, size_t datalen)
+    u16 attrtype, const void *noalias data, size_t datalen)
 {
     struct nlattr *nla = nlmsg_add_data(nlmsg, bufsz, NULL, nla_size_calc(datalen));
     nla->nla_len = nla_len_calc(datalen);

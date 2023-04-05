@@ -14,442 +14,342 @@
 #include <sys/mman.h>
 #include <linux/limits.h>
 
-/* token stringize */
-#define _literal(x) #x
-#define literal(x) _literal(x)
-
 #define DEFAULT_LCAP 4 /* 2^4 = 16 */
-#define LOAD_FACTOR 0.75 /* x/y */
-#define LOAD_FACTOR_X 3
-#define LOAD_FACTOR_Y 4
+
+/* nitems / cap */
+#define LOAD_FACTOR_X 1 /* x/y */
+#define LOAD_FACTOR_Y 1 /* x/y */
+
 #define MAX_COLLISION 4 /* max length of list in map1 */
 
 // "www.google.com.hk"
 #define LABEL_MAXCNT 4
 
-typedef uint8_t u8_t;
-typedef uint32_t u32_t;
+/* u32 (bit-field) */
+#define NAMEADDR_BIT 30
 
-typedef uint hashv_t; /* uthash.h */
-typedef u8_t namelen_t;
+#define NAMEADDR_END ((u32)-1 & ((U32C(1) << NAMEADDR_BIT) - 1))
 
-#define BUCKET_FREE 0 /* free (unused) */
+struct name {
+    u32 next:NAMEADDR_BIT; /* addr in s_base */
+    u32 tag:(32-NAMEADDR_BIT);
+    uint hashv;
+    u8 namelen;
+    char name[];
+} __attribute__((packed));
+
+#define BUCKET_FREE 0 /* free */
 #define BUCKET_HEAD 1 /* list head */
-#define BUCKET_BODY 2 /* list body (non-head) */
-#define BUCKET_NEXT 3 /* find next-level map */
+#define BUCKET_NEXT 2 /* find next-level map */
 
-typedef struct bucket {
-    u32_t state:2; // BUCKET_*
-    u32_t tag:1; // NAME_TAG_* (gfw or chn)
-    u32_t name:29; // addr in s_base
-    u32_t next; // #list# bucket addr (-1: end)
-} bucket_s;
+struct bucket {
+    u32 state:(32-NAMEADDR_BIT); // BUCKET_*
+    u32 head:NAMEADDR_BIT; // list-head (name-addr)
+};
 
-typedef struct map {
-    u32_t notnull; // map not-null
-    u32_t buckets; // addr in s_base
-    u32_t lcap; // log2 of cap
-    u32_t freeidx; // find free-bucket from here
-    u32_t nitems; // nitems stored in buckets
-} map_s;
+struct map {
+    u32 notnull; // map not-null
+    u32 buckets; // addr in s_base
+    u32 lcap; // log2 of cap
+    u32 nlists; // number of stored lists
+    u32 nitems; // number of stored items
+    u32 shift; // discard hashv low n bits
+};
 
-u32_t g_dnl_nitems = 0; /* total (gfw + chn) */
+u32 g_dnl_nitems = 0; /* total (gfw + chn) */
 
-static map_s s_map1; /* L1 map (<= MAX_COLLISION) */
-static map_s s_map2; /* L2 map (> MAX_COLLISION) */
+static struct map s_map1; /* L1 map (<= MAX_COLLISION) */
+static struct map s_map2; /* L2 map (> MAX_COLLISION) */
 
 /* ======================== alloc ======================== */
 
 static void *s_base = NULL; /* page-aligned */
-static u32_t s_cap = 0; /* multiple of page-size */
-static u32_t s_end = 0; /* actual range of used */
+static u32 s_cap = 0; /* multiple of page-size */
+static u32 s_end = 0; /* actual range of used */
 
-static u32_t align_to(u32_t sz, u32_t align) {
-    u32_t n = sz % align;
+static u32 align_to(u32 sz, u32 align) {
+    u32 n = sz % align;
     if (n) sz += align - n;
     return sz;
 }
 
 /* contents are initialized to zero */
-static u32_t alloc(u32_t sz, u32_t align) {
+static u32 alloc(u32 sz, u32 align) {
     assert(sz % align == 0);
 
     s_end = align_to(s_end, align);
     s_end += sz;
 
     if (s_end > s_cap) {
-        u32_t oldcap = s_cap;
+        u32 oldcap = s_cap;
         s_cap = align_to(s_end, sysconf(_SC_PAGESIZE));
         if (!s_base)
             s_base = mmap(NULL, s_cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         else
             s_base = mremap(s_base, oldcap, s_cap, MREMAP_MAYMOVE);
-        if (s_base == MAP_FAILED) {
-            LOGE("mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %s", (ulong)oldcap, (ulong)s_cap, errno, strerror(errno));
-            abort();
-        }
+        if (s_base == MAP_FAILED)
+            log_fatal("mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %s", (ulong)oldcap, (ulong)s_cap, errno, strerror(errno));
     }
 
     return s_end - sz;
 }
 
-#define addr(ptr) ((u32_t)((void *)(ptr) - s_base))
-#define ptr(addr) (s_base + (addr)) // void *
-#define ptr_bucket(addr) ((bucket_s *)ptr(addr))
+#define addr(ptr) ((u32)((void *)(ptr) - s_base))
 
-#define alloc_name(sz) alloc(sz, 1) // todo align ?
-#define alloc_bucket(n) alloc((n) * sizeof(bucket_s), __alignof__(bucket_s))
+#define ptr(addr) (s_base + (addr)) // void *
+#define ptr_name(addr) ((struct name *)ptr(addr))
+#define ptr_bucket(addr) ((struct bucket *)ptr(addr))
+
+#define alloc_name(namelen) \
+    alloc(sizeof(struct name) + (namelen), __alignof__(struct name))
+
+#define alloc_bucket(n) \
+    alloc(sizeof(struct bucket) * (n), __alignof__(struct bucket))
 
 /* ======================== name ======================== */
 
-/* struct name { hashv_t hashv; namelen_t namelen; char name[]; }; */
+static inline uint calc_hashv(const char *noalias name, u8 namelen) {
+    uint hashv = 0;
+    HASH_FCN(name, namelen, hashv); /* uthash.h */
+    return hashv;
+}
 
-#define calc_hashv(name, namelen) ({ \
-    hashv_t hashv_ = 0; \
-    HASH_FCN(name, namelen, hashv_); /* uthash.h */ \
-    hashv_; \
-})
-
-#define get_hashv(nameaddr) ({ \
-    hashv_t hashv_; \
-    memcpy(&hashv_, ptr(nameaddr), sizeof(hashv_)); \
-    hashv_; \
-})
-
-#define set_hashv(nameaddr, hashv) \
-    memcpy(ptr(nameaddr), &(hashv), sizeof(hashv))
-
-#define get_namelen(nameaddr) ({ \
-    namelen_t namelen_; \
-    memcpy(&namelen_, ptr(nameaddr) + sizeof(hashv_t), sizeof(namelen_)); \
-    namelen_; \
-})
-
-#define set_namelen(nameaddr, namelen) \
-    memcpy(ptr(nameaddr) + sizeof(hashv_t), &(namelen), sizeof(namelen))
-
-#define get_name(nameaddr) \
-    (ptr(nameaddr) + sizeof(hashv_t) + sizeof(namelen_t))
-
-#define set_name(nameaddr, name, namelen) \
-    memcpy(get_name(nameaddr), name, namelen)
-
-#define calc_namesz(namelen) \
-    (sizeof(hashv_t) + sizeof(namelen_t) + (namelen))
+#define get_hashv(nameaddr) \
+    (ptr_name(nameaddr)->hashv)
 
 #define get_namesz(nameaddr) \
-    calc_namesz(get_namelen(nameaddr))
+    (sizeof(struct name) + ptr_name(nameaddr)->namelen)
 
-#define add_name(name) ({ \
-    namelen_t namelen_ = strlen(name); \
-    hashv_t hashv_ = calc_hashv(name, namelen_); \
-    u32_t nameaddr_ = alloc_name(calc_namesz(namelen_)); \
-    set_hashv(nameaddr_, hashv_); \
-    set_namelen(nameaddr_, namelen_); \
-    set_name(nameaddr_, name, namelen_); \
-    nameaddr_; \
-})
+static inline u32 add_name(const char *noalias name, u8 tag) {
+    u8 namelen = strlen(name);
+    uint hashv = calc_hashv(name, namelen);
+    u32 nameaddr = alloc_name(namelen);
+    struct name *noalias p = ptr_name(nameaddr);
+    p->next = NAMEADDR_END;
+    p->tag = tag;
+    p->hashv = hashv;
+    p->namelen = namelen;
+    memcpy(p->name, name, namelen);
+    return nameaddr;
+}
 
-#define name_eq_r(addr, hashv, namelen, name) ( \
-    get_hashv(addr) == (hashv) && \
-    get_namelen(addr) == (namelen) && \
-    memcmp(get_name(addr), name, namelen) == 0 \
-)
+static inline bool name_eq_r(u32 addr, uint hashv, u8 namelen, const char *noalias name) {
+    const struct name *noalias p = ptr_name(addr);
+    return p->hashv == hashv && p->namelen == namelen && memcmp(p->name, name, namelen) == 0;
+}
 
-#define name_eq(addr1, addr2) \
-    ((addr1) == (addr2) || \
-    name_eq_r(addr1, get_hashv(addr2), get_namelen(addr2), get_name(addr2)))
+static inline bool name_eq(u32 addr1, u32 addr2) {
+    const struct name *noalias p = ptr_name(addr2);
+    return addr1 == addr2 || name_eq_r(addr1, p->hashv, p->namelen, p->name);
+}
 
 /* ======================== bucket ======================== */
 
-#define calc_lcap(nitems) ({ \
-    /* cap * factor => max_n_items */ \
-    u32_t r_ = ceili((ullong)(nitems) * LOAD_FACTOR_Y, LOAD_FACTOR_X); \
-    u32_t cap_ = 1; /* 2^n */ \
-    u32_t lcap_ = 0; /* log2(cap), n */ \
-    while (cap_ < r_) { cap_ <<= 1; lcap_++; } \
-    lcap_; \
+static inline u32 calc_lcap(u32 n) {
+    u32 r = ceili((ullong)n * LOAD_FACTOR_Y, LOAD_FACTOR_X); /* cap * factor => max_items */
+    u32 cap = 1; /* 2^n */
+    u32 lcap = 0; /* log2(cap), n */
+    while (cap < r) { cap <<= 1; lcap++; }
+    return lcap;
+}
+
+#define map_is_null(map) (!(map)->notnull)
+#define map_set_notnull(map, in_lcap, hashv_shift) ({ \
+    (map)->notnull = 1; \
+    (map)->lcap = (in_lcap); \
+    (map)->buckets = alloc_bucket(map_cap(map)); \
+    (map)->shift = (hashv_shift); \
 })
 
-#define bucket_is_free(bucket) ((bucket)->state == BUCKET_FREE)
-#define bucket_is_head(bucket) ((bucket)->state == BUCKET_HEAD)
-#define bucket_is_body(bucket) ((bucket)->state == BUCKET_BODY)
-#define bucket_in_next(bucket) ((bucket)->state == BUCKET_NEXT)
+#define dnl_is_null() map_is_null(&s_map1)
+#define dnl_set_notnull(in_lcap, hashv_shift) map_set_notnull(&s_map1, in_lcap, hashv_shift)
 
-#define bucket_set_free(bucket) ((bucket)->state = BUCKET_FREE)
-#define bucket_set_head(bucket) ((bucket)->state = BUCKET_HEAD)
-#define bucket_set_body(bucket) ((bucket)->state = BUCKET_BODY)
-#define bucket_set_next(bucket) ((bucket)->state = BUCKET_NEXT)
+#define map_cap(map) ((u32)1 << (map)->lcap)
+#define map_maxload(map) ((u32)((ullong)map_cap(map) * LOAD_FACTOR_X / LOAD_FACTOR_Y))
 
-/* map1/map2 is a getter, can be passed as arg to macro func */
-#define map1() (&s_map1)
-#define map2() (&s_map2)
+#define dnl_cap() (map_cap(&s_map1) + map_cap(&s_map2))
+#define dnl_nitems() (s_map1.nitems + s_map2.nitems)
 
-#define map_is_null(map) (!map()->notnull)
-#define map_set_notnull(map, init_lcap) ({ \
-    map()->notnull = 1; \
-    map()->lcap = (init_lcap); \
-    map()->buckets = alloc_bucket(map_cap(map)); \
-})
-
-#define dnl_is_null() map_is_null(map1)
-#define dnl_set_notnull(init_lcap) map_set_notnull(map1, init_lcap)
-
-#define map_nitems(map) (map()->nitems)
-#define dnl_nitems() (map_nitems(map1) + map_nitems(map2))
-
-#define map_cap(map) (1U << map()->lcap)
-#define dnl_cap() (map_cap(map1) + map_cap(map2))
-#define map_maxload(map) ((u32_t)((double)map_cap(map) * LOAD_FACTOR))
-
-#define map_hashv(map, hashv) _##map##_hashv(hashv)
-#define _map1_hashv(hashv) (hashv)
-#define _map2_hashv(hashv) (_map1_hashv(hashv) >> map1()->lcap)
-
+#define map_hashv(map, hashv) ((hashv) >> (map)->shift)
 #define map_idx(map, hashv) (map_hashv(map, hashv) & (map_cap(map) - 1))
 
-#define get_bucket_by_idx(map, idx) (ptr_bucket(map()->buckets) + (idx))
+#define get_bucket_by_idx(map, idx) (ptr_bucket((map)->buckets) + (idx))
 #define get_bucket_by_hashv(map, hashv) get_bucket_by_idx(map, map_idx(map, hashv))
 #define get_bucket_by_nameaddr(map, nameaddr) get_bucket_by_hashv(map, get_hashv(nameaddr))
+#define get_idx_by_bucket(map, bucket) ((struct bucket *)(bucket) - ptr_bucket((map)->buckets))
 
-#define next_bucket(bucket) ((bucket)->next == (u32_t)-1 ? NULL : ptr_bucket((bucket)->next))
-#define idx_of_bucket(map, bucket) ((bucket_s *)(bucket) - ptr_bucket(map()->buckets))
+#define next_nameaddr(addr) ((addr) == NAMEADDR_END ? NAMEADDR_END : ptr_name(addr)->next)
 
-// find free bucket to use
-#define take_free_bucket(map) ({ \
-    bucket_s *fb_ = NULL; \
-    for (u32_t idx_ = map()->freeidx, n_ = map_cap(map); idx_ < n_; ++idx_) { \
-        bucket_s *b_ = get_bucket_by_idx(map, idx_); \
-        if (bucket_is_free(b_)) { \
-            map()->freeidx = idx_ + 1; /* start here next time */ \
-            fb_ = b_; \
-            break; \
-        } \
+/* delete-safe && realloc-safe (by nameaddr) */
+#define foreach_list(bucket, curaddr) \
+    for (u32 curaddr = (bucket)->head, nextaddr_ = next_nameaddr(curaddr); \
+        curaddr != NAMEADDR_END; curaddr = nextaddr_, nextaddr_ = next_nameaddr(curaddr))
+
+#define return_if_exists(bucket, nameaddr) ({ \
+    int n_ = 0; \
+    foreach_list(bucket, curaddr) { \
+        if (name_eq(curaddr, nameaddr)) return; \
+        ++n_; \
     } \
-    assert(fb_); \
-    fb_; \
+    n_; \
 })
 
-// free bucket
-#define free_bucket(map, bucket) ({ \
-    u32_t idx_ = idx_of_bucket(map, bucket); \
-    assert(get_bucket_by_idx(map, idx_) == (bucket)); \
-    if (idx_ < map()->freeidx) map()->freeidx = idx_; \
-    bucket_set_free(bucket); \
+#define store_as_head(bucket, nameaddr) ({ \
+    assert((bucket)->state == BUCKET_FREE); \
+    (bucket)->state = BUCKET_HEAD; \
+    (bucket)->head = (nameaddr); \
+    ptr_name(nameaddr)->next = NAMEADDR_END; \
 })
 
-#define foreach_list(head, cur) \
-    for (bucket_s *cur = (head); cur; cur = next_bucket(cur))
-
-#define return_if_exists(head, nameaddr) ({ \
-    int n_nodes_ = 0; \
-    foreach_list(head, cur) { \
-        if (name_eq(cur->name, nameaddr)) return; \
-        ++n_nodes_; \
-    } \
-    n_nodes_; \
+#define store_as_body(bucket, nameaddr) ({ \
+    assert((bucket)->state == BUCKET_HEAD); \
+    ptr_name(nameaddr)->next = (bucket)->head; \
+    (bucket)->head = (nameaddr); \
 })
 
-#define store_as_head(map, head, nametag, nameaddr) ({ \
-    bucket_set_head(head); \
-    (head)->tag = (nametag); \
-    (head)->name = (nameaddr); \
-    (head)->next = -1; \
-})
+static bool resize_map2(void) {
+    struct map *noalias map = &s_map2;
 
-#define store_as_body(map, head, nametag, nameaddr) ({ \
-    /* find free bucket */ \
-    bucket_s *body_ = take_free_bucket(map); \
-    bucket_set_body(body_); \
-    body_->tag = (nametag); \
-    body_->name = (nameaddr); \
-    body_->next = (head)->next; \
-    (head)->next = addr(body_); \
-})
+    /* check max-load */
+    if (map->nitems < map_maxload(map)) return false;
 
-/* body to new pos, store head in this pos */
-#define change_to_head(map, oldbody, headnametag, headnameaddr) ({ \
-    /* copy from old to new */ \
-    bucket_s *newbody_ = take_free_bucket(map); \
-    bucket_set_body(newbody_); \
-    newbody_->tag = (oldbody)->tag; \
-    newbody_->name = (oldbody)->name; \
-    newbody_->next = (oldbody)->next; \
-    /* repair the list it is in */ \
-    bucket_s *head_ = get_bucket_by_nameaddr(map, newbody_->name); \
-    assert(bucket_is_head(head_)); \
-    u32_t oldbodyaddr_ = addr(oldbody), found_ = 0; \
-    foreach_list(head_, cur) { \
-        if (cur->next == oldbodyaddr_) { \
-            cur->next = addr(newbody_); \
-            found_ = 1; \
-            break; \
-        } \
-    } \
-    (void)found_; /* avoid unused warning */ \
-    assert(found_); \
-    /* change it to head node */ \
-    store_as_head(map, oldbody, headnametag, headnameaddr); \
-})
-
-static void resize_map2(void) {
     // grow *2 (may change the pool addr)
-    u32_t addr = alloc_bucket(map_cap(map2));
-    assert(ptr_bucket(addr) == ptr_bucket(map2()->buckets) + map_cap(map2));
+    u32 addr = alloc_bucket(map_cap(map));
+    assert(ptr_bucket(addr) == ptr_bucket(map->buckets) + map_cap(map));
     (void)addr; /* avoid unused warning */
 
-    map2()->lcap++;
+    map->lcap++;
 
     // foreach part 1
-    for (u32_t idx = 0, n = map_cap(map2) >> 1; idx < n; ++idx) {
-        bucket_s *const head = get_bucket_by_idx(map2, idx);
+    for (u32 idx = 0, n = map_cap(map) >> 1; idx < n; ++idx) {
+        struct bucket *noalias bucket = get_bucket_by_idx(map, idx);
 
-        // ignore non-head node
-        if (!bucket_is_head(head)) continue;
+        /* skip the non-head bucket */
+        if (bucket->state != BUCKET_HEAD) continue;
 
-        // foreach list
-        for (bucket_s *cur = head, *prev = NULL; cur;) {
-            u32_t newidx = map_idx(map2, get_hashv(cur->name));
+        /* no realloc during foreach, so it is safe to use pointer */
+        struct name *prev = NULL;
 
+        foreach_list(bucket, curaddr) {
+            struct name *cur = ptr_name(curaddr);
+
+            u32 newidx = map_idx(map, cur->hashv);
             if (newidx == idx) {
-                /* still the same list pos */
                 prev = cur;
-                cur = next_bucket(cur);
-            } else {
-                /* must be in the part 2 */
-                assert(newidx >= n);
-                assert(newidx < map_cap(map2));
+                continue;
+            }
 
-                u8_t nametag = cur->tag;
-                u32_t nameaddr = cur->name;
-                u32_t nextaddr = cur->next;
-                bucket_s *next = next_bucket(cur);
+            /* must be in part 2 */
+            assert(newidx >= n);
+            assert(newidx < map_cap(map));
 
-                // remove from old list
-                if (!prev) {
-                    /* cur node is head */
-                    assert(cur == head);
-                    assert(bucket_is_head(cur));
-                    if (next) {
-                        /* next_node => head */
-                        cur->tag = next->tag; // copy next node to head
-                        cur->name = next->name; // copy next node to head
-                        cur->next = next->next; // copy next node to head
-                        free_bucket(map2, next); // free next node
-                    } else {
-                        /* list_size == 1 (only the head) */
-                        free_bucket(map2, cur); // free it
-                        cur = NULL; // foreach end
-                    }
-                } else {
-                    /* cur node is body */
-                    assert(bucket_is_body(cur));
-                    free_bucket(map2, cur); // free cur node
-                    prev->next = nextaddr; // repair list link
-                    cur = next; // foreach from here
-                }
+            if (prev)
+                prev->next = cur->next;
+            else if (cur->next != NAMEADDR_END)
+                bucket->head = cur->next;
+            else {
+                bucket->state = BUCKET_FREE;
+                map->nlists--;
+            }
 
-                // add to new list
-                bucket_s *newhead = get_bucket_by_idx(map2, newidx);
-                if (bucket_is_free(newhead))
-                    store_as_head(map2, newhead, nametag, nameaddr);
-                else if (bucket_is_head(newhead))
-                    store_as_body(map2, newhead, nametag, nameaddr);
-                else if (bucket_is_body(newhead))
-                    change_to_head(map2, newhead, nametag, nameaddr);
-                else
-                    assert(0);
+            struct bucket *noalias newbucket = get_bucket_by_idx(map, newidx);
+            switch (newbucket->state) {
+                case BUCKET_FREE:
+                    store_as_head(newbucket, curaddr);
+                    map->nlists++;
+                    break;
+                default:
+                    assert(newbucket->state == BUCKET_HEAD);
+                    store_as_body(newbucket, curaddr);
+                    break;
             }
         }
     }
+
+    return true;
 }
 
-#define try_resize_map2() ({ \
-    int resized_ = 0; \
-    if (map2()->nitems >= map_maxload(map2)) { \
-        resize_map2(); \
-        resized_ = 1; \
-    } \
-    resized_; \
-})
-
-static void add_to_map2(u8_t nametag, u32_t nameaddr) {
-    if (map_is_null(map2))
-        map_set_notnull(map2, DEFAULT_LCAP);
-    bucket_s *head;
+static void add_to_map2(u32 nameaddr) {
+    struct map *noalias map = &s_map2;
+    if (map_is_null(map))
+        map_set_notnull(map, DEFAULT_LCAP, s_map1.lcap);
 redo:
-    head = get_bucket_by_nameaddr(map2, nameaddr);
-    if (bucket_is_free(head)) {
-        if (try_resize_map2()) goto redo;
-        store_as_head(map2, head, nametag, nameaddr);
-        map2()->nitems++;
-    } else if (bucket_is_head(head)) {
-        return_if_exists(head, nameaddr);
-        if (try_resize_map2()) goto redo;
-        store_as_body(map2, head, nametag, nameaddr);
-        map2()->nitems++;
-    } else if (bucket_is_body(head)) {
-        if (try_resize_map2()) goto redo;
-        change_to_head(map2, head, nametag, nameaddr);
-        map2()->nitems++;
-    } else {
-        assert(0);
+    struct bucket *noalias bucket = get_bucket_by_nameaddr(map, nameaddr);
+    switch (bucket->state) {
+        case BUCKET_FREE:
+            if (resize_map2()) goto redo;
+            store_as_head(bucket, nameaddr);
+            map->nitems++;
+            map->nlists++;
+            break;
+        default:
+            assert(bucket->state == BUCKET_HEAD);
+            return_if_exists(bucket, nameaddr);
+            if (resize_map2()) goto redo;
+            store_as_body(bucket, nameaddr);
+            map->nitems++;
+            break;
     }
 }
 
-static void add_to_dnl(u8_t nametag, u32_t nameaddr) {
-    bucket_s *head = get_bucket_by_nameaddr(map1, nameaddr);
-    if (bucket_is_free(head)) {
-        store_as_head(map1, head, nametag, nameaddr);
-        map1()->nitems++;
-    } else if (bucket_is_head(head)) {
-        int n_nodes = return_if_exists(head, nameaddr);
-        if (n_nodes < MAX_COLLISION) {
-            store_as_body(map1, head, nametag, nameaddr);
-            map1()->nitems++;
-        } else {
-            /* `resize_map2()` may change the `s_base`. so must be foreach by rel-addr */
-            bucket_set_next(head); /* next time, find in the next-level buckets (map2) */
-            u32_t headaddr = addr(head);
-            for (u32_t addr = headaddr; addr != (u32_t)-1; addr = ptr_bucket(addr)->next) {
-                map1()->nitems--;
-                add_to_map2(ptr_bucket(addr)->tag, ptr_bucket(addr)->name);
-                if (addr != headaddr) free_bucket(map1, ptr_bucket(addr));
+/* map is pre-allocated */
+static void add_to_dnl(u32 nameaddr) {
+    struct map *noalias map = &s_map1;
+    struct bucket *noalias bucket = get_bucket_by_nameaddr(map, nameaddr);
+    switch (bucket->state) {
+        case BUCKET_FREE:
+            store_as_head(bucket, nameaddr);
+            map->nitems++;
+            map->nlists++;
+            break;
+        case BUCKET_HEAD: {
+            int n = return_if_exists(bucket, nameaddr);
+            if (n < MAX_COLLISION) {
+                store_as_body(bucket, nameaddr);
+                map->nitems++;
+            } else {
+                /* add_to_map2() may realloc, so `bucket` must be accessed before it */
+                map->nlists--;
+                bucket->state = BUCKET_NEXT; /* find in the next-level buckets (map2) */
+                foreach_list(bucket, curaddr) {
+                    map->nitems--;
+                    add_to_map2(curaddr);
+                }
+                add_to_map2(nameaddr);
             }
-            add_to_map2(nametag, nameaddr);
+            break;
         }
-    } else if (bucket_is_body(head)) {
-        change_to_head(map1, head, nametag, nameaddr);
-        map1()->nitems++;
-    } else {
-        assert(bucket_in_next(head));
-        add_to_map2(nametag, nameaddr);
+        default:
+            assert(bucket->state == BUCKET_NEXT);
+            add_to_map2(nameaddr);
+            break;
     }
 }
 
-#define exists_in_list(head, hashv, namelen, NAME, p_tag) ({ \
-    bool exists_ = false; \
-    foreach_list(head, cur) { \
-        if (name_eq_r(cur->name, hashv, namelen, NAME)) { \
-            *(p_tag) = cur->tag; \
-            exists_ = true; \
-            break; \
-        } \
-    } \
-    exists_; \
-})
-
-static bool exists_in_dnl(const char *noalias name, namelen_t namelen, u8_t *noalias p_tag) {
-    hashv_t hashv = calc_hashv(name, namelen);
-    bucket_s *head = get_bucket_by_hashv(map1, hashv);
-    if (bucket_is_head(head)) {
-        return exists_in_list(head, hashv, namelen, name, p_tag);
-    } else if (bucket_in_next(head)) {
-        head = get_bucket_by_hashv(map2, hashv);
-        if (bucket_is_head(head))
-            return exists_in_list(head, hashv, namelen, name, p_tag);
+static bool exists_in_list(const struct bucket *noalias bucket,
+    uint hashv, u8 namelen, const char *noalias name, u8 *noalias tag)
+{
+    foreach_list(bucket, curaddr) {
+        if (name_eq_r(curaddr, hashv, namelen, name)) {
+            *tag = ptr_name(curaddr)->tag;
+            return true;
+        }
     }
     return false;
+}
+
+static bool exists_in_dnl(const char *noalias name, u8 namelen, u8 *noalias tag) {
+    uint hashv = calc_hashv(name, namelen);
+    const struct bucket *noalias bucket = get_bucket_by_hashv(&s_map1, hashv);
+    switch (bucket->state) {
+        case BUCKET_HEAD:
+            return exists_in_list(bucket, hashv, namelen, name, tag);
+        case BUCKET_NEXT:
+            bucket = get_bucket_by_hashv(&s_map2, hashv);
+            return bucket->state == BUCKET_HEAD && exists_in_list(bucket, hashv, namelen, name, tag);
+        default:
+            return false;
+    }
 }
 
 // "a.www.google.com.hk" => "www.google.com.hk"
@@ -487,27 +387,29 @@ static int split_name(const char *noalias name, int namelen, const char *noalias
     return n;
 }
 
-static bool load_list(const char *noalias filenames, u32_t *noalias p_addr0, u32_t *noalias p_nitems) {
-    u32_t addr0 = 0, nitems = 0;
+static bool load_list(u8 tag, const char *noalias filenames, u32 *noalias p_addr0, u32 *noalias p_n) {
+    u32 addr0 = 0, n = 0;
     int has_next = 1;
 
     do {
-        const char *d = strchr(filenames, ',');
-        size_t len = d ? (size_t)(d - filenames) : strlen(filenames);
+        const char *start = filenames, *end;
+        size_t len;
+        if ((end = strchr(start, ','))) {
+            len = end - start;
+            filenames = end + 1;
+        } else {
+            len = strlen(start);
+            has_next = 0;
+        }
 
         if (len + 1 > PATH_MAX) {
-            LOGE("path max length is %d: %.*s", PATH_MAX - 1, (int)len, filenames);
+            log_error("path max length is %d: %.*s", PATH_MAX - 1, (int)len, start);
             continue;
         }
 
         char fname[PATH_MAX];
-        memcpy(fname, filenames, len);
+        memcpy(fname, start, len);
         fname[len] = '\0';
-
-        if (d)
-            filenames += len + 1;
-        else
-            has_next = 0;
 
         FILE *fp;
         if (strcmp(fname, "-") == 0) {
@@ -515,7 +417,7 @@ static bool load_list(const char *noalias filenames, u32_t *noalias p_addr0, u32
         } else {
             fp = fopen(fname, "rb");
             if (!fp) {
-                LOGE("failed to open '%s': (%d) %s", fname, errno, strerror(errno));
+                log_error("failed to open '%s': (%d) %s", fname, errno, strerror(errno));
                 continue;
             }
         }
@@ -524,8 +426,8 @@ static bool load_list(const char *noalias filenames, u32_t *noalias p_addr0, u32
         while (fscanf(fp, "%" literal(DNS_NAME_MAXLEN) "s", buf) > 0) {
             const char *name = trim_name(buf);
             if (name) {
-                u32_t nameaddr = add_name(name);
-                if (nitems++ == 0) addr0 = nameaddr;
+                u32 nameaddr = add_name(name, tag);
+                if (n++ == 0) addr0 = nameaddr;
             }
         }
 
@@ -535,83 +437,75 @@ static bool load_list(const char *noalias filenames, u32_t *noalias p_addr0, u32
             fclose(fp);
     } while (has_next);
 
-    if (nitems <= 0) return false;
+    if (n <= 0) return false;
 
     *p_addr0 = addr0;
-    *p_nitems = nitems;
+    *p_n = n;
 
     return true;
 }
 
-static u32_t add_list(u8_t nametag, u32_t addr0, u32_t nitems) {
-    u32_t old_nitems = dnl_nitems();
-    for (u32_t i = 0, nameaddr = addr0; i < nitems; ++i) {
-        add_to_dnl(nametag, nameaddr);
+static u32 add_list(u32 addr0, u32 n) {
+    u32 old_nitems = dnl_nitems();
+    for (u32 i = 0, nameaddr = addr0; i < n; ++i) {
+        add_to_dnl(nameaddr);
         nameaddr += get_namesz(nameaddr);
     }
     return dnl_nitems() - old_nitems;
 }
 
-/* initialize domain-name-list from file */
 void dnl_init(void) {
-    u32_t gfw_addr0 = 0, gfw_nitems = 0;
-    bool has_gfw = g_gfwlist_fname && load_list(g_gfwlist_fname, &gfw_addr0, &gfw_nitems);
-    if (has_gfw) {
-        double cost = (double)(s_end - gfw_addr0) / 1024.0;
-        LOGI("gfwlist-name %lu %.3fk", (ulong)gfw_nitems, cost);
-    }
+    u32 gfw_addr0 = 0, gfw_n = 0, gfw_cost, gfw_nitems = 0;
+    bool has_gfw = g_gfwlist_fname && load_list(NAME_TAG_GFW, g_gfwlist_fname, &gfw_addr0, &gfw_n);
+    gfw_cost = has_gfw ? s_end - gfw_addr0 : 0;
 
-    u32_t chn_addr0 = 0, chn_nitems = 0;
-    bool has_chn = g_chnlist_fname && load_list(g_chnlist_fname, &chn_addr0, &chn_nitems);
-    if (has_chn) {
-        double cost = (double)(s_end - chn_addr0) / 1024.0;
-        LOGI("chnlist-name %lu %.3fk", (ulong)chn_nitems, cost);
-    }
+    u32 chn_addr0 = 0, chn_n = 0, chn_cost, chn_nitems = 0;
+    bool has_chn = g_chnlist_fname && load_list(NAME_TAG_CHN, g_chnlist_fname, &chn_addr0, &chn_n);
+    chn_cost = has_chn ? s_end - chn_addr0 : 0;
 
     if (!has_gfw && !has_chn) return;
 
     /* first load_list() and then add_list() is friendly to malloc/realloc */
 
-    dnl_set_notnull(calc_lcap(gfw_nitems + chn_nitems));
+    dnl_set_notnull(calc_lcap(gfw_n + chn_n), 0);
 
     if (has_gfw && has_chn) {
         if (g_gfwlist_first) {
-            LOGI("gfwlist have higher priority");
-            gfw_nitems = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
-            chn_nitems = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
+            log_info("gfwlist have higher priority");
+            gfw_nitems = add_list(gfw_addr0, gfw_n);
+            chn_nitems = add_list(chn_addr0, chn_n);
         } else {
-            LOGI("chnlist have higher priority");
-            chn_nitems = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
-            gfw_nitems = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
+            log_info("chnlist have higher priority");
+            chn_nitems = add_list(chn_addr0, chn_n);
+            gfw_nitems = add_list(gfw_addr0, gfw_n);
         }
     } else if (has_gfw) {
-        gfw_nitems = add_list(NAME_TAG_GFW, gfw_addr0, gfw_nitems);
+        gfw_nitems = add_list(gfw_addr0, gfw_n);
     } else {
         assert(has_chn);
-        chn_nitems = add_list(NAME_TAG_CHN, chn_addr0, chn_nitems);
+        chn_nitems = add_list(chn_addr0, chn_n);
     }
 
     g_dnl_nitems = dnl_nitems();
     assert(g_dnl_nitems == gfw_nitems + chn_nitems);
 
-    if (has_gfw) {
-        double cost = (double)(sizeof(bucket_s) * gfw_nitems) / 1024.0;
-        LOGI("gfwlist-bucket %lu %.3fk", (ulong)gfw_nitems, cost);
-    }
-    if (has_chn) {
-        double cost = (double)(sizeof(bucket_s) * chn_nitems) / 1024.0;
-        LOGI("chnlist-bucket %lu %.3fk", (ulong)chn_nitems, cost);
-    }
-    u32_t n = dnl_cap() - g_dnl_nitems;
-    double cost = (double)(sizeof(bucket_s) * n) / 1024.0;
-    LOGI("other-bucket %lu %.3fk", (ulong)n, cost);
+    if (has_gfw)
+        log_info("gfwlist loaded:%lu added:%lu cost:%.3fk", (ulong)gfw_n, (ulong)gfw_nitems, gfw_cost/1024.0);
 
-    /* total cost (page-aligned) */
-    LOGI("total memory cost: %.3fk", (double)s_cap / 1024.0);
+    if (has_chn)
+        log_info("chnlist loaded:%lu added:%lu cost:%.3fk", (ulong)chn_n, (ulong)chn_nitems, chn_cost/1024.0);
+
+    log_info("L1 items:%lu lists:%lu buckets:%lu cost:%.3fk",
+        (ulong)s_map1.nitems, (ulong)s_map1.nlists, (ulong)map_cap(&s_map1), map_cap(&s_map1)*sizeof(struct bucket)/1024.0);
+
+    if (!map_is_null(&s_map2)) 
+        log_info("L2 items:%lu lists:%lu buckets:%lu cost:%.3fk",
+            (ulong)s_map2.nitems, (ulong)s_map2.nlists, (ulong)map_cap(&s_map2), map_cap(&s_map2)*sizeof(struct bucket)/1024.0);
+
+    log_info("total memory cost (page-aligned): %.3fk", s_cap/1024.0);
 }
 
-/* check if the given domain name matches */
-u8_t get_name_tag(const char *noalias name, int namelen) {
+u8 get_name_tag(const char *noalias name, int namelen) {
     assert(!dnl_is_null());
 
     const char *noalias sub_names[LABEL_MAXCNT];
@@ -621,7 +515,7 @@ u8_t get_name_tag(const char *noalias name, int namelen) {
     int n = split_name(name, namelen, sub_names, sub_namelens);
     assert(n > 0);
 
-    u8_t name_tag;
+    u8 name_tag;
     for (int i = 0; i < n; ++i) {
         if (exists_in_dnl(sub_names[i], sub_namelens[i], &name_tag))
             return name_tag;

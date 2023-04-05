@@ -31,13 +31,13 @@
 #define is_filter_all_v6(flags) ((flags) == (__typeof__(flags))NOAAAA_ALL)
 
 /* is enable verbose logging */
-#define IF_VERBOSE unlikely_if (g_verbose)
+#define if_verbose unlikely_if (g_verbose)
 
 extern bool        g_verbose;
 extern bool        g_reuse_port;
 extern bool        g_noip_as_chnip;
-extern uint8_t     g_noaaaa_query;
-extern uint8_t     g_default_tag;
+extern u8          g_noaaaa_query;
+extern u8          g_default_tag;
 
 extern const char *g_gfwlist_fname;
 extern const char *g_chnlist_fname;
@@ -54,6 +54,6 @@ extern skaddr_u    g_bind_skaddr;
 extern const char *g_remote_ipports[SERVER_MAXCNT];
 extern skaddr_u    g_remote_skaddrs[SERVER_MAXCNT];
 extern int         g_upstream_timeout_sec;
-extern uint8_t     g_repeat_times;
+extern u8          g_repeat_times;
 
 void opt_parse(int argc, char *argv[]);

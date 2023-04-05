@@ -26,10 +26,10 @@
     name_; \
 })
 
-extern uint32_t g_dnl_nitems;
+extern u32 g_dnl_nitems;
 
 /* initialize domain-name-list from file */
 void dnl_init(void);
 
-/* get name tag by dnl match */
-uint8_t get_name_tag(const char *noalias name, int namelen);
+/* get name tag (check `g_dnl_nitems` before calling) */
+u8 get_name_tag(const char *noalias name, int namelen);

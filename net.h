@@ -27,7 +27,7 @@ typedef union skaddr {
 #define skaddr_size(p) (skaddr_is_sin(p) ? sizeof((p)->sin) : sizeof((p)->sin6))
 
 /* socket port number typedef */
-typedef uint16_t portno_t;
+typedef u16 portno_t;
 
 /* setsockopt(SO_REUSEPORT) */
 void set_reuse_port(int sockfd);

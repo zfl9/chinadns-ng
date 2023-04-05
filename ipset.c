@@ -17,9 +17,9 @@
 
 /* #include <linux/netfilter/nfnetlink.h> */
 struct nfgenmsg {
-    uint8_t     nfgen_family;   /* AF_xxx */
-    uint8_t     version;        /* nfnetlink version */
-    uint16_t    res_id;         /* resource id (be) */
+    u8     nfgen_family;   /* AF_xxx */
+    u8     version;        /* nfnetlink version */
+    u16    res_id;         /* resource id (be) */
 };
 
 /* [nft] nfgen_family */
@@ -66,7 +66,7 @@ struct nfgenmsg {
 #define NFTA_SET_ELEM_LIST_ELEMENTS 3 /* {list_elem, ...} */
 #define NFTA_LIST_ELEM 1 /* {set_elem_*, ...} */
 #define NFTA_SET_ELEM_KEY 1 /* {data_value} */
-#define NFTA_SET_ELEM_FLAGS 3 /* uint32_t(be) */
+#define NFTA_SET_ELEM_FLAGS 3 /* u32(be) */
 #define NFTA_DATA_VALUE 1 /* binary */
 
 /* [ipset] nlattr value */
@@ -164,7 +164,7 @@ static inline const char *ipset_strerror(int errcode) {
     NLMSG_SPACE(sizeof(struct nfgenmsg)) /* nlh + nfh */ + \
     nla_size_calc(sizeof(ubyte)) /* protocol */ + \
     nla_size_calc(IPSET_MAXNAMELEN) /* set_name */ + \
-    nla_size_calc(sizeof(uint32_t)) /* lineno_nla */ + \
+    nla_size_calc(sizeof(u32)) /* lineno_nla */ + \
     nla_size_calc(0) /* adt_nla(nested) */ + \
     IP_N * ( \
         nla_size_calc(0) /* data_nla(nested) */ + \
@@ -192,7 +192,7 @@ static inline const char *ipset_strerror(int errcode) {
     nla_size_calc(0) /* key_nla(nested) */ + \
     nla_size_calc(iplen(v4)) /* data_nla(nested) */ + \
     nla_size_calc(0) /* elem_nla(nested) */ + \
-    nla_size_calc(sizeof(uint32_t)) /* flags_nla */ + \
+    nla_size_calc(sizeof(u32)) /* flags_nla */ + \
     nla_size_calc(0) /* key_nla(nested) */ + \
     nla_size_calc(iplen(v4)) /* data_nla(nested) */ + \
     NLMSG_SPACE(sizeof(struct nfgenmsg)) /* batch_end */ + \
@@ -208,8 +208,8 @@ static inline const char *ipset_strerror(int errcode) {
     NLMSG_SPACE(sizeof(struct nlmsgerr)) * IP_N * 2 /* [add] ipset: 1{v4} + 1{v6} | nft: IP_N{v4} + IP_N{v6} */ \
 )
 
-static int      s_sock   = -1; /* netlink socket fd */
-static uint32_t s_portid = 0; /* local address (port-id) */
+static int s_sock   = -1; /* netlink socket fd */
+static u32 s_portid = 0; /* local address (port-id) */
 
 static struct mmsghdr s_msgv[MSG_N];
 static struct iovec   s_iov[IOV_N];
@@ -221,10 +221,10 @@ static void *s_buf_res  = (char [BUFSZ_R]){0}; /* response {test_res or add_res}
 static void *s_test_ip4 = NULL; /* copy the target ip4 to here */
 static void *s_test_ip6 = NULL; /* copy the target ip6 to here */
 
-static int      s_add_ip4_n    = 0; /* number of ip4 to be added */
-static int      s_add_ip6_n    = 0; /* number of ip6 to be added */
-static uint32_t s_add_initlen4 = 0; /* ipset: msg | nft: batch_begin,msg,batch_end */
-static uint32_t s_add_initlen6 = 0; /* ipset: msg | nft: batch_begin,msg,batch_end */
+static int s_add_ip4_n    = 0; /* number of ip4 to be added */
+static int s_add_ip6_n    = 0; /* number of ip6 to be added */
+static u32 s_add_initlen4 = 0; /* ipset: msg | nft: batch_begin,msg,batch_end */
+static u32 s_add_initlen6 = 0; /* ipset: msg | nft: batch_begin,msg,batch_end */
 
 static bool (*test_res)(void);
 static bool test_res_ipset(void);
@@ -284,7 +284,7 @@ static int end_add_ip_nft(void);
 })
 
 #define add_elem_ipset(nlmsg, bufsz, ip, v4) ({ \
-    uint16_t attrtype_ = (v4) ? IPSET_ATTR_IPADDR_IPV4 : IPSET_ATTR_IPADDR_IPV6; \
+    u16 attrtype_ = (v4) ? IPSET_ATTR_IPADDR_IPV4 : IPSET_ATTR_IPADDR_IPV6; \
     struct nlattr *data_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, IPSET_ATTR_DATA); \
     struct nlattr *ip_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, IPSET_ATTR_IP); \
     struct nlattr *addr_nla_ = nlmsg_add_nla(nlmsg, bufsz, attrtype_|NLA_F_NET_BYTEORDER, ip, iplen(v4)); \
@@ -295,7 +295,7 @@ static int end_add_ip_nft(void);
 
 #define add_elem_nft(nlmsg, bufsz, ip, v4, flags) ({ \
     struct nlattr *elem_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_LIST_ELEM); \
-    if (flags) nlmsg_add_nla(nlmsg, bufsz, NFTA_SET_ELEM_FLAGS, &(uint32_t){htonl(flags)}, sizeof(uint32_t)); \
+    if (flags) nlmsg_add_nla(nlmsg, bufsz, NFTA_SET_ELEM_FLAGS, &(u32){htonl(flags)}, sizeof(u32)); \
     struct nlattr *key_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_SET_ELEM_KEY); \
     struct nlattr *data_nla_ = nlmsg_add_nla(nlmsg, bufsz, NFTA_DATA_VALUE|NLA_F_NET_BYTEORDER, ip, iplen(v4)); \
     nlmsg_end_nest_nla(nlmsg, key_nla_); \
@@ -309,7 +309,7 @@ static void init_req_ipset(bool v4) {
     const char *name = setname(v4);
     size_t namelen = strlen(name) + 1;
     if (namelen > IPSET_MAXNAMELEN) {
-        LOGE("name max length is %d: '%s'", IPSET_MAXNAMELEN - 1, name);
+        log_error("name max length is %d: '%s'", IPSET_MAXNAMELEN - 1, name);
         exit(1);
     }
 
@@ -330,7 +330,7 @@ static void init_req_ipset(bool v4) {
     /* setname */
     nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_SETNAME, name, namelen);
 
-    uint32_t len = nlmsg->nlmsg_len;
+    u32 len = nlmsg->nlmsg_len;
 
     /* data { ip { addr } } */
     t_ipaddr(v4) = nla_data(add_elem_ipset(nlmsg, bufsz, NULL, v4));
@@ -345,7 +345,7 @@ static void init_req_ipset(bool v4) {
     nlmsg->nlmsg_type = (NFNL_SUBSYS_IPSET << 8) | IPSET_CMD_ADD;
 
     /* lineno */
-    nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_LINENO, &(uint32_t){0}, sizeof(uint32_t));
+    nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_LINENO, &(u32){0}, sizeof(u32));
 
     /* adt { data, data, ... } */
     nlmsg_add_nest_nla(nlmsg, bufsz, IPSET_ATTR_ADT);
@@ -358,7 +358,7 @@ static void init_req_ipset(bool v4) {
     if (!(is_last)) { \
         const char *end_ = strchr(start, '@'); \
         if (!end_) { \
-            LOGE("bad format: '%s' (family_name@table_name@set_name)", setname(v4)); \
+            log_error("bad format: '%s' (family_name@table_name@set_name)", setname(v4)); \
             exit(1); \
         } \
         len_ = end_ - (start); \
@@ -366,11 +366,11 @@ static void init_req_ipset(bool v4) {
         len_ = strlen(start); \
     } \
     if (len_ < 1) { \
-        LOGE("%s min length is 1: '%.*s'", #field, (int)len_, start); \
+        log_error("%s min length is 1: '%.*s'", #field, (int)len_, start); \
         exit(1); \
     } \
     if (len_ + 1 > sizeof(field)) { \
-        LOGE("%s max length is %zu: '%.*s'", #field, sizeof(field) - 1, (int)len_, start); \
+        log_error("%s max length is %zu: '%.*s'", #field, sizeof(field) - 1, (int)len_, start); \
         exit(1); \
     } \
     memcpy(field, start, len_); \
@@ -388,7 +388,7 @@ static void init_req_nft(bool v4) {
     parse_name_nft(v4, start, table_name, false);
     parse_name_nft(v4, start, set_name, true); /* last field */
 
-    uint8_t family;
+    u8 family;
     if (strcmp(family_name, "ip") == 0)
         family = NFPROTO_IPV4;
     else if (strcmp(family_name, "ip6") == 0)   
@@ -396,7 +396,7 @@ static void init_req_nft(bool v4) {
     else if (strcmp(family_name, "inet") == 0)
         family = NFPROTO_INET;
     else {
-        LOGE("invalid family: '%s' (ip | ip6 | inet)", family_name);
+        log_error("invalid family: '%s' (ip | ip6 | inet)", family_name);
         exit(1);
     }
 
@@ -417,7 +417,7 @@ static void init_req_nft(bool v4) {
     /* set_name */
     nlmsg_add_nla(nlmsg, bufsz, NFTA_SET_ELEM_LIST_SET, set_name, strlen(set_name) + 1);
 
-    uint32_t len = nlmsg->nlmsg_len;
+    u32 len = nlmsg->nlmsg_len;
 
     /* elements {elem, elem, ...} */
     struct nlattr *elems_nla = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_SET_ELEM_LIST_ELEMENTS);
@@ -475,18 +475,18 @@ void ipset_init(void) {
     s_sock = nl_sock_create(NETLINK_NETFILTER, &s_portid);
 
     if (!strchr(g_ipset_name4, '@') && !strchr(g_ipset_name6, '@')) {
-        LOGI("ipset for ipv4: %s", g_ipset_name4);
-        LOGI("ipset for ipv6: %s", g_ipset_name6);
-        if (g_add_tagchn_ip) LOGI("add ip of tag:chn to ipset");
+        log_info("ipset for ipv4: %s", g_ipset_name4);
+        log_info("ipset for ipv6: %s", g_ipset_name6);
+        if (g_add_tagchn_ip) log_info("add ip of tag:chn to ipset");
         test_res = test_res_ipset;
         add_ip = add_ip_ipset;
         end_add_ip = end_add_ip_ipset;
         init_req_ipset(true);
         init_req_ipset(false);
     } else {
-        LOGI("nftset for ipv4: %s", g_ipset_name4);
-        LOGI("nftset for ipv6: %s", g_ipset_name6);
-        if (g_add_tagchn_ip) LOGI("add ip of tag:chn to nftset");
+        log_info("nftset for ipv4: %s", g_ipset_name4);
+        log_info("nftset for ipv6: %s", g_ipset_name6);
+        if (g_add_tagchn_ip) log_info("add ip of tag:chn to nftset");
         test_res = test_res_nft;
         add_ip = add_ip_nft;
         end_add_ip = end_add_ip_nft;
@@ -502,7 +502,7 @@ void ipset_init(void) {
     int n_sent_ = sendall(sendmmsg, s_sock, s_msgv, n_msg, 0); \
     assert(n_sent_ != 0); \
     unlikely_if (n_sent_ != (n_msg)) \
-        LOGE("failed to send nlmsg: %d != %d, (%d) %s", n_sent_, (int)(n_msg), errno, strerror(errno)); \
+        log_error("failed to send nlmsg: %d != %d, (%d) %s", n_sent_, (int)(n_msg), errno, strerror(errno)); \
     n_sent_; \
 })
 
@@ -514,7 +514,7 @@ void ipset_init(void) {
     if (n_recv_ < 0) { /* no-msg or error */ \
         if (errno == EAGAIN || errno == EWOULDBLOCK) n_recv_ = 0; \
         unlikely_if ((err_if_nomsg) || n_recv_ < 0) \
-            LOGE("failed to recv nlmsg: (%d) %s", errno, strerror(errno)); \
+            log_error("failed to recv nlmsg: (%d) %s", errno, strerror(errno)); \
     } \
     n_recv_; \
 })
@@ -524,7 +524,7 @@ static bool test_res_ipset(void) {
     int errcode = nlmsg_errcode(nlmsg);
     assert(errcode);
     if (errcode != IPSET_ERR_EXIST)
-        LOGE("error when querying ip: (%d) %s", errcode, ipset_strerror(errcode));
+        log_error("error when querying ip: (%d) %s", errcode, ipset_strerror(errcode));
     return false;
 }
 
@@ -535,7 +535,7 @@ static bool test_res_nft(void) {
     int errcode = nlmsg_errcode(nlmsg);
     assert(errcode);
     if (errcode != ENOENT) /* ENOENT: table not exists; set not exists; elem not exists */
-        LOGE("error when querying ip: (%d) %s", errcode, strerror(errcode));
+        log_error("error when querying ip: (%d) %s", errcode, strerror(errcode));
     return false;
 }
 
@@ -605,7 +605,7 @@ static int end_add_ip_ipset(void) {
         const bool v4 = v4vec[v4i];
 
         struct nlmsghdr *nlmsg = a_nlmsg(v4);
-        uint32_t initlen = a_initlen(v4);
+        u32 initlen = a_initlen(v4);
 
         struct nlattr *adt_nla = (void *)nlmsg + initlen - NLA_HDRLEN;
         nlmsg_end_nest_nla(nlmsg, adt_nla);
@@ -670,7 +670,7 @@ static int end_add_ip_nft(void) {
 
         /* batch_begin|msg|batch_end */
         void *nlmsg = a_nlmsg(v4);
-        uint32_t initlen = a_initlen(v4);
+        u32 initlen = a_initlen(v4);
 
         void *basev[5];
         size_t lenv[5];
@@ -685,7 +685,7 @@ static int end_add_ip_nft(void) {
         basev[3] = nlmsg + initlen + iplen; /* step:2 */
 
         /* elem2_nla */
-        lenv[2] = NLA_HDRLEN /* elem_h */ + nla_size_calc(sizeof(uint32_t)) /* flags */ + NLA_HDRLEN /* key_h */ + NLA_HDRLEN /* data_h */;
+        lenv[2] = NLA_HDRLEN /* elem_h */ + nla_size_calc(sizeof(u32)) /* flags */ + NLA_HDRLEN /* key_h */ + NLA_HDRLEN /* data_h */;
         basev[2] = basev[4] - lenv[3] - lenv[2];
 
         /* ip_start */
@@ -735,6 +735,6 @@ void ipset_end_add_ip(void) {
     for (int i = 0; i < n_msg; ++i) {
         const struct nlmsghdr *nlmsg = s_iov[i].iov_base;
         int errcode = nlmsg_errcode(nlmsg);
-        LOGE("error when adding ip: (%d) %s", errcode, ipset_strerror(errcode));
+        log_error("error when adding ip: (%d) %s", errcode, ipset_strerror(errcode));
     }
 }

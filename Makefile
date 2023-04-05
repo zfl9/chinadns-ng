@@ -1,25 +1,28 @@
 CC = gcc
 
 ifeq ($(findstring clang,$(shell $(CC) --version)),)
-LTOFLAGS = -flto -flto-partition=none
+	LTOFLAGS = -flto -flto-partition=none
 else
-LTOFLAGS = -flto
+	LTOFLAGS = -flto
 endif
 
 ifdef DEBUG
-CFLAGS = -pipe -std=c99 -Wall -Wextra -Og -fno-pie -fno-PIE -ggdb3
-LDFLAGS = -pipe -no-pie
+	CFLAGS = -pipe -std=c99 -Wall -Wextra -Og -fno-pie -fno-PIE -ggdb3
+	LDFLAGS = -pipe -no-pie
+	ifneq ($(DEBUG),1)
+		CFLAGS += -DDEBUG
+	endif
 else
-CFLAGS = -pipe -std=c99 -Wall -Wextra -O3 $(LTOFLAGS) -fno-pie -fno-PIE -DNDEBUG
-LDFLAGS = -pipe -no-pie -O3 $(LTOFLAGS) -s
+	CFLAGS = -pipe -std=c99 -Wall -Wextra -O3 $(LTOFLAGS) -fno-pie -fno-PIE -DNDEBUG
+	LDFLAGS = -pipe -no-pie -O3 $(LTOFLAGS) -s
 endif
 
 ifdef STATIC
-LDFLAGS += -static
+	LDFLAGS += -static
 endif
 
 ifdef LDDIRS
-LDFLAGS += $(LDDIRS)
+	LDFLAGS += $(LDDIRS)
 endif
 
 SRCS = main.c opt.c dns.c dnl.c net.c ipset.c nl.c

@@ -11,8 +11,8 @@
 bool    g_verbose       = false;
 bool    g_reuse_port    = false;
 bool    g_noip_as_chnip = false; /* default: see as not-china-ip */
-uint8_t g_noaaaa_query  = 0; /* disable AAAA query (bit flags) */
-uint8_t g_default_tag   = NAME_TAG_NONE;
+u8      g_noaaaa_query  = 0; /* disable AAAA query (bit flags) */
+u8      g_default_tag   = NAME_TAG_NONE;
 
 const char *g_gfwlist_fname = NULL; /* gfwlist filename(s) "a.txt,b.txt,..." */
 const char *g_chnlist_fname = NULL; /* chnlist filename(s) "m.txt,n.txt,..." */
@@ -29,7 +29,7 @@ skaddr_u    g_bind_skaddr;
 const char *g_remote_ipports[SERVER_MAXCNT];
 skaddr_u    g_remote_skaddrs[SERVER_MAXCNT];
 int         g_upstream_timeout_sec          = 5;
-uint8_t     g_repeat_times                  = 1; /* used by trust-dns only */
+u8          g_repeat_times                  = 1; /* used by trust-dns only */
 
 #define OPT_BIND_ADDR 'b'
 #define OPT_BIND_PORT 'l'

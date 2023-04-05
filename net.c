@@ -15,7 +15,7 @@
 /* setsockopt(IPV6_V6ONLY) */
 static inline void set_ipv6_only(int sockfd) {
     unlikely_if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &(int){1}, sizeof(int))) {
-        LOGE("setsockopt(%d, IPV6_V6ONLY): (%d) %s", sockfd, errno, strerror(errno));
+        log_error("setsockopt(%d, IPV6_V6ONLY): (%d) %s", sockfd, errno, strerror(errno));
         exit(errno);
     }
 }
@@ -23,7 +23,7 @@ static inline void set_ipv6_only(int sockfd) {
 /* setsockopt(SO_REUSEADDR) */
 static inline void set_reuse_addr(int sockfd) {
     unlikely_if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int))) {
-        LOGE("setsockopt(%d, SO_REUSEADDR): (%d) %s", sockfd, errno, strerror(errno));
+        log_error("setsockopt(%d, SO_REUSEADDR): (%d) %s", sockfd, errno, strerror(errno));
         exit(errno);
     }
 }
@@ -31,7 +31,7 @@ static inline void set_reuse_addr(int sockfd) {
 /* setsockopt(SO_REUSEPORT) */
 void set_reuse_port(int sockfd) {
     unlikely_if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int))) {
-        LOGE("setsockopt(%d, SO_REUSEPORT): (%d) %s", sockfd, errno, strerror(errno));
+        log_error("setsockopt(%d, SO_REUSEPORT): (%d) %s", sockfd, errno, strerror(errno));
         exit(errno);
     }
 }
@@ -40,7 +40,7 @@ void set_reuse_port(int sockfd) {
 int new_udp_socket(int family) {
     int sockfd = socket(family, SOCK_DGRAM | SOCK_NONBLOCK, 0); /* since Linux 2.6.27 */
     unlikely_if (sockfd < 0) {
-        LOGE("failed to create udp%c socket: (%d) %s", family == AF_INET ? '4' : '6', errno, strerror(errno));
+        log_error("failed to create udp%c socket: (%d) %s", family == AF_INET ? '4' : '6', errno, strerror(errno));
         exit(errno);
     }
     if (family == AF_INET6) set_ipv6_only(sockfd);

@@ -26,17 +26,17 @@
 #define PACKET_BUFSZ DNS_PACKET_MAXSIZE
 
 typedef struct u16_buf {
-    uint16_t len;
+    u16 len;
     char buf[];
 } u16_buf_s;
 
 typedef struct queryctx {
-    uint16_t           unique_msgid;  /* [key] globally unique msgid */
-    uint16_t           origin_msgid;  /* [value] associated original msgid */
+    u16                unique_msgid;  /* [key] globally unique msgid */
+    u16                origin_msgid;  /* [value] associated original msgid */
     int                request_time;  /* [value] query request timestamp */
-    u16_buf_s *noalias trustdns_buf;  /* [value] {uint16_t len; char buf[];} */
+    u16_buf_s *noalias trustdns_buf;  /* [value] {u16 len; char buf[];} */
     bool               chinadns_got;  /* [value] received reply from china-dns */
-    uint8_t            name_tag;      /* [value] domain name tag: gfw|chn|none */
+    u8                 name_tag;      /* [value] domain name tag: gfw|chn|none */
     skaddr_u           source_addr;   /* [value] associated client socket addr */
     myhash_hh          hh;            /* [metadata] used internally by `uthash` */
 } queryctx_t;
@@ -45,7 +45,7 @@ static int s_epollfd          = -1;
 static int s_bind_sockfd      = -1;
 static int s_remote_sockfds[] = {[0 ... SERVER_MAXIDX] = -1};
 
-static uint16_t    s_unique_msgid = 0;
+static u16         s_unique_msgid = 0;
 static queryctx_t *s_context_list = NULL;
 
 static void *noalias s_packet_buf                    = (char [PACKET_BUFSZ]){0};
@@ -58,7 +58,7 @@ static char          s_ipstr_buf[INET6_ADDRSTRLEN]   = {0};
     free(ctx); \
 })
 
-static inline const char *filter_aaaa_by_tag(uint8_t name_tag) {
+static inline const char *filter_aaaa_by_tag(u8 name_tag) {
     if (is_filter_all_v6(g_noaaaa_query))
         return "all";
 
@@ -82,14 +82,14 @@ static inline void reply_with_no_answer(const skaddr_u *noalias addr, socklen_t 
     unlikely_if (sendto(s_bind_sockfd, query, querylen, 0, &addr->sa, addrlen) < 0) {
         portno_t port = 0;
         parse_socket_addr(addr, s_ipstr_buf, &port);
-        LOGE("failed to send reply to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
+        log_error("failed to send reply to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
     }
 }
 
 /* handle local socket readable event */
 static void handle_local_packet(void) {
     unlikely_if (MYHASH_CNT(s_context_list) >= 65536U) { /* range:0~65535, count:65536 */
-        LOGE("unique_msg_id is not enough, refused to serve");
+        log_error("unique_msg_id is not enough, refused to serve");
         return;
     }
 
@@ -100,7 +100,7 @@ static void handle_local_packet(void) {
 
     if (packet_len < 0) {
         unlikely_if (errno != EAGAIN && errno != EWOULDBLOCK)
-            LOGE("failed to recv from bind socket: (%d) %s", errno, strerror(errno));
+            log_error("failed to recv from bind socket: (%d) %s", errno, strerror(errno));
         return;
     }
 
@@ -108,36 +108,36 @@ static void handle_local_packet(void) {
     int namelen = 0;
     unlikely_if (!dns_check_query(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
-    uint16_t qtype = dns_qtype(s_packet_buf, namelen);
+    u16 qtype = dns_qtype(s_packet_buf, namelen);
     int ascii_namelen = dns_ascii_namelen(namelen);
-    uint8_t name_tag = (ascii_namelen > 0 && g_dnl_nitems)
+    u8 name_tag = (ascii_namelen > 0 && g_dnl_nitems)
         ? get_name_tag(s_name_buf, ascii_namelen) : g_default_tag;
 
-    IF_VERBOSE {
+    if_verbose {
         portno_t port = 0;
         parse_socket_addr(&source_addr, s_ipstr_buf, &port);
-        LOGI("query [%s] from %s#%u (%u)", s_name_buf, s_ipstr_buf, (uint)port, (uint)s_unique_msgid);
+        log_info("query [%s] from %s#%u (%u)", s_name_buf, s_ipstr_buf, (uint)port, (uint)s_unique_msgid);
     }
 
     if (g_noaaaa_query & (NOAAAA_TAG_GFW | NOAAAA_TAG_CHN | NOAAAA_TAG_NONE) && qtype == DNS_RECORD_TYPE_AAAA) {
         const char *rule = filter_aaaa_by_tag(name_tag);
         if (rule) {
-            LOGV("filter [%s] AAAA query, rule: %s", s_name_buf, rule);
+            log_verbose("filter [%s] AAAA query, rule: %s", s_name_buf, rule);
             reply_with_no_answer(&source_addr, source_addrlen, s_packet_buf, packet_len);
             return;
         }
     }
 
-    uint16_t unique_msgid = s_unique_msgid++;
+    u16 unique_msgid = s_unique_msgid++;
     dns_header_t *dns_header = s_packet_buf;
-    uint16_t origin_msgid = dns_header->id;
+    u16 origin_msgid = dns_header->id;
     dns_header->id = unique_msgid; /* replace with new msgid */
 
     bool sent = false;
 
     for (int i = 0; i <= SERVER_MAXIDX; ++i) {
         if (s_remote_sockfds[i] < 0) continue;
-        uint8_t send_times = 1;
+        u8 send_times = 1;
         if (is_chinadns_idx(i)) {
             if (name_tag == NAME_TAG_GFW) continue;
             if (g_noaaaa_query & NOAAAA_CHINA_DNS && qtype == DNS_RECORD_TYPE_AAAA) continue;
@@ -149,17 +149,17 @@ static void handle_local_packet(void) {
         sent = true;
         const skaddr_u *addr = &g_remote_skaddrs[i];
         socklen_t addrlen = skaddr_size(addr);
-        for (int j = 0; j < send_times; ++j) {
-            LOGV("forward [%s] to %s (%s)", s_name_buf, g_remote_ipports[i], is_chinadns_idx(i) ? "chinadns" : "trustdns");
+        for (int j = 0; j < send_times; ++j) { // todo: set an upper limit to `g_repeat_times` and use `sendmmsg` instead of `sendto`
+            log_verbose("forward [%s] to %s (%s)", s_name_buf, g_remote_ipports[i], is_chinadns_idx(i) ? "chinadns" : "trustdns");
             unlikely_if (sendto(s_remote_sockfds[i], s_packet_buf, packet_len, 0, &addr->sa, addrlen) < 0)
-                LOGE("failed to send query to %s: (%d) %s", g_remote_ipports[i], errno, strerror(errno));
+                log_error("failed to send query to %s: (%d) %s", g_remote_ipports[i], errno, strerror(errno));
         }
     }
 
     if (!sent) { /* caused by no aaaa query (china or trust) */
         dns_header->id = origin_msgid;
         assert(g_noaaaa_query & (NOAAAA_CHINA_DNS | NOAAAA_TRUST_DNS));
-        LOGV("filter [%s] AAAA query, rule: %s", s_name_buf, (g_noaaaa_query & NOAAAA_CHINA_DNS) ? "chinadns" : "trustdns");
+        log_verbose("filter [%s] AAAA query, rule: %s", s_name_buf, (g_noaaaa_query & NOAAAA_CHINA_DNS) ? "chinadns" : "trustdns");
         reply_with_no_answer(&source_addr, source_addrlen, s_packet_buf, packet_len);
         return;
     }
@@ -187,7 +187,7 @@ static inline void remove_answer(void *noalias packet_buf, ssize_t *noalias pack
 
 /* name_tag: NAME_TAG_NONE */
 static inline bool use_china_reply(void *noalias packet_buf, ssize_t *noalias packet_len, int namelen) {
-    uint16_t qtype = dns_qtype(packet_buf, namelen);
+    u16 qtype = dns_qtype(packet_buf, namelen);
     if (qtype != DNS_RECORD_TYPE_A && qtype != DNS_RECORD_TYPE_AAAA)
         return true; /* only filter A/AAAA reply */
 
@@ -202,7 +202,7 @@ static inline bool use_china_reply(void *noalias packet_buf, ssize_t *noalias pa
 
         case DNS_IPCHK_NOT_CHNIP:
             if (only_chinadns) {
-                LOGV("answer ip is not china ip, change to no-answer (AAAA)");
+                log_verbose("answer ip is not china ip, change to no-answer (AAAA)");
                 remove_answer(packet_buf, packet_len, namelen);
                 return true;
             }
@@ -210,7 +210,7 @@ static inline bool use_china_reply(void *noalias packet_buf, ssize_t *noalias pa
 
         case DNS_IPCHK_NOT_FOUND:
             if (only_chinadns) return true;
-            LOGV("no ip found in reply, see as %s", g_noip_as_chnip ? "chnip (accept)" : "non-chnip (drop)");
+            log_verbose("no ip found in reply, see as %s", g_noip_as_chnip ? "chnip (accept)" : "non-chnip (drop)");
             return g_noip_as_chnip;
 
         case DNS_IPCHK_BAD_PACKET:
@@ -224,14 +224,14 @@ static inline bool use_china_reply(void *noalias packet_buf, ssize_t *noalias pa
 
 /* name_tag: NAME_TAG_NONE && !chinadns_got */
 static inline bool use_trust_reply(void *noalias packet_buf, ssize_t *noalias packet_len, int namelen) {
-    uint16_t qtype = dns_qtype(packet_buf, namelen);
+    u16 qtype = dns_qtype(packet_buf, namelen);
 
     bool only_trustdns = g_noaaaa_query & NOAAAA_CHINA_DNS && qtype == DNS_RECORD_TYPE_AAAA;
     if (!only_trustdns)
         return false; /* waiting for chinadns return */
 
     if (g_noaaaa_query & NOAAAA_TRUST_IPCHK && dns_test_ip(packet_buf, *packet_len, namelen) == DNS_IPCHK_NOT_CHNIP) {
-        LOGV("answer ip is not china ip, change to no-answer (AAAA)");
+        log_verbose("answer ip is not china ip, change to no-answer (AAAA)");
         remove_answer(packet_buf, packet_len, namelen);
     }
     return true;
@@ -245,7 +245,7 @@ static void handle_remote_packet(int index) {
 
     if (packet_len < 0) {
         unlikely_if (errno != EAGAIN && errno != EWOULDBLOCK)
-            LOGE("failed to recv from %s: (%d) %s", remote_ipport, errno, strerror(errno));
+            log_error("failed to recv from %s: (%d) %s", remote_ipport, errno, strerror(errno));
         return;
     }
 
@@ -257,7 +257,7 @@ static void handle_remote_packet(int index) {
     dns_header_t *dns_header = s_packet_buf;
     MYHASH_GET(s_context_list, context, &dns_header->id, sizeof(dns_header->id));
     if (!context) {
-        LOGV("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
+        log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
         return;
     }
 
@@ -266,17 +266,17 @@ static void handle_remote_packet(int index) {
 
     if (is_chinadns_idx(index)) {
         if (context->name_tag == NAME_TAG_CHN || use_china_reply(reply_buffer, &reply_length, namelen)) {
-            LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
             if (context->trustdns_buf)
-                LOGV("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
+                log_verbose("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
             if (g_add_tagchn_ip && context->name_tag == NAME_TAG_CHN) {
-                LOGV("add the answer ip of name-tag:chn [%s] to ipset", s_name_buf);
+                log_verbose("add the answer ip of name-tag:chn [%s] to ipset", s_name_buf);
                 dns_add_ip(reply_buffer, reply_length, namelen);
             }
         } else {
-            LOGV("reply [%s] from %s (%u), result: filter", s_name_buf, remote_ipport, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: filter", s_name_buf, remote_ipport, (uint)dns_header->id);
             if (context->trustdns_buf) { /* trustdns returns before chinadns */
-                LOGV("reply [%s] from <previous-trustdns> (%u), result: accept", s_name_buf, (uint)dns_header->id);
+                log_verbose("reply [%s] from <previous-trustdns> (%u), result: accept", s_name_buf, (uint)dns_header->id);
                 reply_buffer = context->trustdns_buf->buf;
                 reply_length = context->trustdns_buf->len;
             } else {
@@ -286,16 +286,16 @@ static void handle_remote_packet(int index) {
         }
     } else {
         if (context->name_tag == NAME_TAG_GFW || context->chinadns_got || use_trust_reply(reply_buffer, &reply_length, namelen)) {
-            LOGV("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
         } else {
             /* trustdns returns before chinadns */
             if (!context->trustdns_buf) {
-                LOGV("reply [%s] from %s (%u), result: delay", s_name_buf, remote_ipport, (uint)dns_header->id);
+                log_verbose("reply [%s] from %s (%u), result: delay", s_name_buf, remote_ipport, (uint)dns_header->id);
                 context->trustdns_buf = malloc(sizeof(*context->trustdns_buf) + packet_len);
                 context->trustdns_buf->len = packet_len; /* dns reply length */
                 memcpy(context->trustdns_buf->buf, s_packet_buf, packet_len);
             } else {
-                LOGV("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
+                log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
             }
             return;
         }
@@ -307,14 +307,14 @@ static void handle_remote_packet(int index) {
     unlikely_if (sendto(s_bind_sockfd, reply_buffer, reply_length, 0, &context->source_addr.sa, source_addrlen) < 0) {
         portno_t port = 0;
         parse_socket_addr(&context->source_addr, s_ipstr_buf, &port);
-        LOGE("failed to send reply to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
+        log_error("failed to send reply to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
     }
     free_context(context);
 }
 
 /* handle upstream reply timeout event */
 static void handle_timeout_event(queryctx_t *context) {
-    LOGE("upstream dns server reply timeout, unique msgid: %u", (uint)context->unique_msgid);
+    log_error("upstream dns server reply timeout, unique msgid: %u", (uint)context->unique_msgid);
     free_context(context);
 }
 
@@ -323,44 +323,44 @@ int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IOLBF, 256);
     opt_parse(argc, argv);
 
-    LOGI("local listen addr: %s#%u", g_bind_ipstr, (uint)g_bind_portno);
+    log_info("local listen addr: %s#%u", g_bind_ipstr, (uint)g_bind_portno);
 
-    if (g_remote_ipports[CHINADNS1_IDX]) LOGI("chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
-    if (g_remote_ipports[CHINADNS2_IDX]) LOGI("chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
-    if (g_remote_ipports[TRUSTDNS1_IDX]) LOGI("trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
-    if (g_remote_ipports[TRUSTDNS2_IDX]) LOGI("trustdns server#2: %s", g_remote_ipports[TRUSTDNS2_IDX]);
+    if (g_remote_ipports[CHINADNS1_IDX]) log_info("chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
+    if (g_remote_ipports[CHINADNS2_IDX]) log_info("chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
+    if (g_remote_ipports[TRUSTDNS1_IDX]) log_info("trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
+    if (g_remote_ipports[TRUSTDNS2_IDX]) log_info("trustdns server#2: %s", g_remote_ipports[TRUSTDNS2_IDX]);
 
     bool need_ipset = g_add_tagchn_ip || g_default_tag == NAME_TAG_NONE || g_noaaaa_query & (NOAAAA_CHINA_IPCHK|NOAAAA_TRUST_IPCHK);
     if (need_ipset) ipset_init();
 
     dnl_init();
 
-    LOGI("default domain name tag: %s", nametag_val2name(g_default_tag));
-    LOGI("%s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
-    LOGI("dns query timeout: %d seconds", g_upstream_timeout_sec);
+    log_info("default domain name tag: %s", nametag_val2name(g_default_tag));
+    log_info("%s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
+    log_info("dns query timeout: %d seconds", g_upstream_timeout_sec);
 
     if (is_filter_all_v6(g_noaaaa_query))
-        LOGI("filter AAAA for all name");
+        log_info("filter AAAA for all name");
     else if (g_noaaaa_query != 0) {
         if (g_noaaaa_query & NOAAAA_TAG_GFW)
-            LOGI("filter AAAA for gfwlist name");
+            log_info("filter AAAA for gfwlist name");
         if (g_noaaaa_query & NOAAAA_TAG_CHN)
-            LOGI("filter AAAA for chnlist name");
+            log_info("filter AAAA for chnlist name");
         if (g_noaaaa_query & NOAAAA_TAG_NONE)
-            LOGI("filter AAAA for tag_none name");
+            log_info("filter AAAA for tag_none name");
         if (g_noaaaa_query & NOAAAA_CHINA_DNS)
-            LOGI("filter AAAA for china upstream");
+            log_info("filter AAAA for china upstream");
         if (g_noaaaa_query & NOAAAA_TRUST_DNS)
-            LOGI("filter AAAA for trust upstream");
+            log_info("filter AAAA for trust upstream");
         if (g_noaaaa_query & NOAAAA_CHINA_IPCHK)
-            LOGI("filter AAAA, check ip for chinadns");
+            log_info("filter AAAA, check ip for chinadns");
         if (g_noaaaa_query & NOAAAA_TRUST_IPCHK)
-            LOGI("filter AAAA, check ip for trustdns");
+            log_info("filter AAAA, check ip for trustdns");
     }
 
-    if (g_repeat_times > 1) LOGI("enable repeat mode, times: %u", (uint)g_repeat_times);
-    if (g_reuse_port) LOGI("enable `SO_REUSEPORT` feature");
-    LOGV("print the verbose running log");
+    if (g_repeat_times > 1) log_info("enable repeat mode, times: %u", (uint)g_repeat_times);
+    if (g_reuse_port) log_info("enable `SO_REUSEPORT` feature");
+    log_verbose("print the verbose running log");
 
     /* create listen socket */
     s_bind_sockfd = new_udp_socket(skaddr_family(&g_bind_skaddr));
@@ -368,7 +368,7 @@ int main(int argc, char *argv[]) {
 
     /* bind address to listen socket */
     unlikely_if (bind(s_bind_sockfd, &g_bind_skaddr.sa, skaddr_size(&g_bind_skaddr))) {
-        LOGE("failed to bind address to socket: (%d) %s", errno, strerror(errno));
+        log_error("failed to bind address to socket: (%d) %s", errno, strerror(errno));
         return errno;
     }
 
@@ -380,7 +380,7 @@ int main(int argc, char *argv[]) {
 
     /* create epoll fd */
     unlikely_if ((s_epollfd = epoll_create1(0)) < 0) {
-        LOGE("failed to create epoll fd: (%d) %s", errno, strerror(errno));
+        log_error("failed to create epoll fd: (%d) %s", errno, strerror(errno));
         return errno;
     }
 
@@ -391,7 +391,7 @@ int main(int argc, char *argv[]) {
     ev.events = EPOLLIN;
     ev.data.u32 = BINDSOCK_MARK;
     unlikely_if (epoll_ctl(s_epollfd, EPOLL_CTL_ADD, s_bind_sockfd, &ev)) {
-        LOGE("failed to register epoll event: (%d) %s", errno, strerror(errno));
+        log_error("failed to register epoll event: (%d) %s", errno, strerror(errno));
         return errno;
     }
 
@@ -401,7 +401,7 @@ int main(int argc, char *argv[]) {
         ev.events = EPOLLIN;
         ev.data.u32 = i;
         unlikely_if (epoll_ctl(s_epollfd, EPOLL_CTL_ADD, s_remote_sockfds[i], &ev)) {
-            LOGE("failed to register epoll event: (%d) %s", errno, strerror(errno));
+            log_error("failed to register epoll event: (%d) %s", errno, strerror(errno));
             return errno;
         }
     }
@@ -413,30 +413,30 @@ int main(int argc, char *argv[]) {
         int event_count = retry_EINTR(epoll_wait(s_epollfd, events, EPOLL_MAXEVENTS, timeout_ms));
 
         unlikely_if (event_count < 0)
-            LOGE("epoll_wait() reported an error: (%d) %s", errno, strerror(errno));
+            log_error("epoll_wait() reported an error: (%d) %s", errno, strerror(errno));
 
         /* handle socket event */
         for (int i = 0; i < event_count; ++i) {
-            uint32_t ev = events[i].events;
-            uint32_t data = events[i].data.u32;
+            u32 ev = events[i].events;
+            u32 data = events[i].data.u32;
 
             unlikely_if (ev & EPOLLERR) {
                 /* an error occurred */
                 switch (data) {
                     case CHINADNS1_IDX:
-                        LOGE("upstream server socket error(%s): (%d) %s", g_remote_ipports[CHINADNS1_IDX], errno, strerror(errno));
+                        log_error("upstream socket error %s: (%d) %s", g_remote_ipports[CHINADNS1_IDX], errno, strerror(errno));
                         break;
                     case CHINADNS2_IDX:
-                        LOGE("upstream server socket error(%s): (%d) %s", g_remote_ipports[CHINADNS2_IDX], errno, strerror(errno));
+                        log_error("upstream socket error %s: (%d) %s", g_remote_ipports[CHINADNS2_IDX], errno, strerror(errno));
                         break;
                     case TRUSTDNS1_IDX:
-                        LOGE("upstream server socket error(%s): (%d) %s", g_remote_ipports[TRUSTDNS1_IDX], errno, strerror(errno));
+                        log_error("upstream socket error %s: (%d) %s", g_remote_ipports[TRUSTDNS1_IDX], errno, strerror(errno));
                         break;
                     case TRUSTDNS2_IDX:
-                        LOGE("upstream server socket error(%s): (%d) %s", g_remote_ipports[TRUSTDNS2_IDX], errno, strerror(errno));
+                        log_error("upstream socket error %s: (%d) %s", g_remote_ipports[TRUSTDNS2_IDX], errno, strerror(errno));
                         break;
                     case BINDSOCK_MARK:
-                        LOGE("local udp listen socket error: (%d) %s", errno, strerror(errno));
+                        log_error("listen socket error: (%d) %s", errno, strerror(errno));
                         break;
                 }
             } else if (ev & EPOLLIN) {
