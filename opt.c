@@ -22,14 +22,14 @@ bool        g_add_tagchn_ip = false; /* add the answer ip of name-tag:chn to ips
 const char *g_ipset_name4 = "chnroute"; /* ipset:"set_name" | nftset:"family_name@table_name@set_name" */
 const char *g_ipset_name6 = "chnroute6"; /* ipset:"set_name" | nftset:"family_name@table_name@set_name" */
 
-const char *g_bind_ipstr  = "127.0.0.1";
-portno_t    g_bind_portno = 65353;
-skaddr_u    g_bind_skaddr;
+const char     *g_bind_ipstr  = "127.0.0.1";
+u16             g_bind_portno = 65353;
+union skaddr    g_bind_skaddr;
 
-const char *g_remote_ipports[SERVER_MAXCNT];
-skaddr_u    g_remote_skaddrs[SERVER_MAXCNT];
-int         g_upstream_timeout_sec          = 5;
-u8          g_repeat_times                  = 1; /* used by trust-dns only */
+const char     *g_remote_ipports[SERVER_MAXCNT];
+union skaddr    g_remote_skaddrs[SERVER_MAXCNT];
+int             g_upstream_timeout_sec          = 5;
+u8              g_repeat_times                  = 1; /* used by trust-dns only */
 
 #define OPT_BIND_ADDR 'b'
 #define OPT_BIND_PORT 'l'
@@ -173,7 +173,7 @@ static void parse_upstream_addrs(const char *arg, bool is_chinadns) {
         else
             has_next = 0;
 
-        portno_t port = 53;
+        u16 port = 53;
         char *port_str = strchr(ipstr, '#');
         if (port_str) {
             *port_str++ = 0;

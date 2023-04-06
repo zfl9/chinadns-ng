@@ -62,7 +62,7 @@ int get_ipstr_family(const char *noalias ipstr) {
 }
 
 /* build v4/v6 address structure */
-void build_socket_addr(int family, skaddr_u *noalias skaddr, const char *noalias ipstr, portno_t portno) {
+void build_socket_addr(int family, union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno) {
     if (family == AF_INET) {
         skaddr->sin.sin_family = AF_INET;
         inet_pton(AF_INET, ipstr, &skaddr->sin.sin_addr);
@@ -75,7 +75,7 @@ void build_socket_addr(int family, skaddr_u *noalias skaddr, const char *noalias
 }
 
 /* parse v4/v6 address structure */
-void parse_socket_addr(const skaddr_u *noalias skaddr, char *noalias ipstr, portno_t *noalias portno) {
+void parse_socket_addr(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno) {
     if (skaddr_is_sin(skaddr)) {
         inet_ntop(AF_INET, &skaddr->sin.sin_addr, ipstr, INET_ADDRSTRLEN);
         *portno = ntohs(skaddr->sin.sin_port);

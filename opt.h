@@ -47,13 +47,13 @@ extern bool        g_add_tagchn_ip;
 extern const char *g_ipset_name4;
 extern const char *g_ipset_name6;
 
-extern const char *g_bind_ipstr;
-extern portno_t    g_bind_portno;
-extern skaddr_u    g_bind_skaddr;
+extern const char  *g_bind_ipstr;
+extern u16          g_bind_portno;
+extern union skaddr g_bind_skaddr;
 
-extern const char *g_remote_ipports[SERVER_MAXCNT];
-extern skaddr_u    g_remote_skaddrs[SERVER_MAXCNT];
-extern int         g_upstream_timeout_sec;
-extern u8          g_repeat_times;
+extern const char   *g_remote_ipports[SERVER_MAXCNT];
+extern union skaddr  g_remote_skaddrs[SERVER_MAXCNT];
+extern int           g_upstream_timeout_sec;
+extern u8            g_repeat_times;
 
 void opt_parse(int argc, char *argv[]);
