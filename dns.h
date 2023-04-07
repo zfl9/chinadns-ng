@@ -96,15 +96,15 @@ int dns_test_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen)
 /* add the answer ip to ipset (chnroute/chnroute6) */
 void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen);
 
-#define dns_qtype(buf, namelen) ({ \
-    const struct dns_query *q_ = (void *)(buf) + sizeof(struct dns_header) + (namelen); \
-    ntohs(q_->qtype); \
-})
+static inline u16 dns_qtype(const void *noalias packet_buf, int namelen) {
+    const struct dns_query *q = packet_buf + sizeof(struct dns_header) + namelen;
+    return ntohs(q->qtype);
+}
 
 /* "\0" => 0 */
 /* "\1x\0" => 1 */
 /* "\3foo\3com\0" => 7 */
-#define dns_ascii_namelen(namelen) ({ \
-    int n_ = (int)(namelen) - 2; \
-    n_ > 0 ? n_ : 0; \
-})
+static inline int dns_ascii_namelen(int namelen) {
+    int n = namelen - 2;
+    return n > 0 ? n : 0;
+}
