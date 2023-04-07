@@ -6,10 +6,10 @@
 #include "opt.h"
 
 #define log_write(color, level, fmt, args...) ({ \
-    struct tm *t_ = localtime(&(time_t){time(NULL)}); \
+    const struct tm *tm_ = localtime(&(time_t){time(NULL)}); \
     printf("\e[" color ";1m%04d-%02d-%02d %02d:%02d:%02d " level "\e[0m \e[1m[%s:%d %s]\e[0m " fmt "\n", \
-            t_->tm_year + 1900, t_->tm_mon + 1, t_->tm_mday, \
-            t_->tm_hour,        t_->tm_min,     t_->tm_sec, \
+            tm_->tm_year + 1900, tm_->tm_mon + 1, tm_->tm_mday, \
+            tm_->tm_hour,        tm_->tm_min,     tm_->tm_sec, \
             __FILE__, __LINE__, __func__, ##args); \
 })
 
