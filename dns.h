@@ -9,7 +9,7 @@
 
 /* dns packet max size (in bytes) */
 #define DNS_PACKET_MAXSIZE 1472 /* compatible with edns */
-#define DNS_PACKET_MINSIZE (sizeof(dns_header_t) + DNS_NAME_ENC_MINLEN + sizeof(dns_query_t))
+#define DNS_PACKET_MINSIZE (sizeof(struct dns_header) + DNS_NAME_ENC_MINLEN + sizeof(struct dns_query))
 
 /* name max len (ASCII name) */
 #define DNS_NAME_MAXLEN 253 /* "www.example.com" length:15 */
@@ -32,7 +32,7 @@
 #define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
 
 /* dns header structure (fixed length) */
-typedef struct {
+struct dns_header {
     u16 id; // id of message
 #if defined(__BIG_ENDIAN_BITFIELD)
     u8  qr:1; // query=0; response=1
@@ -59,24 +59,24 @@ typedef struct {
     u16 answer_count; // answer record count
     u16 authority_count; // authority record count
     u16 additional_count; // additional record count
-} __attribute__((packed)) dns_header_t;
+} __attribute__((packed));
 
 /* fixed length of query structure */
-typedef struct {
+struct dns_query {
     // field qname; variable length
     u16 qtype; // query type: A/AAAA/CNAME/MX, etc.
     u16 qclass; // query class: internet=0x0001
-} __attribute__((packed)) dns_query_t;
+} __attribute__((packed));
 
 /* fixed length of record structure */
-typedef struct {
+struct dns_record {
     // field rname; variable length
     u16 rtype; // record type: A/AAAA/CNAME/MX, etc.
     u16 rclass; // record class: internet=0x0001
     u32 rttl; // record ttl value (in seconds)
     u16 rdatalen; // record data length
     char     rdata[]; // record data pointer (sizeof=0)
-} __attribute__((packed)) dns_record_t;
+} __attribute__((packed));
 
 /* check dns query, `name_buf` used to get domain name, return true if valid */
 bool dns_check_query(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
@@ -97,7 +97,7 @@ int dns_test_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen)
 void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen);
 
 #define dns_qtype(buf, namelen) ({ \
-    const dns_query_t *q_ = (void *)(buf) + sizeof(dns_header_t) + (namelen); \
+    const struct dns_query *q_ = (void *)(buf) + sizeof(struct dns_header) + (namelen); \
     ntohs(q_->qtype); \
 })
 

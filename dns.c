@@ -63,7 +63,7 @@ static bool check_packet(bool is_query,
     }
 
     /* check header */
-    const dns_header_t *header = packet_buf;
+    const struct dns_header *header = packet_buf;
     unlikely_if (header->qr != (is_query ? DNS_QR_QUERY : DNS_QR_REPLY)) {
         log_error("this is a %s packet, but header->qr is %u", is_query ? "query" : "reply", (uint)header->qr);
         return false;
@@ -77,9 +77,9 @@ static bool check_packet(bool is_query,
         return false;
     }
 
-    /* move to question section (name + dns_query_t) */
-    packet_buf += sizeof(dns_header_t);
-    packet_len -= sizeof(dns_header_t);
+    /* move to question section (name + struct dns_query) */
+    packet_buf += sizeof(struct dns_header);
+    packet_len -= sizeof(struct dns_header);
 
     /* search the queried domain name */
     /* encoded name: "\3www\6google\3com\0" */
@@ -108,18 +108,18 @@ static bool check_packet(bool is_query,
     if (p_namelen)
         *p_namelen = namelen;
 
-    /* move to dns_query_t pos */
+    /* move to struct dns_query pos */
     packet_buf += namelen;
     packet_len -= namelen;
 
     /* check remaining length */
-    unlikely_if (packet_len < (ssize_t)sizeof(dns_query_t)) {
-        log_error("remaining length is less than sizeof(dns_query_t): %zd < %zu", packet_len, sizeof(dns_query_t));
+    unlikely_if (packet_len < (ssize_t)sizeof(struct dns_query)) {
+        log_error("remaining length is less than sizeof(struct dns_query): %zd < %zu", packet_len, sizeof(struct dns_query));
         return false;
     }
 
     /* check query class */
-    const dns_query_t *query_ptr = packet_buf;
+    const struct dns_query *query_ptr = packet_buf;
     unlikely_if (ntohs(query_ptr->qclass) != DNS_CLASS_INTERNET) {
         log_error("only supports standard internet query class: %u", (uint)ntohs(query_ptr->qclass));
         return false;
@@ -155,8 +155,8 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
         }
     }
 
-    unlikely_if (len < (ssize_t)sizeof(dns_record_t)) {
-        log_error("remaining length is less than sizeof(dns_record_t): %zd < %zu", len, sizeof(dns_record_t));
+    unlikely_if (len < (ssize_t)sizeof(struct dns_record)) {
+        log_error("remaining length is less than sizeof(struct dns_record): %zd < %zu", len, sizeof(struct dns_record));
         return false;
     }
 
@@ -168,26 +168,26 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
 static bool foreach_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen,
     bool (*f)(const void *noalias ip, bool v4, void *ud), void *ud)
 {
-    const dns_header_t *h = packet_buf;
+    const struct dns_header *h = packet_buf;
     u16 answer_count = ntohs(h->answer_count);
 
     /* move to answer section */
-    packet_buf += sizeof(dns_header_t) + namelen + sizeof(dns_query_t);
-    packet_len -= sizeof(dns_header_t) + namelen + sizeof(dns_query_t);
+    packet_buf += sizeof(struct dns_header) + namelen + sizeof(struct dns_query);
+    packet_len -= sizeof(struct dns_header) + namelen + sizeof(struct dns_query);
 
     /* find the first A/AAAA record */
     for (u16 i = 0; i < answer_count; ++i) {
         unlikely_if (!skip_name(&packet_buf, &packet_len))
             return false;
 
-        const dns_record_t *record = packet_buf;
+        const struct dns_record *record = packet_buf;
         unlikely_if (ntohs(record->rclass) != DNS_CLASS_INTERNET) {
             log_error("only supports standard internet query class: %u", (uint)ntohs(record->rclass));
             return false;
         }
 
         u16 rdatalen = ntohs(record->rdatalen);
-        ssize_t recordlen = sizeof(dns_record_t) + rdatalen;
+        ssize_t recordlen = sizeof(struct dns_record) + rdatalen;
         unlikely_if (packet_len < recordlen) {
             log_error("remaining length is less than sizeof(record): %zd < %zd", packet_len, recordlen);
             return false;

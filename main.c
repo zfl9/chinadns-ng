@@ -25,28 +25,28 @@
 
 #define PACKET_BUFSZ DNS_PACKET_MAXSIZE
 
-typedef struct u16_buf {
+struct u16_buf {
     u16 len;
     char buf[];
-} u16_buf_s;
+};
 
-typedef struct queryctx {
-    u16                unique_msgid;  /* [key] globally unique msgid */
-    u16                origin_msgid;  /* [value] associated original msgid */
-    int                request_time;  /* [value] query request timestamp */
-    u16_buf_s *noalias trustdns_buf;  /* [value] {u16 len; char buf[];} */
-    bool               chinadns_got;  /* [value] received reply from china-dns */
-    u8                 name_tag;      /* [value] domain name tag: gfw|chn|none */
-    union skaddr       source_addr;   /* [value] associated client socket addr */
-    myhash_hh          hh;            /* [metadata] used internally by `uthash` */
-} queryctx_t;
+struct queryctx {
+    u16                     unique_msgid;  /* [key] globally unique msgid */
+    u16                     origin_msgid;  /* [value] associated original msgid */
+    int                     request_time;  /* [value] query request timestamp */
+    struct u16_buf *noalias trustdns_buf;  /* [value] {u16 len; char buf[];} */
+    bool                    chinadns_got;  /* [value] received reply from china-dns */
+    u8                      name_tag;      /* [value] domain name tag: gfw|chn|none */
+    union skaddr            source_addr;   /* [value] associated client socket addr */
+    myhash_hh               hh;            /* [metadata] used internally by `uthash` */
+};
 
 static int s_epollfd          = -1;
 static int s_bind_sockfd      = -1;
 static int s_remote_sockfds[] = {[0 ... SERVER_MAXIDX] = -1};
 
-static u16         s_unique_msgid = 0;
-static queryctx_t *s_context_list = NULL;
+static u16              s_unique_msgid = 0;
+static struct queryctx *s_context_list = NULL;
 
 static void *noalias s_packet_buf                    = (char [PACKET_BUFSZ]){0};
 static char          s_name_buf[DNS_NAME_MAXLEN + 1] = {0};
@@ -76,7 +76,7 @@ static inline const char *filter_aaaa_by_tag(u8 name_tag) {
 }
 
 static inline void reply_with_no_answer(const union skaddr *noalias addr, socklen_t addrlen, void *noalias query, size_t querylen) {
-    dns_header_t *header = query;
+    struct dns_header *header = query;
     header->qr = DNS_QR_REPLY;
     header->rcode = DNS_RCODE_NOERROR;
     unlikely_if (sendto(s_bind_sockfd, query, querylen, 0, &addr->sa, addrlen) < 0) {
@@ -129,7 +129,7 @@ static void handle_local_packet(void) {
     }
 
     u16 unique_msgid = s_unique_msgid++;
-    dns_header_t *dns_header = s_packet_buf;
+    struct dns_header *dns_header = s_packet_buf;
     u16 origin_msgid = dns_header->id;
     dns_header->id = unique_msgid; /* replace with new msgid */
 
@@ -164,7 +164,7 @@ static void handle_local_packet(void) {
         return;
     }
 
-    queryctx_t *context = malloc(sizeof(queryctx_t));
+    struct queryctx *context = malloc(sizeof(*context));
     context->unique_msgid = unique_msgid;
     context->origin_msgid = origin_msgid;
     context->request_time = time(NULL);
@@ -176,13 +176,13 @@ static void handle_local_packet(void) {
 }
 
 static inline void remove_answer(void *noalias packet_buf, ssize_t *noalias packet_len, int namelen) {
-    dns_header_t *h = packet_buf;
+    struct dns_header *h = packet_buf;
     h->qr = DNS_QR_REPLY;
     h->rcode = DNS_RCODE_NOERROR;
     h->answer_count = 0;
     h->authority_count = 0;
     h->additional_count = 0;
-    *packet_len = sizeof(dns_header_t) + namelen + sizeof(dns_query_t);
+    *packet_len = sizeof(struct dns_header) + namelen + sizeof(struct dns_query);
 }
 
 /* name_tag: NAME_TAG_NONE */
@@ -253,8 +253,8 @@ static void handle_remote_packet(int index) {
     int namelen = 0;
     unlikely_if (!dns_check_reply(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
-    queryctx_t *context = NULL;
-    dns_header_t *dns_header = s_packet_buf;
+    struct queryctx *context = NULL;
+    struct dns_header *dns_header = s_packet_buf;
     MYHASH_GET(s_context_list, context, &dns_header->id, sizeof(dns_header->id));
     if (!context) {
         log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
@@ -313,7 +313,7 @@ static void handle_remote_packet(int index) {
 }
 
 /* handle upstream reply timeout event */
-static void handle_timeout_event(queryctx_t *context) {
+static void handle_timeout_event(struct queryctx *context) {
     log_error("upstream dns server reply timeout, unique msgid: %u", (uint)context->unique_msgid);
     free_context(context);
 }
@@ -462,7 +462,7 @@ int main(int argc, char *argv[]) {
         }
 
         /* handle timeout event */
-        queryctx_t *cur, *tmp;
+        struct queryctx *cur, *tmp;
         int now = time(NULL), remain_sec;
         MYHASH_FOR(s_context_list, cur, tmp) {
             remain_sec = cur->request_time + g_upstream_timeout_sec - now;

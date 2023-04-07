@@ -512,6 +512,7 @@ u8 get_name_tag(const char *noalias name, int namelen) {
     int sub_namelens[LABEL_MAXCNT];
 
     assert(namelen > 0);
+    assert((u8)namelen == namelen);
     int n = split_name(name, namelen, sub_names, sub_namelens);
     assert(n > 0);
 
