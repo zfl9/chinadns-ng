@@ -273,7 +273,7 @@ static void add_to_map2(u32 nameaddr) {
     struct map *noalias map = &s_map2;
     if (map_is_null(map))
         map_set_notnull(map, DEFAULT_LCAP, s_map1.lcap);
-redo:
+redo:;
     struct bucket *noalias bucket = get_bucket_by_nameaddr(map, nameaddr);
     switch (bucket->state) {
         case BUCKET_FREE:
