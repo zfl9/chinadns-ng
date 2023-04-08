@@ -4,7 +4,6 @@
 #include "net.h"
 #include "log.h"
 #include "nl.h"
-#include <stdint.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>

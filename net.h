@@ -1,7 +1,7 @@
 #pragma once
 
 #include "misc.h"
-#include <stdint.h>
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include <assert.h>
 
@@ -26,20 +26,15 @@ union skaddr {
 #define skaddr_is_sin6(p) (skaddr_family(p) == AF_INET6)
 #define skaddr_size(p) (skaddr_is_sin(p) ? sizeof((p)->sin) : sizeof((p)->sin6))
 
-/* setsockopt(SO_REUSEPORT) */
 void set_reuse_port(int sockfd);
 
-/* create a udp socket (v4/v6) */
 int new_udp_socket(int family);
 
-/* AF_INET or AF_INET6 or -1(invalid) */
 int get_ipstr_family(const char *noalias ipstr);
 
-/* build ipv4/ipv6 address structure */
-void build_socket_addr(int family, union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno);
+void skaddr_build(int family, union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno);
 
-/* parse ipv4/ipv6 address structure */
-void parse_socket_addr(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno);
+void skaddr_parse(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno);
 
 /* try to send all for `f(fd, base, len, args...)` (blocking send) */
 #define sendall(f, fd, base, len, args...) ({ \

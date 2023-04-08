@@ -1,7 +1,6 @@
 #pragma once
 
 #include "misc.h"
-#include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <arpa/inet.h>

@@ -2,8 +2,6 @@
 
 #include "misc.h"
 #include "log.h"
-#include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include <linux/netlink.h>
@@ -14,7 +12,7 @@ int nl_sock_create(int protocol, u32 *noalias src_portid);
 #define nlmsg_len_inc(nlmsg, bufsz, datalen) ({ \
     (nlmsg)->nlmsg_len += NLMSG_ALIGN(datalen); \
     unlikely_if ((nlmsg)->nlmsg_len > (bufsz)) { \
-        log_fatal("nlmsg_len:%lu > bufsz:%lu\n", \
+        log_fatal("nlmsg_len:%lu > bufsz:%lu", \
             (ulong)(nlmsg)->nlmsg_len, (ulong)(bufsz)); \
     } \
 })
@@ -66,5 +64,5 @@ static inline struct nlattr *nlmsg_add_nla(
 /* nlmsgerr */
 #define nlmsg_errcode(nlmsg) ({ \
     assert((nlmsg)->nlmsg_type == NLMSG_ERROR); \
-    -cast(const struct nlmsgerr *, NLMSG_DATA(nlmsg))->error; \
+    -cast(const struct nlmsgerr *, nlmsg_data(nlmsg))->error; \
 })

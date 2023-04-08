@@ -186,7 +186,7 @@ static void parse_upstream_addrs(const char *arg, bool is_chinadns) {
             err_exit("invalid server ip address: %s", ipstr);
 
         int idx = (is_chinadns ? CHINADNS1_IDX : TRUSTDNS1_IDX) + cnt - 1;
-        build_socket_addr(family, &g_upstream_skaddrs[idx], ipstr, port);
+        skaddr_build(family, &g_upstream_skaddrs[idx], ipstr, port);
         g_upstream_addrs[idx] = addr;
     } while (has_next);
 }
@@ -237,9 +237,11 @@ static void parse_noaaaa_rules(const char *rules) {
 
     /* try simplify to NOAAAA_ALL */
     if (!is_filter_all_v6(g_noaaaa_query)) {
-        if ((g_noaaaa_query & NOAAAA_TAG_GFW) && (g_noaaaa_query & NOAAAA_TAG_CHN) && (g_noaaaa_query & NOAAAA_TAG_NONE))
+        u8 all_tag = NOAAAA_TAG_GFW|NOAAAA_TAG_CHN|NOAAAA_TAG_NONE;
+        u8 all_dns = NOAAAA_CHINA_DNS|NOAAAA_TRUST_DNS;
+        if ((g_noaaaa_query & all_tag) == all_tag)
             g_noaaaa_query = NOAAAA_ALL;
-        else if ((g_noaaaa_query & NOAAAA_CHINA_DNS) && (g_noaaaa_query & NOAAAA_TRUST_DNS))
+        else if ((g_noaaaa_query & all_dns) == all_dns)
             g_noaaaa_query = NOAAAA_ALL;
     }
 }
@@ -260,28 +262,36 @@ void opt_parse(int argc, char *argv[]) {
                     err_exit("invalid listen ip address: %s", optarg);
                 g_bind_ip = optarg;
                 break;
+
             case OPT_BIND_PORT:
                 if ((g_bind_port = strtoul(optarg, NULL, 10)) == 0)
                     err_exit("invalid listen port number: %s", optarg);
                 break;
+
             case OPT_CHINA_DNS:
                 chinadns_optarg = optarg;
                 break;
+
             case OPT_TRUST_DNS:
                 trustdns_optarg = optarg;
                 break;
+
             case OPT_IPSET_NAME4:
                 g_ipset_name4 = optarg;
                 break;
+
             case OPT_IPSET_NAME6:
                 g_ipset_name6 = optarg;
                 break;
+
             case OPT_GFWLIST_FILE:
                 g_gfwlist_fname = optarg;
                 break;
+
             case OPT_CHNLIST_FILE:
                 g_chnlist_fname = optarg;
                 break;
+
             case OPT_DEFAULT_TAG:
                 if (strcmp(optarg, "gfw") == 0)
                     g_default_tag = NAME_TAG_GFW;
@@ -292,48 +302,61 @@ void opt_parse(int argc, char *argv[]) {
                 else
                     err_exit("invalid default domain tag: %s", optarg);
                 break;
+
             case OPT_TIMEOUT_SEC:
                 if ((g_upstream_timeout_sec = strtoul(optarg, NULL, 10)) <= 0)
                     err_exit("invalid upstream timeout sec: %s", optarg);
                 break;
+
             case OPT_REPEAT_TIMES:
                 if ((g_repeat_times = strtoul(optarg, NULL, 10)) == 0)
                     err_exit("invalid trustdns repeat times: %s", optarg);
                 g_repeat_times = min(g_repeat_times, MAX_REPEAT_TIMES);
                 break;
+
             case OPT_NO_IPV6:
                 parse_noaaaa_rules(optarg);
                 break;
+
             case OPT_CHNLIST_FIRST:
                 g_gfwlist_first = false;
                 break;
+
             case OPT_ADD_TAGCHN_IP:
                 g_add_tagchn_ip = true;
                 break;
+
             case OPT_FAIR_MODE:
                 /* no operation */
                 break;
+
             case OPT_REUSE_PORT:
                 g_reuse_port = true;
                 break;
+
             case OPT_NOIP_AS_CHNIP:
                 g_noip_as_chnip = true;
                 break;
+
             case OPT_VERBOSE:
                 g_verbose = true;
                 break;
+
             case OPT_VERSION:
                 printf(CHINADNS_VERSION "\n");
                 exit(0);
                 break;
+
             case OPT_HELP:
                 show_help();
                 exit(0);
                 break;
+
             case ':':
                 /* missing argument */
                 err_exit("missing optarg: '%s'", argv[optind - 1]);
                 break;
+
             case '?':
                 /* unknown option */
                 if (optopt) {
@@ -350,7 +373,7 @@ void opt_parse(int argc, char *argv[]) {
         }
     }
 
-    build_socket_addr(get_ipstr_family(g_bind_ip), &g_bind_skaddr, g_bind_ip, g_bind_port);
+    skaddr_build(get_ipstr_family(g_bind_ip), &g_bind_skaddr, g_bind_ip, g_bind_port);
     parse_upstream_addrs(chinadns_optarg, true);
     parse_upstream_addrs(trustdns_optarg, false);
 }
