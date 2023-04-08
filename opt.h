@@ -30,6 +30,9 @@
 
 #define is_filter_all_v6(flags) ((flags) == (__typeof__(flags))NOAAAA_ALL)
 
+/* g_repeat_times, too large may cause stack overflow */
+#define MAX_REPEAT_TIMES 5
+
 /* is enable verbose logging */
 #define if_verbose unlikely_if (g_verbose)
 

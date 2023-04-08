@@ -115,7 +115,7 @@ static void show_help(void) {
            " -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin\n"
            " -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)\n"
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
-           " -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1\n"
+           " -p, --repeat-times <repeat-times>    only used for trustdns, default:1, max:5\n"
            " -N, --no-ipv6=[rules]                filter AAAA query, rules can be a seq of:\n"
            "                                      rule a: filter all domain name (default)\n"
            "                                      rule g: filter the name with tag gfw\n"
@@ -299,6 +299,7 @@ void opt_parse(int argc, char *argv[]) {
             case OPT_REPEAT_TIMES:
                 if ((g_repeat_times = strtoul(optarg, NULL, 10)) == 0)
                     err_exit("invalid trustdns repeat times: %s", optarg);
+                g_repeat_times = min(g_repeat_times, MAX_REPEAT_TIMES);
                 break;
             case OPT_NO_IPV6:
                 parse_noaaaa_rules(optarg);

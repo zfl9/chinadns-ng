@@ -135,24 +135,40 @@ static void handle_local_packet(void) {
 
     bool sent = false;
 
+    struct iovec iov;
+    struct mmsghdr msgv[MAX_REPEAT_TIMES];
+    set_iov(&iov, s_packet_buf, packet_len);
+
     for (int i = 0; i <= SERVER_MAXIDX; ++i) {
         if (s_remote_sockfds[i] < 0) continue;
-        u8 send_times = 1;
+
+        u8 msg_n = 1;
         if (is_chinadns_idx(i)) {
             if (name_tag == NAME_TAG_GFW) continue;
             if (g_noaaaa_query & NOAAAA_CHINA_DNS && qtype == DNS_RECORD_TYPE_AAAA) continue;
         } else {
             if (name_tag == NAME_TAG_CHN) continue;
             if (g_noaaaa_query & NOAAAA_TRUST_DNS && qtype == DNS_RECORD_TYPE_AAAA) continue;
-            send_times = g_repeat_times;
+            msg_n = g_repeat_times;
         }
+
         sent = true;
-        const union skaddr *addr = &g_remote_skaddrs[i];
+
+        union skaddr *addr = &g_remote_skaddrs[i];
         socklen_t addrlen = skaddr_size(addr);
-        for (int j = 0; j < send_times; ++j) { // todo: set an upper limit to `g_repeat_times` and use `sendmmsg` instead of `sendto`
-            log_verbose("forward [%s] to %s (%s)", s_name_buf, g_remote_ipports[i], is_chinadns_idx(i) ? "chinadns" : "trustdns");
-            unlikely_if (sendto(s_remote_sockfds[i], s_packet_buf, packet_len, 0, &addr->sa, addrlen) < 0)
+
+        set_msghdr(&msgv[0].msg_hdr, &iov, 1, &addr->sa, addrlen);
+        for (u8 msg_i = 1; msg_i < msg_n; ++msg_i) msgv[msg_i] = msgv[0];
+
+        log_verbose("forward [%s] to %s (%s)", s_name_buf, g_remote_ipports[i],
+            is_chinadns_idx(i) ? "chinadns" : "trustdns");
+
+        int n_sent = sendmmsg(s_remote_sockfds[i], msgv, msg_n, 0);
+        unlikely_if (n_sent != msg_n) {
+            if (n_sent < 0)
                 log_error("failed to send query to %s: (%d) %s", g_remote_ipports[i], errno, strerror(errno));
+            else
+                log_warning("n_sent:%d != msg_n:%u, kernel send buffer may not be enough", n_sent, (uint)msg_n);
         }
     }
 

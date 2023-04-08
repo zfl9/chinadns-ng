@@ -55,18 +55,17 @@ void parse_socket_addr(const union skaddr *noalias skaddr, char *noalias ipstr, 
     nsent_ == 0 ? (__typeof__(nsent_))-1 : nsent_; \
 })
 
-#define simple_msghdr_iov(msg, iov, iovlen) ({ \
-    (msg)->msg_name = NULL; \
-    (msg)->msg_namelen = 0; \
+#define set_iov(iov, buf, sz) ({ \
+    (iov)->iov_base = (buf); \
+    (iov)->iov_len = (sz); \
+})
+
+#define set_msghdr(msg, iov, iovlen, name, namelen) ({ \
+    (msg)->msg_name = (name); \
+    (msg)->msg_namelen = (namelen); \
     (msg)->msg_iov = (iov); \
     (msg)->msg_iovlen = (iovlen); \
     (msg)->msg_control = NULL; \
     (msg)->msg_controllen = 0; \
     (msg)->msg_flags = 0; /* set by recvmsg() | ignored by sendmsg() */ \
-})
-
-#define simple_msghdr(msg, iov, buf, sz) ({ \
-    (iov)->iov_base = (buf); \
-    (iov)->iov_len = (sz); \
-    simple_msghdr_iov(msg, iov, 1); \
 })

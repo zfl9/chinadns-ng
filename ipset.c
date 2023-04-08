@@ -544,11 +544,13 @@ bool ipset_test_ip(const void *noalias ip, bool v4) {
 
     /* send request */
     struct nlmsghdr *nlmsg = t_nlmsg(v4);
-    simple_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], nlmsg, nlmsg->nlmsg_len);
+    set_iov(&s_iov[0], nlmsg, nlmsg->nlmsg_len);
+    set_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], 1, NULL, 0);
     unlikely_if (send_req(1) < 0) return false; /* send failed */
 
     /* recv response */
-    simple_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], s_buf_res, BUFSZ_R);
+    set_iov(&s_iov[0], s_buf_res, BUFSZ_R);
+    set_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], 1, NULL, 0);
     switch (recv_res(1, false)) {
         case 0: /* no msg */
             return true;
@@ -593,8 +595,10 @@ void ipset_add_ip(const void *noalias ip, bool v4) {
 
 #define init_nlerr_msgv(n) ({ \
     size_t sz_ = NLMSG_SPACE(sizeof(struct nlmsgerr)); \
-    for (__typeof__(n) i_ = 0; i_ < (n); ++i_) \
-        simple_msghdr(&s_msgv[i_].msg_hdr, &s_iov[i_], s_buf_res + sz_ * i_, sz_); \
+    for (__typeof__(n) i_ = 0; i_ < (n); ++i_) { \
+        set_iov(&s_iov[i_], s_buf_res + sz_ * i_, sz_); \
+        set_msghdr(&s_msgv[i_].msg_hdr, &s_iov[i_], 1, NULL, 0); \
+    } \
 })
 
 /* zero `exists` before calling */
@@ -621,11 +625,9 @@ static void test_ips(bitvec_t exists[noalias],
         for (int ipi = 0; ipi < ipn; ++ipi) {
             int i = n_msg++;
             next_ip(v4, &base1);
-            s_iov[i*2].iov_base = base0;
-            s_iov[i*2].iov_len = len0;
-            s_iov[i*2+1].iov_base = base1;
-            s_iov[i*2+1].iov_len = len1;
-            simple_msghdr_iov(&s_msgv[i].msg_hdr, &s_iov[i*2], 2);
+            set_iov(&s_iov[i*2], base0, len0);
+            set_iov(&s_iov[i*2+1], base1, len1);
+            set_msghdr(&s_msgv[i].msg_hdr, &s_iov[i*2], 2, NULL, 0);
         }
     }
 
@@ -708,7 +710,7 @@ static int end_add_ip_ipset(void) {
         nlmsg->nlmsg_len += add_n * elemsz;
 
         int i = n_msg++;
-        simple_msghdr_iov(&s_msgv[i].msg_hdr, &s_iov[iov_i - add_n - 1], 1 + add_n);
+        set_msghdr(&s_msgv[i].msg_hdr, &s_iov[iov_i - add_n - 1], 1 + add_n, NULL, 0);
     }
 
     return n_msg;
@@ -769,11 +771,9 @@ static int end_add_ip_nft(void) {
         for (int ipi = 0; ipi < ipn; ++ipi) {
             if (!bitvec_get(exists, ipi)) {
                 int i = n_msg++;
-                for (int j = 0; j < (int)array_n(basev); ++j) {
-                    s_iov[i*5+j].iov_base = basev[j];
-                    s_iov[i*5+j].iov_len = lenv[j];
-                }
-                simple_msghdr_iov(&s_msgv[i].msg_hdr, &s_iov[i*5], 5);
+                for (int j = 0; j < (int)array_n(basev); ++j)
+                    set_iov(&s_iov[i*5+j], basev[j], lenv[j]);
+                set_msghdr(&s_msgv[i].msg_hdr, &s_iov[i*5], 5, NULL, 0);
             }
             basev[1] += iplen + iplen;
             basev[3] += iplen + iplen;
