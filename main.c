@@ -154,19 +154,19 @@ static void handle_local_packet(void) {
 
         sent = true;
 
-        union skaddr *addr = &g_remote_skaddrs[i];
+        union skaddr *addr = &g_upstream_skaddrs[i];
         socklen_t addrlen = skaddr_size(addr);
 
         set_msghdr(&msgv[0].msg_hdr, &iov, 1, &addr->sa, addrlen);
         for (u8 msg_i = 1; msg_i < msg_n; ++msg_i) msgv[msg_i] = msgv[0];
 
-        log_verbose("forward [%s] to %s (%s)", s_name_buf, g_remote_ipports[i],
+        log_verbose("forward [%s] to %s (%s)", s_name_buf, g_upstream_addrs[i],
             is_chinadns_idx(i) ? "chinadns" : "trustdns");
 
         int n_sent = sendmmsg(s_remote_sockfds[i], msgv, msg_n, 0);
         unlikely_if (n_sent != msg_n) {
             if (n_sent < 0)
-                log_error("failed to send query to %s: (%d) %s", g_remote_ipports[i], errno, strerror(errno));
+                log_error("failed to send query to %s: (%d) %s", g_upstream_addrs[i], errno, strerror(errno));
             else
                 log_warning("n_sent:%d != msg_n:%u, kernel send buffer may not be enough", n_sent, (uint)msg_n);
         }
@@ -256,12 +256,12 @@ static inline bool use_trust_reply(void *noalias packet_buf, ssize_t *noalias pa
 /* handle remote socket readable event */
 static void handle_remote_packet(int index) {
     int remote_sockfd = s_remote_sockfds[index];
-    const char *remote_ipport = g_remote_ipports[index];
+    const char *remote_addr = g_upstream_addrs[index];
     ssize_t packet_len = recvfrom(remote_sockfd, s_packet_buf, PACKET_BUFSZ, 0, NULL, NULL);
 
     if (packet_len < 0) {
         unlikely_if (errno != EAGAIN && errno != EWOULDBLOCK)
-            log_error("failed to recv from %s: (%d) %s", remote_ipport, errno, strerror(errno));
+            log_error("failed to recv from %s: (%d) %s", remote_addr, errno, strerror(errno));
         return;
     }
 
@@ -273,7 +273,7 @@ static void handle_remote_packet(int index) {
     struct dns_header *dns_header = s_packet_buf;
     MYHASH_GET(s_context_list, context, &dns_header->id, sizeof(dns_header->id));
     if (!context) {
-        log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
+        log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_addr, (uint)dns_header->id);
         return;
     }
 
@@ -282,7 +282,7 @@ static void handle_remote_packet(int index) {
 
     if (is_chinadns_idx(index)) {
         if (context->name_tag == NAME_TAG_CHN || use_china_reply(reply_buffer, &reply_length, namelen)) {
-            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, remote_addr, (uint)dns_header->id);
             if (context->trustdns_buf)
                 log_verbose("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
             if (g_add_tagchn_ip && context->name_tag == NAME_TAG_CHN) {
@@ -290,7 +290,7 @@ static void handle_remote_packet(int index) {
                 dns_add_ip(reply_buffer, reply_length, namelen);
             }
         } else {
-            log_verbose("reply [%s] from %s (%u), result: filter", s_name_buf, remote_ipport, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: filter", s_name_buf, remote_addr, (uint)dns_header->id);
             if (context->trustdns_buf) { /* trustdns returns before chinadns */
                 log_verbose("reply [%s] from <previous-trustdns> (%u), result: accept", s_name_buf, (uint)dns_header->id);
                 reply_buffer = context->trustdns_buf->buf;
@@ -302,16 +302,16 @@ static void handle_remote_packet(int index) {
         }
     } else {
         if (context->name_tag == NAME_TAG_GFW || context->chinadns_got || use_trust_reply(reply_buffer, &reply_length, namelen)) {
-            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, remote_ipport, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, remote_addr, (uint)dns_header->id);
         } else {
             /* trustdns returns before chinadns */
             if (!context->trustdns_buf) {
-                log_verbose("reply [%s] from %s (%u), result: delay", s_name_buf, remote_ipport, (uint)dns_header->id);
+                log_verbose("reply [%s] from %s (%u), result: delay", s_name_buf, remote_addr, (uint)dns_header->id);
                 context->trustdns_buf = malloc(sizeof(*context->trustdns_buf) + packet_len);
                 context->trustdns_buf->len = packet_len; /* dns reply length */
                 memcpy(context->trustdns_buf->buf, s_packet_buf, packet_len);
             } else {
-                log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_ipport, (uint)dns_header->id);
+                log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_addr, (uint)dns_header->id);
             }
             return;
         }
@@ -339,12 +339,12 @@ int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IOLBF, 256);
     opt_parse(argc, argv);
 
-    log_info("local listen addr: %s#%u", g_bind_ipstr, (uint)g_bind_portno);
+    log_info("local listen addr: %s#%u", g_bind_ip, (uint)g_bind_port);
 
-    if (g_remote_ipports[CHINADNS1_IDX]) log_info("chinadns server#1: %s", g_remote_ipports[CHINADNS1_IDX]);
-    if (g_remote_ipports[CHINADNS2_IDX]) log_info("chinadns server#2: %s", g_remote_ipports[CHINADNS2_IDX]);
-    if (g_remote_ipports[TRUSTDNS1_IDX]) log_info("trustdns server#1: %s", g_remote_ipports[TRUSTDNS1_IDX]);
-    if (g_remote_ipports[TRUSTDNS2_IDX]) log_info("trustdns server#2: %s", g_remote_ipports[TRUSTDNS2_IDX]);
+    if (g_upstream_addrs[CHINADNS1_IDX]) log_info("chinadns server#1: %s", g_upstream_addrs[CHINADNS1_IDX]);
+    if (g_upstream_addrs[CHINADNS2_IDX]) log_info("chinadns server#2: %s", g_upstream_addrs[CHINADNS2_IDX]);
+    if (g_upstream_addrs[TRUSTDNS1_IDX]) log_info("trustdns server#1: %s", g_upstream_addrs[TRUSTDNS1_IDX]);
+    if (g_upstream_addrs[TRUSTDNS2_IDX]) log_info("trustdns server#2: %s", g_upstream_addrs[TRUSTDNS2_IDX]);
 
     bool need_ipset = g_add_tagchn_ip || g_default_tag == NAME_TAG_NONE || g_noaaaa_query & (NOAAAA_CHINA_IPCHK|NOAAAA_TRUST_IPCHK);
     if (need_ipset) ipset_init();
@@ -390,8 +390,8 @@ int main(int argc, char *argv[]) {
 
     /* create remote socket */
     for (int i = 0; i <= SERVER_MAXIDX; ++i) {
-        if (g_remote_ipports[i])
-            s_remote_sockfds[i] = new_udp_socket(skaddr_family(&g_remote_skaddrs[i]));
+        if (g_upstream_addrs[i])
+            s_remote_sockfds[i] = new_udp_socket(skaddr_family(&g_upstream_skaddrs[i]));
     }
 
     /* create epoll fd */
@@ -440,16 +440,16 @@ int main(int argc, char *argv[]) {
                 /* an error occurred */
                 switch (data) {
                     case CHINADNS1_IDX:
-                        log_error("upstream socket error %s: (%d) %s", g_remote_ipports[CHINADNS1_IDX], errno, strerror(errno));
+                        log_error("upstream socket error %s: (%d) %s", g_upstream_addrs[CHINADNS1_IDX], errno, strerror(errno));
                         break;
                     case CHINADNS2_IDX:
-                        log_error("upstream socket error %s: (%d) %s", g_remote_ipports[CHINADNS2_IDX], errno, strerror(errno));
+                        log_error("upstream socket error %s: (%d) %s", g_upstream_addrs[CHINADNS2_IDX], errno, strerror(errno));
                         break;
                     case TRUSTDNS1_IDX:
-                        log_error("upstream socket error %s: (%d) %s", g_remote_ipports[TRUSTDNS1_IDX], errno, strerror(errno));
+                        log_error("upstream socket error %s: (%d) %s", g_upstream_addrs[TRUSTDNS1_IDX], errno, strerror(errno));
                         break;
                     case TRUSTDNS2_IDX:
-                        log_error("upstream socket error %s: (%d) %s", g_remote_ipports[TRUSTDNS2_IDX], errno, strerror(errno));
+                        log_error("upstream socket error %s: (%d) %s", g_upstream_addrs[TRUSTDNS2_IDX], errno, strerror(errno));
                         break;
                     case BINDSOCK_MARK:
                         log_error("listen socket error: (%d) %s", errno, strerror(errno));

@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CHINADNS_VERSION "ChinaDNS-NG 2023.04.01 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG 2023.04.08 <https://github.com/zfl9/chinadns-ng>"
 
 bool    g_verbose       = false;
 bool    g_reuse_port    = false;
@@ -22,14 +22,14 @@ bool        g_add_tagchn_ip = false; /* add the answer ip of name-tag:chn to ips
 const char *g_ipset_name4 = "chnroute"; /* ipset:"set_name" | nftset:"family_name@table_name@set_name" */
 const char *g_ipset_name6 = "chnroute6"; /* ipset:"set_name" | nftset:"family_name@table_name@set_name" */
 
-const char     *g_bind_ipstr  = "127.0.0.1";
-u16             g_bind_portno = 65353;
+const char     *g_bind_ip   = "127.0.0.1";
+u16             g_bind_port = 65353;
 union skaddr    g_bind_skaddr;
 
-const char     *g_remote_ipports[SERVER_MAXCNT];
-union skaddr    g_remote_skaddrs[SERVER_MAXCNT];
-int             g_upstream_timeout_sec          = 5;
-u8              g_repeat_times                  = 1; /* used by trust-dns only */
+const char     *g_upstream_addrs[SERVER_MAXCNT];
+union skaddr    g_upstream_skaddrs[SERVER_MAXCNT];
+int             g_upstream_timeout_sec = 5;
+u8              g_repeat_times         = 1; /* used by trust-dns only */
 
 #define OPT_BIND_ADDR 'b'
 #define OPT_BIND_PORT 'l'
@@ -163,7 +163,7 @@ static void parse_upstream_addrs(const char *arg, bool is_chinadns) {
         memcpy(ipstr, arg, len);
         ipstr[len] = '\0';
 
-        /* g_remote_ipports */
+        /* g_upstream_addrs */
         char *addr = malloc(len + 1);
         memcpy(addr, arg, len);
         addr[len] = '\0';
@@ -186,8 +186,8 @@ static void parse_upstream_addrs(const char *arg, bool is_chinadns) {
             err_exit("invalid server ip address: %s", ipstr);
 
         int idx = (is_chinadns ? CHINADNS1_IDX : TRUSTDNS1_IDX) + cnt - 1;
-        build_socket_addr(family, &g_remote_skaddrs[idx], ipstr, port);
-        g_remote_ipports[idx] = addr;
+        build_socket_addr(family, &g_upstream_skaddrs[idx], ipstr, port);
+        g_upstream_addrs[idx] = addr;
     } while (has_next);
 }
 
@@ -258,10 +258,10 @@ void opt_parse(int argc, char *argv[]) {
             case OPT_BIND_ADDR:
                 if (get_ipstr_family(optarg) == -1)
                     err_exit("invalid listen ip address: %s", optarg);
-                g_bind_ipstr = optarg;
+                g_bind_ip = optarg;
                 break;
             case OPT_BIND_PORT:
-                if ((g_bind_portno = strtoul(optarg, NULL, 10)) == 0)
+                if ((g_bind_port = strtoul(optarg, NULL, 10)) == 0)
                     err_exit("invalid listen port number: %s", optarg);
                 break;
             case OPT_CHINA_DNS:
@@ -350,7 +350,7 @@ void opt_parse(int argc, char *argv[]) {
         }
     }
 
-    build_socket_addr(get_ipstr_family(g_bind_ipstr), &g_bind_skaddr, g_bind_ipstr, g_bind_portno);
+    build_socket_addr(get_ipstr_family(g_bind_ip), &g_bind_skaddr, g_bind_ip, g_bind_port);
     parse_upstream_addrs(chinadns_optarg, true);
     parse_upstream_addrs(trustdns_optarg, false);
 }

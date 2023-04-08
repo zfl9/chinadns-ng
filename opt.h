@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdint.h>
 #include <stdbool.h>
+#include "misc.h"
 #include "net.h"
 
 /* socket idx/mark */
@@ -18,7 +18,7 @@
 
 #define is_chinadns_idx(idx) ((idx) == CHINADNS1_IDX || (idx) == CHINADNS2_IDX)
 
-/* no-ipv6 bit flag */
+/* no-ipv6 bit flag (u8) */
 #define NOAAAA_ALL         (-1) /* max value of unsigned integer of any width, all bits are 1 */
 #define NOAAAA_TAG_GFW     (1U)
 #define NOAAAA_TAG_CHN     (1U << 1)
@@ -50,12 +50,12 @@ extern bool        g_add_tagchn_ip;
 extern const char *g_ipset_name4;
 extern const char *g_ipset_name6;
 
-extern const char  *g_bind_ipstr;
-extern u16          g_bind_portno;
+extern const char  *g_bind_ip;
+extern u16          g_bind_port;
 extern union skaddr g_bind_skaddr;
 
-extern const char   *g_remote_ipports[SERVER_MAXCNT];
-extern union skaddr  g_remote_skaddrs[SERVER_MAXCNT];
+extern const char   *g_upstream_addrs[SERVER_MAXCNT];
+extern union skaddr  g_upstream_skaddrs[SERVER_MAXCNT];
 extern int           g_upstream_timeout_sec;
 extern u8            g_repeat_times;
 
