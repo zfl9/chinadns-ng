@@ -140,7 +140,7 @@ static inline const char *ipset_strerror(int errcode) {
 /* in single add-request (v4/v6) */
 #define IP_N 10
 
-/* ipset: 1{v4} + 1{v6} | nft: IP_N*5{v4} + IP_N*5{v6} */
+/* ipset: 1+IP_N{v4} + 1+IP_N{v6} | nft: IP_N*5{v4} + IP_N*5{v6} */
 #define IOV_N (IP_N * 5 * 2)
 
 /*
@@ -597,28 +597,11 @@ void ipset_add_ip(const void *noalias ip, bool v4) {
         simple_msghdr(&s_msgv[i_].msg_hdr, &s_iov[i_], s_buf_res + sz_ * i_, sz_); \
 })
 
-static int end_add_ip_ipset(void) {
-    int n_msg = 0;
-
-    const bool v4vec[] = {true, false};
-    for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
-        const bool v4 = v4vec[v4i];
-
-        struct nlmsghdr *nlmsg = a_nlmsg(v4);
-        u32 initlen = a_initlen(v4);
-
-        struct nlattr *adt_nla = (void *)nlmsg + initlen - NLA_HDRLEN;
-        nlmsg_end_nest_nla(nlmsg, adt_nla);
-
-        int i = n_msg++;
-        simple_msghdr(&s_msgv[i].msg_hdr, &s_iov[i], nlmsg, nlmsg->nlmsg_len);
-    }
-
-    return n_msg;
-}
-
 /* zero `exists` before calling */
-static void test_ips_nft(bitvec_t exists[noalias]) {
+static void test_ips(bitvec_t exists[noalias],
+                     void (*next_ip)(bool v4, void **noalias p),
+                     bool (*test_ip)(const struct nlmsghdr *noalias nlmsg))
+{
     int n_msg = 0;
 
     /* fill ip-test msg */
@@ -626,20 +609,23 @@ static void test_ips_nft(bitvec_t exists[noalias]) {
     for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
         const bool v4 = v4vec[v4i];
 
-        void *base1 = (void *)a_nlmsg(v4) + a_initlen(v4); /* {ip,ip_end, ip,ip_end, ...} */
-        int len1 = iplen(v4);
+        int ipn = a_ip_n(v4);
+        if (ipn <= 0) continue;
+
+        void *base1 = NULL;
+        size_t len1 = iplen(v4);
 
         struct nlmsghdr *base0 = t_nlmsg(v4);
-        size_t len0 = base0->nlmsg_len - len1;
+        size_t len0 = base0->nlmsg_len - len1; /* iplen is aligned(4) */
 
-        for (int ipi = 0, ipn = a_ip_n(v4); ipi < ipn; ++ipi) {
+        for (int ipi = 0; ipi < ipn; ++ipi) {
             int i = n_msg++;
+            next_ip(v4, &base1);
             s_iov[i*2].iov_base = base0;
             s_iov[i*2].iov_len = len0;
             s_iov[i*2+1].iov_base = base1;
             s_iov[i*2+1].iov_len = len1;
             simple_msghdr_iov(&s_msgv[i].msg_hdr, &s_iov[i*2], 2);
-            base1 += len1 + len1; /* skip the 'ip_end' */
         }
     }
 
@@ -652,21 +638,105 @@ static void test_ips_nft(bitvec_t exists[noalias]) {
 
     /* save result to bit-vector */
     for (int i = 0; i < n_msg; ++i) {
-        const struct nlmsghdr *nlmsg = s_iov[i].iov_base;
-        if (nlmsg->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM))
+        if (test_ip(s_iov[i].iov_base))
             bitvec_set1(exists, i);
     }
+}
+
+static void next_ip_ipset(bool v4, void **noalias p) {
+    if (!*p)
+        *p = (void *)a_nlmsg(v4) + a_initlen(v4) + NLA_HDRLEN * 3;
+    else
+        *p += iplen(v4) /* aligned(4) */ + NLA_HDRLEN * 3;
+}
+
+static bool test_ip_ipset(const struct nlmsghdr *noalias nlmsg) {
+    return nlmsg_errcode(nlmsg) == 0;
+}
+
+static int end_add_ip_ipset(void) {
+    int n_msg = 0;
+
+    /* set ack flag */
+    t_nlmsg(true)->nlmsg_flags |= NLM_F_ACK;
+    t_nlmsg(false)->nlmsg_flags |= NLM_F_ACK;
+
+    bitvec_t exists[bitvec_n(IP_N * 2)] = {0};
+    test_ips(exists, next_ip_ipset, test_ip_ipset);
+
+    /* remove ack flag */
+    t_nlmsg(true)->nlmsg_flags &= ~NLM_F_ACK;
+    t_nlmsg(false)->nlmsg_flags &= ~NLM_F_ACK;
+
+    int iov_i = 0;
+
+    const bool v4vec[] = {true, false};
+    for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
+        const bool v4 = v4vec[v4i];
+
+        int ipn = a_ip_n(v4);
+        if (ipn <= 0) continue;
+
+        struct nlmsghdr *nlmsg = a_nlmsg(v4);
+        nlmsg->nlmsg_len = a_initlen(v4);
+
+        void *elem = nlmsg_dataend(nlmsg);
+        size_t elemsz = NLA_HDRLEN * 3 + iplen(v4) /* aligned(4) */;
+
+        int add_n = 0;
+
+        s_iov[iov_i].iov_base = nlmsg;
+        s_iov[iov_i].iov_len = nlmsg->nlmsg_len;
+        ++iov_i;
+
+        for (int ipi = 0; ipi < ipn; ++ipi, elem += elemsz) {
+            if (!bitvec_get(exists, ipi)) {
+                s_iov[iov_i].iov_base = elem;
+                s_iov[iov_i].iov_len = elemsz;
+                ++iov_i;
+                ++add_n;
+            }
+        }
+
+        if (add_n <= 0) {
+            --iov_i;
+            continue;
+        }
+
+        struct nlattr *adt_nla = nlmsg_dataend(nlmsg) - NLA_HDRLEN;
+        adt_nla->nla_len = nla_len_calc(add_n * elemsz);
+        nlmsg->nlmsg_len += add_n * elemsz;
+
+        int i = n_msg++;
+        simple_msghdr_iov(&s_msgv[i].msg_hdr, &s_iov[iov_i - add_n - 1], 1 + add_n);
+    }
+
+    return n_msg;
+}
+
+static void next_ip_nft(bool v4, void **noalias p) {
+    if (!*p)
+        *p = (void *)a_nlmsg(v4) + a_initlen(v4);
+    else
+        *p += iplen(v4) * 2;
+}
+
+static bool test_ip_nft(const struct nlmsghdr *noalias nlmsg) {
+    return nlmsg->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM);
 }
 
 static int end_add_ip_nft(void) {
     int n_msg = 0;
 
     bitvec_t exists[bitvec_n(IP_N * 2)] = {0};
-    test_ips_nft(exists);
+    test_ips(exists, next_ip_nft, test_ip_nft);
 
     const bool v4vec[] = {true, false};
     for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
         const bool v4 = v4vec[v4i];
+
+        int ipn = a_ip_n(v4);
+        if (ipn <= 0) continue;
 
         /* batch_begin|msg|batch_end */
         void *nlmsg = a_nlmsg(v4);
@@ -696,7 +766,7 @@ static int end_add_ip_nft(void) {
         lenv[0] = initlen - lenv[4] - lenv[3] - lenv[2] - lenv[1];
         basev[0] = nlmsg;
 
-        for (int ipi = 0, ipn = a_ip_n(v4); ipi < ipn; ++ipi) {
+        for (int ipi = 0; ipi < ipn; ++ipi) {
             if (!bitvec_get(exists, ipi)) {
                 int i = n_msg++;
                 for (int j = 0; j < (int)array_n(basev); ++j) {
@@ -718,6 +788,9 @@ void ipset_end_add_ip(void) {
       current dns servers do not carry both A and AAAA answers, but they may in the future.
       see: https://datatracker.ietf.org/doc/html/draft-vavrusa-dnsop-aaaa-for-free-00
     */
+
+    if (a_ip_n(true) + a_ip_n(false) <= 0) return;
+
     int n_msg = end_add_ip();
 
     /* reset to 0 */
