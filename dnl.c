@@ -110,7 +110,7 @@ static u32 alloc(u32 sz, u32 align) {
 
 static inline uint calc_hashv(const char *noalias name, u8 namelen) {
     uint hashv = 0;
-    HASH_FCN(name, namelen, hashv); /* uthash.h */
+    HASH_FUNCTION(name, namelen, hashv); /* uthash.h */
     return hashv;
 }
 
