@@ -466,25 +466,26 @@ static void do_debug(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
         u32 n = n_vec[veci];
 
         for (u32 i = 0, addr = addr0; i < n; ++i, addr += get_namesz(addr)) {
-            char tmp[DNS_NAME_MAXLEN + 1] = {0};
             const struct name *name = ptr_name(addr);
-            memcpy(tmp, name->name, name->namelen);
+            char tmp[DNS_NAME_MAXLEN + 1] = {0};
+            int namelen = name->namelen;
+            memcpy(tmp, name->name, namelen);
 
             u8 tag1;
-            if (!exists_in_dnl(name->name, name->namelen, &tag1))
-                log_fatal("[%s] #raw test failed: %s", tagname, tmp);
+            if (!exists_in_dnl(name->name, namelen, &tag1))
+                log_fatal("[%s] #raw test failed: %.*s", tagname, namelen, name->name);
             if (tag1 != tag) /* dup with chnlist ? */
-                log_debug("[%s] duplicate: %s (tag:%s)", tagname, tmp, nametag_val2name(tag1));
+                log_debug("[%s] duplicate: %.*s (tag:%s)", tagname, namelen, name->name, nametag_val2name(tag1));
 
             u8 tag2;
-            if (!exists_in_dnl(tmp, name->namelen, &tag2))
-                log_fatal("[%s] #copy test failed: %s", tagname, tmp);
+            if (!exists_in_dnl(tmp, namelen, &tag2))
+                log_fatal("[%s] #copy test failed: %.*s", tagname, namelen, name->name);
             if (tag2 != tag1)
-                log_fatal("[%s] tag1:%s != tag2:%s (%s)", tagname, nametag_val2name(tag1), nametag_val2name(tag2), tmp);
+                log_fatal("[%s] tag1:%s != tag2:%s (%.*s)", tagname, nametag_val2name(tag1), nametag_val2name(tag2), namelen, name->name);
 
             *tmp = '.';
-            if (exists_in_dnl(tmp, name->namelen, &tag2))
-                log_fatal("[%s] #fake test failed: %s", tagname, tmp);
+            if (exists_in_dnl(tmp, namelen, &tag2))
+                log_fatal("[%s] #fake test failed: %.*s", tagname, namelen, name->name);
         }
     }
 
