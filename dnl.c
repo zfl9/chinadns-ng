@@ -13,15 +13,17 @@
 #include <sys/mman.h>
 #include <linux/limits.h>
 
+/* for L2 map */
 #define DEFAULT_LCAP 4 /* 2^4 = 16 */
 
-/* nitems / cap */
-#define LOAD_FACTOR_X 1 /* x/y */
-#define LOAD_FACTOR_Y 1 /* x/y */
+/* nitems / cap (for L2 map) */
+#define LOAD_FACTOR_X 3 /* x/y */
+#define LOAD_FACTOR_Y 4 /* x/y */
 
-#define MAX_COLLISION 4 /* max length of list in map1 */
+/* for L1 map */
+#define MAX_COLLISION 4
 
-// "www.google.com.hk"
+/* "www.google.com.hk" */
 #define LABEL_MAXCNT 4
 
 /* u32 (bit-field) */
@@ -39,7 +41,7 @@ struct name {
 
 #define BUCKET_FREE 0 /* free */
 #define BUCKET_HEAD 1 /* list head */
-#define BUCKET_NEXT 2 /* find next-level map */
+#define BUCKET_NEXT 2 /* find next-level map (L2) */
 
 struct bucket {
     u32 state:(32-NAMEADDR_BIT); // BUCKET_*
@@ -74,8 +76,6 @@ static u32 align_to(u32 sz, u32 align) {
 
 /* contents are initialized to zero */
 static u32 alloc(u32 sz, u32 align) {
-    assert(sz % align == 0);
-
     s_end = align_to(s_end, align);
     s_end += sz;
 
@@ -86,7 +86,7 @@ static u32 alloc(u32 sz, u32 align) {
             s_base = mmap(NULL, s_cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         else
             s_base = mremap(s_base, oldcap, s_cap, MREMAP_MAYMOVE);
-        if (s_base == MAP_FAILED)
+        unlikely_if (s_base == MAP_FAILED)
             log_fatal("mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %s", (ulong)oldcap, (ulong)s_cap, errno, strerror(errno));
     }
 
@@ -144,11 +144,11 @@ static inline bool name_eq(u32 addr1, u32 addr2) {
 
 /* ======================== bucket ======================== */
 
+/* for L1 map */
 static inline u32 calc_lcap(u32 n) {
-    u32 r = ceilu((ullong)n * LOAD_FACTOR_Y, LOAD_FACTOR_X); /* cap * factor => max_items */
     u32 cap = 1; /* 2^n */
     u32 lcap = 0; /* log2(cap), n */
-    while (cap < r) { cap <<= 1; lcap++; }
+    while (cap < n) { cap <<= 1; lcap++; }
     return lcap;
 }
 
@@ -164,18 +164,16 @@ static inline u32 calc_lcap(u32 n) {
 #define dnl_set_notnull(in_lcap, hashv_shift) map_set_notnull(&s_map1, in_lcap, hashv_shift)
 
 #define map_cap(map) ((u32)1 << (map)->lcap)
-#define map_maxload(map) ((u32)((ullong)map_cap(map) * LOAD_FACTOR_X / LOAD_FACTOR_Y))
+#define map_maxload(map) ((u32)((ullong)map_cap(map) * LOAD_FACTOR_X / LOAD_FACTOR_Y)) /* for L2 map */
 
-#define dnl_cap() (map_cap(&s_map1) + map_cap(&s_map2))
 #define dnl_nitems() (s_map1.nitems + s_map2.nitems)
 
-#define map_hashv(map, hashv) ((hashv) >> (map)->shift)
+#define map_hashv(map, hashv) ((ullong)(hashv) >> (map)->shift)
 #define map_idx(map, hashv) (map_hashv(map, hashv) & (map_cap(map) - 1))
 
 #define get_bucket_by_idx(map, idx) (ptr_bucket((map)->buckets) + (idx))
 #define get_bucket_by_hashv(map, hashv) get_bucket_by_idx(map, map_idx(map, hashv))
 #define get_bucket_by_nameaddr(map, nameaddr) get_bucket_by_hashv(map, get_hashv(nameaddr))
-#define get_idx_by_bucket(map, bucket) ((struct bucket *)(bucket) - ptr_bucket((map)->buckets))
 
 #define next_nameaddr(addr) ((addr) == NAMEADDR_END ? NAMEADDR_END : ptr_name(addr)->next)
 
@@ -291,7 +289,7 @@ redo:;
     }
 }
 
-/* map is pre-allocated */
+/* L1 map is pre-allocated */
 static void add_to_dnl(u32 nameaddr) {
     struct map *noalias map = &s_map1;
     struct bucket *noalias bucket = get_bucket_by_nameaddr(map, nameaddr);
@@ -401,7 +399,7 @@ static bool load_list(u8 tag, const char *noalias filenames, u32 *noalias p_addr
             has_next = 0;
         }
 
-        if (len + 1 > PATH_MAX) {
+        unlikely_if (len + 1 > PATH_MAX) {
             log_error("path max length is %d: %.*s", PATH_MAX - 1, (int)len, start);
             continue;
         }
@@ -415,7 +413,7 @@ static bool load_list(u8 tag, const char *noalias filenames, u32 *noalias p_addr
             fp = stdin;
         } else {
             fp = fopen(fname, "rb");
-            if (!fp) {
+            unlikely_if (!fp) {
                 log_error("failed to open '%s': (%d) %s", fname, errno, strerror(errno));
                 continue;
             }
