@@ -50,18 +50,18 @@ struct nfgenmsg {
 #define NFT_MSG_NEWSETELEM 12
 
 /* [ipset] nlattr type */
-#define IPSET_ATTR_PROTOCOL 1
+#define IPSET_ATTR_PROTOCOL 1 /* u8 */
 #define IPSET_ATTR_SETNAME 2
-#define IPSET_ATTR_LINENO 9
+#define IPSET_ATTR_LINENO 9 /* u32 */
 #define IPSET_ATTR_ADT 8 /* {data, ...} */
 #define IPSET_ATTR_DATA 7 /* {ip} */
 #define IPSET_ATTR_IP 1 /* {ipaddr} */
-#define IPSET_ATTR_IPADDR_IPV4 1
-#define IPSET_ATTR_IPADDR_IPV6 2
+#define IPSET_ATTR_IPADDR_IPV4 1 /* u32(be) 4byte */
+#define IPSET_ATTR_IPADDR_IPV6 2 /* u128(be) 16byte */
 
 /* [nft] nlattr type */
-#define NFTA_SET_ELEM_LIST_TABLE 1
-#define NFTA_SET_ELEM_LIST_SET 2
+#define NFTA_SET_ELEM_LIST_TABLE 1 /* table_name */
+#define NFTA_SET_ELEM_LIST_SET 2 /* set_name */
 #define NFTA_SET_ELEM_LIST_ELEMENTS 3 /* {list_elem, ...} */
 #define NFTA_LIST_ELEM 1 /* {set_elem_*, ...} */
 #define NFTA_SET_ELEM_KEY 1 /* {data_value} */
@@ -94,6 +94,7 @@ struct nfgenmsg {
 #define IPSET_ERR_INVALID_MARKMASK 4113
 #define IPSET_ERR_SKBINFO 4114
 #define IPSET_ERR_BITMASK_NETMASK_EXCL 4115
+/* type specific error codes (hash) */
 #define IPSET_ERR_HASH_FULL 4352
 #define IPSET_ERR_HASH_ELEM 4353
 #define IPSET_ERR_INVALID_PROTO 4354
@@ -116,14 +117,15 @@ static inline const char *ipset_strerror(int errcode) {
         CASE_RET_NAME(IPSET_ERR_INVALID_CIDR);
         CASE_RET_NAME(IPSET_ERR_INVALID_NETMASK);
         CASE_RET_NAME(IPSET_ERR_INVALID_FAMILY);
-        CASE_RET_NAME(IPSET_ERR_INVALID_MARKMASK);
         CASE_RET_NAME(IPSET_ERR_TIMEOUT);
         CASE_RET_NAME(IPSET_ERR_REFERENCED);
         CASE_RET_NAME(IPSET_ERR_IPADDR_IPV4);
         CASE_RET_NAME(IPSET_ERR_IPADDR_IPV6);
         CASE_RET_NAME(IPSET_ERR_COUNTER);
         CASE_RET_NAME(IPSET_ERR_COMMENT);
+        CASE_RET_NAME(IPSET_ERR_INVALID_MARKMASK);
         CASE_RET_NAME(IPSET_ERR_SKBINFO);
+        CASE_RET_NAME(IPSET_ERR_BITMASK_NETMASK_EXCL);
         CASE_RET_NAME(IPSET_ERR_HASH_FULL);
         CASE_RET_NAME(IPSET_ERR_HASH_ELEM);
         CASE_RET_NAME(IPSET_ERR_INVALID_PROTO);
@@ -324,7 +326,7 @@ static void init_req_ipset(bool v4) {
     init_nfh(nlmsg, bufsz, v4 ? AF_INET : AF_INET6, 0);
 
     /* protocol */
-    nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_PROTOCOL, &(ubyte){IPSET_PROTOCOL}, sizeof(ubyte));
+    nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_PROTOCOL, &(u8){IPSET_PROTOCOL}, sizeof(u8));
 
     /* setname */
     nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_SETNAME, name, namelen);
