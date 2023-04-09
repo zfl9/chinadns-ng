@@ -451,6 +451,65 @@ static u32 add_list(u32 addr0, u32 n) {
     return dnl_nitems() - old_nitems;
 }
 
+#ifdef DEBUG
+static void do_debug(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
+    const char *tagname_vec[] = {"gfwlist", "chnlist"};
+    u8 tag_vec[] = {NAME_TAG_GFW, NAME_TAG_CHN};
+    u32 addr0_vec[] = {gfw_addr0, chn_addr0};
+    u32 n_vec[] = {gfw_n, chn_n};
+
+    /* test hash lookup */
+    for (int veci = 0; veci < (int)array_n(tagname_vec); ++veci) {
+        const char *tagname = tagname_vec[veci];
+        u8 tag = tag_vec[veci];
+        u32 addr0 = addr0_vec[veci];
+        u32 n = n_vec[veci];
+
+        for (u32 i = 0, addr = addr0; i < n; ++i, addr += get_namesz(addr)) {
+            char tmp[DNS_NAME_MAXLEN + 1] = {0};
+            const struct name *name = ptr_name(addr);
+            memcpy(tmp, name->name, name->namelen);
+
+            u8 tag1;
+            if (!exists_in_dnl(name->name, name->namelen, &tag1))
+                log_fatal("[%s] #raw test failed: %s", tagname, tmp);
+            if (tag1 != tag) /* dup with chnlist ? */
+                log_debug("[%s] duplicate: %s (tag:%s)", tagname, tmp, nametag_val2name(tag1));
+
+            u8 tag2;
+            if (!exists_in_dnl(tmp, name->namelen, &tag2))
+                log_fatal("[%s] #copy test failed: %s", tagname, tmp);
+            if (tag2 != tag1)
+                log_fatal("[%s] tag1:%s != tag2:%s (%s)", tagname, nametag_val2name(tag1), nametag_val2name(tag2), tmp);
+
+            *tmp = '.';
+            if (exists_in_dnl(tmp, name->namelen, &tag2))
+                log_fatal("[%s] #fake test failed: %s", tagname, tmp);
+        }
+    }
+
+    /* check map2 hash collisions  */
+    if (!map_is_null(&s_map2)) {
+        int maxlen = 0;
+        for (u32 idx = 0, n = map_cap(&s_map2); idx < n; ++idx) {
+            const struct bucket *bucket = get_bucket_by_idx(&s_map2, idx);
+            if (bucket->state == BUCKET_HEAD) {
+                int len = 0;
+                foreach_list(bucket, curaddr) ++len;
+                maxlen = max(len, maxlen);
+                if (len >= MAX_COLLISION) {
+                    log_debug("[map2_list] #list:%d >= MAX_COLLISION:%d", len, MAX_COLLISION);
+                    int i = 0;
+                    foreach_list(bucket, curaddr)
+                        log_debug("[map2_list] >> [%d] %.*s", ++i, (int)ptr_name(curaddr)->namelen, ptr_name(curaddr)->name);
+                }
+            }
+        }
+        log_debug("[map2_list] max #list: %d", maxlen);
+    }
+}
+#endif
+
 void dnl_init(void) {
     u32 gfw_addr0 = 0, gfw_n = 0, gfw_cost, gfw_nitems = 0;
     bool has_gfw = g_gfwlist_fname && load_list(NAME_TAG_GFW, g_gfwlist_fname, &gfw_addr0, &gfw_n);
@@ -500,6 +559,10 @@ void dnl_init(void) {
             (ulong)s_map2.nitems, (ulong)s_map2.nlists, (ulong)map_cap(&s_map2), map_cap(&s_map2)*sizeof(struct bucket)/1024.0);
 
     log_info("total memory cost (page-aligned): %.3fk", s_cap/1024.0);
+
+#ifdef DEBUG
+    do_debug(gfw_addr0, gfw_n, chn_addr0, chn_n);
+#endif
 }
 
 u8 get_name_tag(const char *noalias name, int namelen) {
