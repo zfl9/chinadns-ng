@@ -36,7 +36,7 @@ void skaddr_build(int family, union skaddr *noalias skaddr, const char *noalias 
 
 void skaddr_parse(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno);
 
-/* try to send all for `f(fd, base, len, args...)` (blocking send) */
+/* try to (blocking) send all, retry if interrupted by signal */
 #define sendall(f, fd, base, len, args...) ({ \
     __typeof__(f(fd, base, len, ##args)) nsent_ = 0; \
     __auto_type base_ = (base); \
@@ -44,7 +44,8 @@ void skaddr_parse(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *
     assert(len_ > 0); \
     do { \
         __auto_type ret_ = retry_EINTR(f(fd, &base_[nsent_], len_ - nsent_, ##args)); \
-        if (ret_ < 0) break; /* error occurs */ \
+        unlikely_if (ret_ < 0) break; /* error occurs */ \
+        assert(ret_ != 0); \
         nsent_ += ret_; \
     } while (nsent_ < len_); \
     nsent_ == 0 ? (__typeof__(nsent_))-1 : nsent_; \

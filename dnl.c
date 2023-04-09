@@ -145,7 +145,7 @@ static inline bool name_eq(u32 addr1, u32 addr2) {
 /* ======================== bucket ======================== */
 
 static inline u32 calc_lcap(u32 n) {
-    u32 r = ceili((ullong)n * LOAD_FACTOR_Y, LOAD_FACTOR_X); /* cap * factor => max_items */
+    u32 r = ceilu((ullong)n * LOAD_FACTOR_Y, LOAD_FACTOR_X); /* cap * factor => max_items */
     u32 cap = 1; /* 2^n */
     u32 lcap = 0; /* log2(cap), n */
     while (cap < r) { cap <<= 1; lcap++; }

@@ -5,7 +5,6 @@
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
-#include <sys/socket.h>
 
 /* since linux 3.9 */
 #ifndef SO_REUSEPORT

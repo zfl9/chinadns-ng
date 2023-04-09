@@ -74,7 +74,7 @@ struct dns_record {
     u16 rclass; // record class: internet=0x0001
     u32 rttl; // record ttl value (in seconds)
     u16 rdatalen; // record data length
-    char     rdata[]; // record data pointer (sizeof=0)
+    char rdata[]; // record data pointer (sizeof=0)
 } __attribute__((packed));
 
 /* check dns query, `name_buf` used to get domain name, return true if valid */

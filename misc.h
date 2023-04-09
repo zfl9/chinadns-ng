@@ -60,7 +60,7 @@ typedef unsigned long long ullong; /* >= 64 bits */
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 /* unsigned-integer variant: ceil(a / b) */
-#define ceili(a, b) (((ullong)(a) + (ullong)(b) - 1) / (ullong)(b))
+#define ceilu(a, b) (((ullong)(a) + (ullong)(b) - 1) / (ullong)(b))
 
 /* number of elements */
 #define array_n(a) (sizeof(a) / sizeof(*(a)))
@@ -74,33 +74,15 @@ typedef unsigned long long ullong; /* >= 64 bits */
     ret_; \
 })
 
-/* get arg (1 ~ 10) */
-#define arg1(x, ...) (x)
-#define arg2(_1, x, ...) (x)
-#define arg3(_1, _2, x, ...) (x)
-#define arg4(_1, _2, _3, x, ...) (x)
-#define arg5(_1, _2, _3, _4, x, ...) (x)
-#define arg6(_1, _2, _3, _4, _5, x, ...) (x)
-#define arg7(_1, _2, _3, _4, _5, _6, x, ...) (x)
-#define arg8(_1, _2, _3, _4, _5, _6, _7, x, ...) (x)
-#define arg9(_1, _2, _3, _4, _5, _6, _7, _8, x, ...) (x)
-#define arg10(_1, _2, _3, _4, _5, _6, _7, _8, _9, x, ...) (x)
-
-/* get arg by literal-idx */
-#define argN(idx, args...) arg##idx(args)
-
-/* get arg count (1 ~ 9) */
-#define argc(args...) arg10(args, 9, 8, 7, 6, 5, 4, 3, 2, 1)
-
 typedef u8 bitvec_t;
 
-#define bitvec_n(nbits) ceili(nbits, 8)
+#define bitvec_n(nbits) ceilu(nbits, 8)
 
 #define bitvec_get(vec, i) \
-    (!!((vec)[(ullong)(i) >> 3] & (1 << ((ullong)(i) & 7))))
-
-#define bitvec_set0(vec, i) \
-    ((vec)[(ullong)(i) >> 3] &= ~(1 << ((ullong)(i) & 7)))
+    (!!((vec)[(ullong)(i) >> 3] & (1U << ((ullong)(i) & 7))))
 
 #define bitvec_set1(vec, i) \
-    ((vec)[(ullong)(i) >> 3] |= (1 << ((ullong)(i) & 7)))
+    ((vec)[(ullong)(i) >> 3] |= (1U << ((ullong)(i) & 7)))
+
+#define bitvec_set0(vec, i) \
+    ((vec)[(ullong)(i) >> 3] &= ~(1U << ((ullong)(i) & 7)))

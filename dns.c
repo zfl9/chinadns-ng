@@ -165,6 +165,7 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
     return true;
 }
 
+/* return false if packet is bad, if `f()` return true then break foreach */
 static bool foreach_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen,
     bool (*f)(const void *noalias ip, bool v4, void *ud), void *ud)
 {
@@ -175,7 +176,7 @@ static bool foreach_ip(const void *noalias packet_buf, ssize_t packet_len, int n
     packet_buf += sizeof(struct dns_header) + namelen + sizeof(struct dns_query);
     packet_len -= sizeof(struct dns_header) + namelen + sizeof(struct dns_query);
 
-    /* find the first A/AAAA record */
+    /* foreach `A/AAAA` record */
     for (u16 i = 0; i < answer_count; ++i) {
         unlikely_if (!skip_name(&packet_buf, &packet_len))
             return false;
@@ -199,14 +200,14 @@ static bool foreach_ip(const void *noalias packet_buf, ssize_t packet_len, int n
                     log_error("rdatalen is not equal to sizeof(ipv4): %u != %d", (uint)rdatalen, IPV4_BINADDR_LEN);
                     return false;
                 }
-                if (f(record->rdata, true, ud)) return true; /* break if found one */
+                if (f(record->rdata, true, ud)) return true; /* break foreach */
                 break;
             case DNS_RECORD_TYPE_AAAA:
                 unlikely_if (rdatalen != IPV6_BINADDR_LEN) {
                     log_error("rdatalen is not equal to sizeof(ipv6): %u != %d", (uint)rdatalen, IPV6_BINADDR_LEN);
                     return false;
                 }
-                if (f(record->rdata, false, ud)) return true; /* break if found one */
+                if (f(record->rdata, false, ud)) return true; /* break foreach */
                 break;
         }
 

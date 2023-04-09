@@ -7,10 +7,11 @@
 
 #define log_write(color, level, fmt, args...) ({ \
     const struct tm *tm_ = localtime(&(time_t){time(NULL)}); \
-    printf("\e[" color ";1m%04d-%02d-%02d %02d:%02d:%02d " level "\e[0m \e[1m[%s:%d %s]\e[0m " fmt "\n", \
-            tm_->tm_year + 1900, tm_->tm_mon + 1, tm_->tm_mday, \
-            tm_->tm_hour,        tm_->tm_min,     tm_->tm_sec, \
-            __FILE__, __LINE__, __func__, ##args); \
+    printf("\e[" color ";1m%04d-%02d-%02d %02d:%02d:%02d " level "\e[0m " \
+        "\e[1m[" __FILE__ ":" literal(__LINE__) " %s]\e[0m " fmt "\n", \
+        tm_->tm_year + 1900, tm_->tm_mon + 1, tm_->tm_mday, \
+        tm_->tm_hour,        tm_->tm_min,     tm_->tm_sec, \
+        __func__, ##args); \
 })
 
 #ifdef DEBUG
