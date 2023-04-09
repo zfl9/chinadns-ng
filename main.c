@@ -40,9 +40,9 @@ struct queryctx {
     myhash_hh               hh;            /* [metadata] used internally by `uthash` */
 };
 
-static int s_epollfd          = -1;
-static int s_bind_sockfd      = -1;
-static int s_remote_sockfds[] = {[0 ... SERVER_MAXIDX] = -1};
+static int s_epollfd            = -1;
+static int s_bind_sockfd        = -1;
+static int s_upstream_sockfds[] = {[0 ... SERVER_MAXIDX] = -1};
 
 static u16              s_unique_msgid = 0;
 static struct queryctx *s_context_list = NULL;
@@ -85,10 +85,9 @@ static inline void reply_with_no_answer(const union skaddr *noalias addr, sockle
     }
 }
 
-/* handle local socket readable event */
 static void handle_local_packet(void) {
     unlikely_if (MYHASH_CNT(s_context_list) >= 65536U) { /* range:0~65535, count:65536 */
-        log_error("unique_msg_id is not enough, refused to serve");
+        log_warning("unique_msg_id is not enough, refused to serve");
         return;
     }
 
@@ -139,7 +138,7 @@ static void handle_local_packet(void) {
     set_iov(&iov, s_packet_buf, packet_len);
 
     for (int i = 0; i <= SERVER_MAXIDX; ++i) {
-        if (s_remote_sockfds[i] < 0) continue;
+        if (s_upstream_sockfds[i] < 0) continue;
 
         u8 msg_n = 1;
         if (is_chinadns_idx(i)) {
@@ -151,6 +150,7 @@ static void handle_local_packet(void) {
             msg_n = g_repeat_times;
         }
 
+        /* for no-aaaa, don't care about the result of `sendmmsg` */
         sent = true;
 
         union skaddr *addr = &g_upstream_skaddrs[i];
@@ -159,15 +159,14 @@ static void handle_local_packet(void) {
         set_msghdr(&msgv[0].msg_hdr, &iov, 1, &addr->sa, addrlen);
         for (u8 msg_i = 1; msg_i < msg_n; ++msg_i) msgv[msg_i] = msgv[0];
 
-        log_verbose("forward [%s] to %s (%s)", s_name_buf, g_upstream_addrs[i],
-            is_chinadns_idx(i) ? "chinadns" : "trustdns");
+        log_verbose("forward [%s] to %s (%s)", s_name_buf, g_upstream_addrs[i], is_chinadns_idx(i) ? "chinadns" : "trustdns");
 
-        int n_sent = sendmmsg(s_remote_sockfds[i], msgv, msg_n, 0);
+        int n_sent = sendmmsg(s_upstream_sockfds[i], msgv, msg_n, 0);
         unlikely_if (n_sent != msg_n) {
             if (n_sent < 0)
                 log_error("failed to send query to %s: (%d) %s", g_upstream_addrs[i], errno, strerror(errno));
             else
-                log_warning("n_sent:%d != msg_n:%u, kernel send buffer may not be enough", n_sent, (uint)msg_n);
+                log_warning("send query to %s: %d != %u (kernel buffer may not be enough)", g_upstream_addrs[i], n_sent, (uint)msg_n);
         }
     }
 
@@ -192,7 +191,6 @@ static void handle_local_packet(void) {
 
 static inline void remove_answer(void *noalias packet_buf, ssize_t *noalias packet_len, int namelen) {
     struct dns_header *h = packet_buf;
-    h->qr = DNS_QR_REPLY;
     h->rcode = DNS_RCODE_NOERROR;
     h->answer_count = 0;
     h->authority_count = 0;
@@ -252,15 +250,14 @@ static inline bool use_trust_reply(void *noalias packet_buf, ssize_t *noalias pa
     return true;
 }
 
-/* handle remote socket readable event */
 static void handle_remote_packet(int index) {
-    int remote_sockfd = s_remote_sockfds[index];
-    const char *remote_addr = g_upstream_addrs[index];
-    ssize_t packet_len = recvfrom(remote_sockfd, s_packet_buf, PACKET_BUFSZ, 0, NULL, NULL);
+    int sockfd = s_upstream_sockfds[index];
+    const char *addr = g_upstream_addrs[index];
+    ssize_t packet_len = recvfrom(sockfd, s_packet_buf, PACKET_BUFSZ, 0, NULL, NULL);
 
     if (packet_len < 0) {
         unlikely_if (errno != EAGAIN && errno != EWOULDBLOCK)
-            log_error("failed to recv from %s: (%d) %s", remote_addr, errno, strerror(errno));
+            log_error("failed to recv from %s: (%d) %s", addr, errno, strerror(errno));
         return;
     }
 
@@ -272,7 +269,7 @@ static void handle_remote_packet(int index) {
     struct dns_header *dns_header = s_packet_buf;
     MYHASH_GET(s_context_list, context, &dns_header->id, sizeof(dns_header->id));
     if (!context) {
-        log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_addr, (uint)dns_header->id);
+        log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, addr, (uint)dns_header->id);
         return;
     }
 
@@ -281,7 +278,7 @@ static void handle_remote_packet(int index) {
 
     if (is_chinadns_idx(index)) {
         if (context->name_tag == NAME_TAG_CHN || use_china_reply(reply_buffer, &reply_length, namelen)) {
-            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, remote_addr, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, addr, (uint)dns_header->id);
             if (context->trustdns_buf)
                 log_verbose("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
             if (g_add_tagchn_ip && context->name_tag == NAME_TAG_CHN) {
@@ -289,7 +286,7 @@ static void handle_remote_packet(int index) {
                 dns_add_ip(reply_buffer, reply_length, namelen);
             }
         } else {
-            log_verbose("reply [%s] from %s (%u), result: filter", s_name_buf, remote_addr, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: filter", s_name_buf, addr, (uint)dns_header->id);
             if (context->trustdns_buf) { /* trustdns returns before chinadns */
                 log_verbose("reply [%s] from <previous-trustdns> (%u), result: accept", s_name_buf, (uint)dns_header->id);
                 reply_buffer = context->trustdns_buf->buf;
@@ -301,16 +298,16 @@ static void handle_remote_packet(int index) {
         }
     } else {
         if (context->name_tag == NAME_TAG_GFW || context->chinadns_got || use_trust_reply(reply_buffer, &reply_length, namelen)) {
-            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, remote_addr, (uint)dns_header->id);
+            log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, addr, (uint)dns_header->id);
         } else {
             /* trustdns returns before chinadns */
             if (!context->trustdns_buf) {
-                log_verbose("reply [%s] from %s (%u), result: delay", s_name_buf, remote_addr, (uint)dns_header->id);
+                log_verbose("reply [%s] from %s (%u), result: delay", s_name_buf, addr, (uint)dns_header->id);
                 context->trustdns_buf = malloc(sizeof(*context->trustdns_buf) + packet_len);
                 context->trustdns_buf->len = packet_len; /* dns reply length */
                 memcpy(context->trustdns_buf->buf, s_packet_buf, packet_len);
             } else {
-                log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, remote_addr, (uint)dns_header->id);
+                log_verbose("reply [%s] from %s (%u), result: ignore", s_name_buf, addr, (uint)dns_header->id);
             }
             return;
         }
@@ -327,9 +324,8 @@ static void handle_remote_packet(int index) {
     free_context(context);
 }
 
-/* handle upstream reply timeout event */
 static void handle_timeout_event(struct queryctx *context) {
-    log_error("upstream dns server reply timeout, unique msgid: %u", (uint)context->unique_msgid);
+    log_warning("upstream reply timeout, unique msgid: %u", (uint)context->unique_msgid);
     free_context(context);
 }
 
@@ -345,7 +341,7 @@ int main(int argc, char *argv[]) {
     if (g_upstream_addrs[TRUSTDNS1_IDX]) log_info("trustdns server#1: %s", g_upstream_addrs[TRUSTDNS1_IDX]);
     if (g_upstream_addrs[TRUSTDNS2_IDX]) log_info("trustdns server#2: %s", g_upstream_addrs[TRUSTDNS2_IDX]);
 
-    bool need_ipset = g_add_tagchn_ip || g_default_tag == NAME_TAG_NONE || g_noaaaa_query & (NOAAAA_CHINA_IPCHK|NOAAAA_TRUST_IPCHK);
+    bool need_ipset = g_add_tagchn_ip || g_default_tag == NAME_TAG_NONE;
     if (need_ipset) ipset_init();
 
     dnl_init();
@@ -358,9 +354,9 @@ int main(int argc, char *argv[]) {
         log_info("filter AAAA for all name");
     else if (g_noaaaa_query != 0) {
         if (g_noaaaa_query & NOAAAA_TAG_GFW)
-            log_info("filter AAAA for gfwlist name");
+            log_info("filter AAAA for tag_gfw name");
         if (g_noaaaa_query & NOAAAA_TAG_CHN)
-            log_info("filter AAAA for chnlist name");
+            log_info("filter AAAA for tag_chn name");
         if (g_noaaaa_query & NOAAAA_TAG_NONE)
             log_info("filter AAAA for tag_none name");
         if (g_noaaaa_query & NOAAAA_CHINA_DNS)
@@ -387,10 +383,10 @@ int main(int argc, char *argv[]) {
         return errno;
     }
 
-    /* create remote socket */
+    /* create upstream socket */
     for (int i = 0; i <= SERVER_MAXIDX; ++i) {
         if (g_upstream_addrs[i])
-            s_remote_sockfds[i] = new_udp_socket(skaddr_family(&g_upstream_skaddrs[i]));
+            s_upstream_sockfds[i] = new_udp_socket(skaddr_family(&g_upstream_skaddrs[i]));
     }
 
     /* create epoll fd */
@@ -410,12 +406,12 @@ int main(int argc, char *argv[]) {
         return errno;
     }
 
-    /* remote socket readable event */
+    /* upstream socket readable event */
     for (int i = 0; i <= SERVER_MAXIDX; ++i) {
-        if (s_remote_sockfds[i] < 0) continue;
+        if (s_upstream_sockfds[i] < 0) continue;
         ev.events = EPOLLIN;
         ev.data.u32 = i;
-        unlikely_if (epoll_ctl(s_epollfd, EPOLL_CTL_ADD, s_remote_sockfds[i], &ev)) {
+        unlikely_if (epoll_ctl(s_epollfd, EPOLL_CTL_ADD, s_upstream_sockfds[i], &ev)) {
             log_error("failed to register epoll event: (%d) %s", errno, strerror(errno));
             return errno;
         }
