@@ -148,9 +148,9 @@ static inline const char *ipset_strerror(int errcode) {
 
 /* [add] [test_ips #req] ipset: IP_N*2  | nft: IP_N*2
    [add] [test_ips #res] ipset: IP_N    | nft: IP_N
-   [add] [add_ips  #req] ipset: 1+IP_N  | nft: 1+IP_N+2
+   [add] [add_ips  #req] ipset: 1+IP_N  | nft: 2+IP_N+1
    [add] [add_ips  #res] ipset: 1       | nft: 1        */
-#define IOV_N (max(IP_N*2, 1+IP_N+2) * 2) /* v4 + v6 */
+#define IOV_N (max(IP_N*2, 2+IP_N+1) * 2) /* v4 + v6 */
 
 /* [add] v4 + v6 */
 #define MSG_N (IP_N * 2)
