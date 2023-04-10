@@ -208,9 +208,8 @@ static inline const char *ipset_strerror(int errcode) {
 
 #define BUFSZ_4 max(IPSET_BUFSZ(true), NFT_BUFSZ(true))
 #define BUFSZ_6 max(IPSET_BUFSZ(false), NFT_BUFSZ(false))
-#define BUFSZ(v4) ((v4) ? BUFSZ_4 : BUFSZ_6)
 
-/* [add] v4 + v6 */
+/* [add test_ips] v4 + v6 */
 #define BUFSZ_R (NLMSG_SPACE(sizeof(struct nlmsgerr)) * IP_N * 2)
 
 static int s_sock   = -1; /* netlink socket fd */
@@ -232,8 +231,8 @@ static void *s_test_ip6 = NULL; /* copy the target ip6 to here */
 
 static int s_add_ip4_n    = 0; /* number of ip4 to be added */
 static int s_add_ip6_n    = 0; /* number of ip6 to be added */
-static u32 s_add_initlen4 = 0; /* ipset: msg{adt_nla} | nft: batch_begin,batch_end,msg{elems_nla} */
-static u32 s_add_initlen6 = 0; /* ipset: msg{adt_nla} | nft: batch_begin,batch_end,msg{elems_nla} */
+static u32 s_add_initlen4 = 0; /* ipset: msg{adt_nla} | nft: msg{elems_nla} */
+static u32 s_add_initlen6 = 0; /* ipset: msg{adt_nla} | nft: msg{elems_nla} */
 
 static bool (*test_res)(const struct nlmsghdr *noalias nlmsg);
 static bool test_res_ipset(const struct nlmsghdr *noalias nlmsg);
@@ -261,7 +260,7 @@ static int end_add_ip_nft(void);
 #define t_ipaddr(v4) \
     (*((v4) ? &s_test_ip4 : &s_test_ip6))
 
-/* ip-add req (nft: batch_begin,msg,batch_end) */
+/* ip-add req */
 #define a_nlmsg(v4) \
     ((struct nlmsghdr *)nlmsg_dataend(t_nlmsg(v4)))
 
@@ -506,8 +505,8 @@ static bool test_res_nft(const struct nlmsghdr *noalias nlmsg) {
     if (nlmsg->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM))
         return true;
     int errcode = nlmsg_errcode(nlmsg);
-    if (errcode != ENOENT) /* ENOENT: table not exists; set not exists; elem not exists */
-        log_error("error when querying ip: (%d) %s", errcode, strerror(errcode));
+    unlikely_if (errcode != ENOENT) /* ENOENT: table not exists; set not exists; elem not exists */
+        log_warning("error when querying ip: (%d) %s", errcode, strerror(errcode));
     return false;
 }
 
@@ -521,7 +520,6 @@ bool ipset_test_ip(const void *noalias ip, bool v4) {
 
     /* recv response */
     set_iov(&s_iov[0], s_buf_res, BUFSZ_R);
-    set_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], 1, NULL, 0);
     switch (recv_res(1, false)) {
         case 0: /* no msg */
             return true;
@@ -770,6 +768,6 @@ void ipset_end_add_ip(void) {
     for (int i = 0; i < n_msg; ++i) {
         const struct nlmsghdr *nlmsg = s_iov[i].iov_base;
         int errcode = nlmsg_errcode(nlmsg);
-        log_error("error when adding ip: (%d) %s", errcode, ipset_strerror(errcode));
+        log_warning("error when adding ip: (%d) %s", errcode, ipset_strerror(errcode));
     }
 }
