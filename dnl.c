@@ -95,7 +95,8 @@ static u32 alloc(u32 sz, u32 align) {
 
 #define addr(ptr) ((u32)((void *)(ptr) - s_base))
 
-#define ptr(addr) (s_base + (addr)) // void *
+/* alloc may change `s_base`, so the pointer must be retrieved after alloc to prevent memory reference errors */
+#define ptr(addr) (s_base + (addr))
 #define ptr_name(addr) ((struct name *)ptr(addr))
 #define ptr_bucket(addr) ((struct bucket *)ptr(addr))
 

@@ -114,7 +114,7 @@ static bool check_packet(bool is_query,
 
     /* check remaining length */
     unlikely_if (packet_len < (ssize_t)sizeof(struct dns_query)) {
-        log_error("remaining length is less than sizeof(struct dns_query): %zd < %zu", packet_len, sizeof(struct dns_query));
+        log_error("remaining length is less than sizeof(dns_query): %zd < %zu", packet_len, sizeof(struct dns_query));
         return false;
     }
 
@@ -156,7 +156,7 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
     }
 
     unlikely_if (len < (ssize_t)sizeof(struct dns_record)) {
-        log_error("remaining length is less than sizeof(struct dns_record): %zd < %zu", len, sizeof(struct dns_record));
+        log_error("remaining length is less than sizeof(dns_record): %zd < %zu", len, sizeof(struct dns_record));
         return false;
     }
 
