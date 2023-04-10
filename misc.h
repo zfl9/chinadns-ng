@@ -86,3 +86,7 @@ typedef u8 bitvec_t;
 
 #define bitvec_set0(vec, i) \
     ((vec)[(ullong)(i) >> 3] &= ~(1U << ((ullong)(i) & 7)))
+
+/* align to `n` (struct, struct member) */
+#define struct_alignto(n) \
+    __attribute__((packed,aligned(n)))

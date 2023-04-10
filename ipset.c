@@ -21,6 +21,11 @@ struct nfgenmsg {
     u16    res_id;         /* resource id (be) */
 };
 
+struct nlnfhdr {
+    struct nlmsghdr nlh struct_alignto(NLMSG_ALIGNTO);
+    struct nfgenmsg nfh struct_alignto(NLMSG_ALIGNTO);
+};
+
 /* [nft] nfgen_family */
 #define NFPROTO_INET 1 /* inet(v4/v6) */
 #define NFPROTO_IPV4 2 /* ip */
@@ -138,16 +143,16 @@ static inline const char *ipset_strerror(int errcode) {
 
 /* ====================================================== */
 
-/* in single add-request (v4/v6) */
+/* in single add-request (v4 or v6) */
 #define IP_N 10
 
-/* ipset: 1+IP_N{v4} + 1+IP_N{v6} | nft: IP_N*5{v4} + IP_N*5{v6} */
-#define IOV_N (IP_N * 5 * 2)
+/* [add] [test_ips #req] ipset: IP_N*2  | nft: IP_N*2
+   [add] [test_ips #res] ipset: IP_N    | nft: IP_N
+   [add] [add_ips  #req] ipset: 1+IP_N  | nft: 1+IP_N+2
+   [add] [add_ips  #res] ipset: 1       | nft: 1        */
+#define IOV_N (max(IP_N*2, 1+IP_N+2) * 2) /* v4 + v6 */
 
-/*
-  [add-req] ipset: 1+1 | nft: IP_N+IP_N (v4+v6)
-  [add-res] ipset: 1+1 | nft: IP_N+IP_N (v4+v6)
-*/
+/* [add] v4 + v6 */
 #define MSG_N (IP_N * 2)
 
 #define iplen(v4) \
@@ -155,65 +160,68 @@ static inline const char *ipset_strerror(int errcode) {
 
 #define IPSET_BUFSZ(v4) ( \
     /* test */ \
-    NLMSG_SPACE(sizeof(struct nfgenmsg)) /* nlh + nfh */ + \
-    nla_size_calc(sizeof(ubyte)) /* protocol */ + \
+    sizeof(struct nlnfhdr) + \
+    nla_size_calc(sizeof(u8)) /* protocol */ + \
     nla_size_calc(IPSET_MAXNAMELEN) /* set_name */ + \
-    nla_size_calc(0) /* data_nla(nested) */ + \
-    nla_size_calc(0) /* ip_nla(nested) */ + \
-    nla_size_calc(iplen(v4)) /* ipaddr_nla */ + \
+    NLA_HDRLEN /* data_nla(nested) */ + \
+    NLA_HDRLEN /* ip_nla(nested) */ + \
+    nla_size_calc(iplen(v4)) /* addr_nla */ + \
     /* add */ \
-    NLMSG_SPACE(sizeof(struct nfgenmsg)) /* nlh + nfh */ + \
-    nla_size_calc(sizeof(ubyte)) /* protocol */ + \
+    sizeof(struct nlnfhdr) + \
+    nla_size_calc(sizeof(u8)) /* protocol */ + \
     nla_size_calc(IPSET_MAXNAMELEN) /* set_name */ + \
     nla_size_calc(sizeof(u32)) /* lineno_nla */ + \
-    nla_size_calc(0) /* adt_nla(nested) */ + \
+    NLA_HDRLEN /* adt_nla(nested) */ + \
     IP_N * ( \
-        nla_size_calc(0) /* data_nla(nested) */ + \
-        nla_size_calc(0) /* ip_nla(nested) */ + \
-        nla_size_calc(iplen(v4)) /* ipaddr_nla */ \
+        NLA_HDRLEN /* data_nla(nested) */ + \
+        NLA_HDRLEN /* ip_nla(nested) */ + \
+        nla_size_calc(iplen(v4)) /* addr_nla */ \
     ) \
 )
 
 #define NFT_BUFSZ(v4) ( \
     /* test */ \
-    NLMSG_SPACE(sizeof(struct nfgenmsg)) /* nlh + nfh */ + \
+    sizeof(struct nlnfhdr) + \
     nla_size_calc(NFT_NAME_MAXLEN) /* table_name */ + \
     nla_size_calc(NFT_NAME_MAXLEN) /* set_name */ + \
-    nla_size_calc(0) /* elems_nla(nested) */ + \
-    nla_size_calc(0) /* elem_nla(nested) */ + \
-    nla_size_calc(0) /* key_nla(nested) */ + \
-    nla_size_calc(iplen(v4)) /* data_nla(nested) */ + \
+    NLA_HDRLEN /* elems_nla(nested) */ + \
+    NLA_HDRLEN /* elem_nla(nested) */ + \
+    NLA_HDRLEN /* key_nla(nested) */ + \
+    nla_size_calc(iplen(v4)) /* data_nla */ + \
     /* add */ \
-    NLMSG_SPACE(sizeof(struct nfgenmsg)) /* batch_begin */ + \
-    NLMSG_SPACE(sizeof(struct nfgenmsg)) /* nlh + nfh */ + \
+    sizeof(struct nlnfhdr) + \
     nla_size_calc(NFT_NAME_MAXLEN) /* table_name */ + \
     nla_size_calc(NFT_NAME_MAXLEN) /* set_name */ + \
-    nla_size_calc(0) /* elems_nla(nested) */ + \
-    nla_size_calc(0) /* elem_nla(nested) */ + \
-    nla_size_calc(0) /* key_nla(nested) */ + \
-    nla_size_calc(iplen(v4)) /* data_nla(nested) */ + \
-    nla_size_calc(0) /* elem_nla(nested) */ + \
-    nla_size_calc(sizeof(u32)) /* flags_nla */ + \
-    nla_size_calc(0) /* key_nla(nested) */ + \
-    nla_size_calc(iplen(v4)) /* data_nla(nested) */ + \
-    NLMSG_SPACE(sizeof(struct nfgenmsg)) /* batch_end */ + \
-    IP_N * (iplen(v4)) * 2 /* ip to add [start, end) */ \
+    NLA_HDRLEN /* elems_nla(nested) */ + \
+    IP_N * ( \
+        /* interval begin */ \
+        NLA_HDRLEN /* elem_nla(nested) */ + \
+        NLA_HDRLEN /* key_nla(nested) */ + \
+        nla_size_calc(iplen(v4)) /* data_nla */ + \
+        /* interval end */ \
+        NLA_HDRLEN /* elem_nla(nested) */ + \
+        nla_size_calc(sizeof(u32)) /* flags_nla */ + \
+        NLA_HDRLEN /* key_nla(nested) */ + \
+        nla_size_calc(iplen(v4)) /* data_nla */ \
+    ) \
 )
 
 #define BUFSZ_4 max(IPSET_BUFSZ(true), NFT_BUFSZ(true))
 #define BUFSZ_6 max(IPSET_BUFSZ(false), NFT_BUFSZ(false))
 #define BUFSZ(v4) ((v4) ? BUFSZ_4 : BUFSZ_6)
 
-#define BUFSZ_R max( \
-    NLMSG_SPACE(128), /* [test] ipset: nlmsgerr | nft: newsetelem or nlmsgerr */ \
-    NLMSG_SPACE(sizeof(struct nlmsgerr)) * IP_N * 2 /* [add] ipset: 1{v4} + 1{v6} | nft: IP_N{v4} + IP_N{v6} */ \
-)
+/* [add] v4 + v6 */
+#define BUFSZ_R (NLMSG_SPACE(sizeof(struct nlmsgerr)) * IP_N * 2)
 
 static int s_sock   = -1; /* netlink socket fd */
 static u32 s_portid = 0; /* local address (port-id) */
 
 static struct mmsghdr s_msgv[MSG_N];
 static struct iovec   s_iov[IOV_N];
+
+/* for nft [add] */
+static struct nlnfhdr s_batch_begin;
+static struct nlnfhdr s_batch_end;
 
 static void *s_buf_req4 = (char [BUFSZ_4]){0}; /* ip4 request {test_req, add_req} */
 static void *s_buf_req6 = (char [BUFSZ_6]){0}; /* ip6 request {test_req, add_req} */
@@ -224,12 +232,12 @@ static void *s_test_ip6 = NULL; /* copy the target ip6 to here */
 
 static int s_add_ip4_n    = 0; /* number of ip4 to be added */
 static int s_add_ip6_n    = 0; /* number of ip6 to be added */
-static u32 s_add_initlen4 = 0; /* ipset: msg | nft: batch_begin,msg,batch_end */
-static u32 s_add_initlen6 = 0; /* ipset: msg | nft: batch_begin,msg,batch_end */
+static u32 s_add_initlen4 = 0; /* ipset: msg{adt_nla} | nft: batch_begin,batch_end,msg{elems_nla} */
+static u32 s_add_initlen6 = 0; /* ipset: msg{adt_nla} | nft: batch_begin,batch_end,msg{elems_nla} */
 
-static bool (*test_res)(void);
-static bool test_res_ipset(void);
-static bool test_res_nft(void);
+static bool (*test_res)(const struct nlmsghdr *noalias nlmsg);
+static bool test_res_ipset(const struct nlmsghdr *noalias nlmsg);
+static bool test_res_nft(const struct nlmsghdr *noalias nlmsg);
 
 static void (*add_ip)(bool v4, const void *noalias ip);
 static void add_ip_ipset(bool v4, const void *noalias ip);
@@ -250,18 +258,12 @@ static int end_add_ip_nft(void);
 #define t_nlmsg(v4) \
     cast(struct nlmsghdr *, (v4) ? s_buf_req4 : s_buf_req6)
 
-#define t_bufsz(v4) \
-    BUFSZ(v4)
-
 #define t_ipaddr(v4) \
     (*((v4) ? &s_test_ip4 : &s_test_ip6))
 
 /* ip-add req (nft: batch_begin,msg,batch_end) */
 #define a_nlmsg(v4) \
-    cast(struct nlmsghdr *, (void *)t_nlmsg(v4) + t_nlmsg(v4)->nlmsg_len)
-
-#define a_bufsz(v4) \
-    (BUFSZ(v4) - t_nlmsg(v4)->nlmsg_len)
+    ((struct nlmsghdr *)nlmsg_dataend(t_nlmsg(v4)))
 
 #define a_initlen(v4) \
     (*((v4) ? &s_add_initlen4 : &s_add_initlen6))
@@ -269,36 +271,33 @@ static int end_add_ip_nft(void);
 #define a_ip_n(v4) \
     (*((v4) ? &s_add_ip4_n : &s_add_ip6_n))
 
-#define init_nlh(nlmsg, bufsz, type) ({ \
-    (nlmsg)->nlmsg_len = NLMSG_HDRLEN; \
-    (nlmsg)->nlmsg_type = (type); \
-    (nlmsg)->nlmsg_flags = NLM_F_REQUEST; \
-    (nlmsg)->nlmsg_seq = 0; /* used to track messages */ \
-    (nlmsg)->nlmsg_pid = s_portid; \
+#define init_nlnfhdr(nlmsg, nlh_type, nlh_flags, nfh_family, nfh_res_id) ({ \
+    struct nlnfhdr *h_ = (struct nlnfhdr *)(nlmsg); \
+    h_->nlh.nlmsg_len = sizeof(struct nlnfhdr); \
+    h_->nlh.nlmsg_type = (nlh_type); \
+    h_->nlh.nlmsg_flags = (nlh_flags); \
+    h_->nlh.nlmsg_seq = 0; /* used to track messages */ \
+    h_->nlh.nlmsg_pid = s_portid; \
+    h_->nfh.nfgen_family = (nfh_family); \
+    h_->nfh.version = NFNETLINK_V0; \
+    h_->nfh.res_id = htons(nfh_res_id); \
 })
 
-#define init_nfh(nlmsg, bufsz, family, resid) ({ \
-    struct nfgenmsg *nfh_ = nlmsg_add_data(nlmsg, bufsz, NULL, sizeof(*nfh_)); \
-    nfh_->nfgen_family = (family); \
-    nfh_->version = NFNETLINK_V0; \
-    nfh_->res_id = htons(resid); \
-})
-
-#define add_elem_ipset(nlmsg, bufsz, ip, v4) ({ \
+#define add_elem_ipset(nlmsg, ip, v4) ({ \
     u16 attrtype_ = (v4) ? IPSET_ATTR_IPADDR_IPV4 : IPSET_ATTR_IPADDR_IPV6; \
-    struct nlattr *data_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, IPSET_ATTR_DATA); \
-    struct nlattr *ip_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, IPSET_ATTR_IP); \
-    struct nlattr *addr_nla_ = nlmsg_add_nla(nlmsg, bufsz, attrtype_|NLA_F_NET_BYTEORDER, ip, iplen(v4)); \
+    struct nlattr *data_nla_ = nlmsg_add_nest_nla(nlmsg, IPSET_ATTR_DATA); \
+    struct nlattr *ip_nla_ = nlmsg_add_nest_nla(nlmsg, IPSET_ATTR_IP); \
+    struct nlattr *addr_nla_ = nlmsg_add_nla(nlmsg, attrtype_|NLA_F_NET_BYTEORDER, ip, iplen(v4)); \
     nlmsg_end_nest_nla(nlmsg, ip_nla_); \
     nlmsg_end_nest_nla(nlmsg, data_nla_); \
     addr_nla_; \
 })
 
-#define add_elem_nft(nlmsg, bufsz, ip, v4, flags) ({ \
-    struct nlattr *elem_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_LIST_ELEM); \
-    if (flags) nlmsg_add_nla(nlmsg, bufsz, NFTA_SET_ELEM_FLAGS, &(u32){htonl(flags)}, sizeof(u32)); \
-    struct nlattr *key_nla_ = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_SET_ELEM_KEY); \
-    struct nlattr *data_nla_ = nlmsg_add_nla(nlmsg, bufsz, NFTA_DATA_VALUE|NLA_F_NET_BYTEORDER, ip, iplen(v4)); \
+#define add_elem_nft(nlmsg, ip, v4, flags) ({ \
+    struct nlattr *elem_nla_ = nlmsg_add_nest_nla(nlmsg, NFTA_LIST_ELEM); \
+    if (flags) nlmsg_add_nla(nlmsg, NFTA_SET_ELEM_FLAGS, &(u32){htonl(flags)}, sizeof(u32)); \
+    struct nlattr *key_nla_ = nlmsg_add_nest_nla(nlmsg, NFTA_SET_ELEM_KEY); \
+    struct nlattr *data_nla_ = nlmsg_add_nla(nlmsg, NFTA_DATA_VALUE|NLA_F_NET_BYTEORDER, ip, iplen(v4)); \
     nlmsg_end_nest_nla(nlmsg, key_nla_); \
     nlmsg_end_nest_nla(nlmsg, elem_nla_); \
     data_nla_; \
@@ -317,39 +316,33 @@ static void init_req_ipset(bool v4) {
     /* ============ test ============ */
 
     struct nlmsghdr *nlmsg = t_nlmsg(v4);
-    size_t bufsz = t_bufsz(v4);
 
-    /* nlh */
-    init_nlh(nlmsg, bufsz, (NFNL_SUBSYS_IPSET << 8) | IPSET_CMD_TEST);
-
-    /* nfh */
-    init_nfh(nlmsg, bufsz, v4 ? AF_INET : AF_INET6, 0);
+    /* nlh + nfh */
+    init_nlnfhdr(nlmsg, (NFNL_SUBSYS_IPSET << 8) | IPSET_CMD_TEST, NLM_F_REQUEST, v4 ? AF_INET : AF_INET6, 0);
 
     /* protocol */
-    nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_PROTOCOL, &(u8){IPSET_PROTOCOL}, sizeof(u8));
+    nlmsg_add_nla(nlmsg, IPSET_ATTR_PROTOCOL, &(u8){IPSET_PROTOCOL}, sizeof(u8));
 
     /* setname */
-    nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_SETNAME, name, namelen);
+    nlmsg_add_nla(nlmsg, IPSET_ATTR_SETNAME, name, namelen);
 
     u32 len = nlmsg->nlmsg_len;
 
     /* data { ip { addr } } */
-    t_ipaddr(v4) = nla_data(add_elem_ipset(nlmsg, bufsz, NULL, v4));
+    t_ipaddr(v4) = nla_data(add_elem_ipset(nlmsg, NULL, v4));
 
     /* ============ add ============ */
 
-    nlmsg = memcpy(a_nlmsg(v4), nlmsg, len);
-    bufsz = a_bufsz(v4);
-
     /* nlh */
+    nlmsg = memcpy(a_nlmsg(v4), nlmsg, len);
     nlmsg->nlmsg_len = len;
     nlmsg->nlmsg_type = (NFNL_SUBSYS_IPSET << 8) | IPSET_CMD_ADD;
 
     /* lineno */
-    nlmsg_add_nla(nlmsg, bufsz, IPSET_ATTR_LINENO, &(u32){0}, sizeof(u32));
+    nlmsg_add_nla(nlmsg, IPSET_ATTR_LINENO, &(u32){0}, sizeof(u32));
 
     /* adt { data, data, ... } */
-    nlmsg_add_nest_nla(nlmsg, bufsz, IPSET_ATTR_ADT);
+    nlmsg_add_nest_nla(nlmsg, IPSET_ATTR_ADT);
 
     a_initlen(v4) = nlmsg->nlmsg_len;
 }
@@ -404,68 +397,40 @@ static void init_req_nft(bool v4) {
     /* ============ test ============ */
 
     struct nlmsghdr *nlmsg = t_nlmsg(v4);
-    size_t bufsz = t_bufsz(v4);
 
-    /* nlh */
-    init_nlh(nlmsg, bufsz, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_GETSETELEM);
-
-    /* nfh */
-    init_nfh(nlmsg, bufsz, family, 0);
+    /* nlh + nfh */
+    init_nlnfhdr(nlmsg, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_GETSETELEM, NLM_F_REQUEST, family, 0);
 
     /* table_name */
-    nlmsg_add_nla(nlmsg, bufsz, NFTA_SET_ELEM_LIST_TABLE, table_name, strlen(table_name) + 1);
+    nlmsg_add_nla(nlmsg, NFTA_SET_ELEM_LIST_TABLE, table_name, strlen(table_name) + 1);
 
     /* set_name */
-    nlmsg_add_nla(nlmsg, bufsz, NFTA_SET_ELEM_LIST_SET, set_name, strlen(set_name) + 1);
+    nlmsg_add_nla(nlmsg, NFTA_SET_ELEM_LIST_SET, set_name, strlen(set_name) + 1);
+
+    /* elements {elem, elem, ...} */
+    struct nlattr *elems_nla = nlmsg_add_nest_nla(nlmsg, NFTA_SET_ELEM_LIST_ELEMENTS);
 
     u32 len = nlmsg->nlmsg_len;
 
-    /* elements {elem, elem, ...} */
-    struct nlattr *elems_nla = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_SET_ELEM_LIST_ELEMENTS);
-
     /* elem */
-    t_ipaddr(v4) = nla_data(add_elem_nft(nlmsg, bufsz, NULL, v4, 0));
+    t_ipaddr(v4) = nla_data(add_elem_nft(nlmsg, NULL, v4, 0));
 
     /* elements end */
     nlmsg_end_nest_nla(nlmsg, elems_nla);
 
     /* ============ add ============ */
 
-    nlmsg = a_nlmsg(v4);
-    bufsz = a_bufsz(v4);
-
-    /* batch_begin (transaction begin) */
-    init_nlh(nlmsg, bufsz, NFNL_MSG_BATCH_BEGIN);
-    init_nfh(nlmsg, bufsz, AF_UNSPEC, NFNL_SUBSYS_NFTABLES);
-
-    a_initlen(v4) += nlmsg->nlmsg_len;
-    bufsz -= nlmsg->nlmsg_len;
-
     /* nlh */
-    nlmsg = memcpy(nlmsg_dataend(nlmsg), t_nlmsg(v4), len);
+    nlmsg = memcpy(a_nlmsg(v4), nlmsg, len);
     nlmsg->nlmsg_len = len;
     nlmsg->nlmsg_type = (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM;
 
-    /* elements {elem, elem, ...} */
-    elems_nla = nlmsg_add_nest_nla(nlmsg, bufsz, NFTA_SET_ELEM_LIST_ELEMENTS);
+    a_initlen(v4) = nlmsg->nlmsg_len;
 
-    /* elem [start, end) */
-    add_elem_nft(nlmsg, bufsz, NULL, v4, 0);
-    add_elem_nft(nlmsg, bufsz, NULL, v4, NFT_SET_ELEM_INTERVAL_END);
+    /* ============ batch ============ */
 
-    /* elements end */
-    nlmsg_end_nest_nla(nlmsg, elems_nla);
-
-    a_initlen(v4) += nlmsg->nlmsg_len;
-    bufsz -= nlmsg->nlmsg_len;
-
-    /* batch_end (transaction end) */
-    nlmsg = nlmsg_dataend(nlmsg);
-    init_nlh(nlmsg, bufsz, NFNL_MSG_BATCH_END);
-    init_nfh(nlmsg, bufsz, AF_UNSPEC, NFNL_SUBSYS_NFTABLES);
-
-    a_initlen(v4) += nlmsg->nlmsg_len;
-    bufsz -= nlmsg->nlmsg_len;
+    init_nlnfhdr(&s_batch_begin, NFNL_MSG_BATCH_BEGIN, NLM_F_REQUEST, AF_UNSPEC, NFNL_SUBSYS_NFTABLES);
+    init_nlnfhdr(&s_batch_end, NFNL_MSG_BATCH_END, NLM_F_REQUEST, AF_UNSPEC, NFNL_SUBSYS_NFTABLES);
 }
 
 void ipset_init(void) {
@@ -498,43 +463,49 @@ void ipset_init(void) {
 
 /* ======================== test-ip ======================== */
 
-#define send_req(n_msg) ({ \
-    assert((n_msg) != 0); \
-    int n_sent_ = sendall(sendmmsg, s_sock, s_msgv, n_msg, 0); \
-    assert(n_sent_ != 0); \
-    unlikely_if (n_sent_ != (n_msg)) \
-        log_error("failed to send nlmsg: %d != %d, (%d) %s", n_sent_, (int)(n_msg), errno, strerror(errno)); \
-    n_sent_; \
-})
-
-/* return 0 if no-msg */
-#define recv_res(n_msg, err_if_nomsg) ({ \
-    assert((n_msg) != 0); \
-    int n_recv_ = recvmmsg(s_sock, s_msgv, n_msg, MSG_DONTWAIT, NULL); \
-    assert(n_recv_ != 0); \
-    if (n_recv_ < 0) { /* no-msg or error */ \
-        if (errno == EAGAIN || errno == EWOULDBLOCK) n_recv_ = 0; \
-        unlikely_if ((err_if_nomsg) || n_recv_ < 0) \
-            log_error("failed to recv nlmsg: (%d) %s", errno, strerror(errno)); \
-    } \
-    n_recv_; \
-})
-
-static bool test_res_ipset(void) {
-    const struct nlmsghdr *nlmsg = s_buf_res;
-    int errcode = nlmsg_errcode(nlmsg);
-    assert(errcode);
-    if (errcode != IPSET_ERR_EXIST)
-        log_error("error when querying ip: (%d) %s", errcode, ipset_strerror(errcode));
-    return false;
+/* res<0: error || res>0: n_sent */
+static inline int send_req(int n_msg) {
+    assert(n_msg > 0);
+    assert(n_msg <= MSG_N);
+    int n_sent = sendall(sendmmsg, s_sock, s_msgv, n_msg, 0);
+    assert(n_sent != 0);
+    unlikely_if (n_sent != n_msg)
+        log_error("failed to send nlmsg: %d != %d, (%d) %s", n_sent, n_msg, errno, strerror(errno));
+    return n_sent;
 }
 
-static bool test_res_nft(void) {
-    const struct nlmsghdr *nlmsg = s_buf_res;
+/* res<0: error || res=0: no-msg || res>0: n_recv */
+static inline int recv_res(int n_msg, bool err_if_nomsg) {
+    assert(n_msg > 0);
+    assert(n_msg <= MSG_N);
+    int n_recv = recvmmsg(s_sock, s_msgv, n_msg, MSG_DONTWAIT, NULL);
+    assert(n_recv != 0);
+    if (n_recv < 0) { /* no-msg or error */
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            n_recv = 0;
+        unlikely_if (err_if_nomsg || n_recv < 0)
+            log_error("failed to recv nlmsg: (%d) %s", errno, strerror(errno));
+    }
+    return n_recv;
+}
+
+static bool test_res_ipset(const struct nlmsghdr *noalias nlmsg) {
+    int errcode = nlmsg_errcode(nlmsg);
+    switch (errcode) {
+        case 0:
+            return true;
+        case IPSET_ERR_EXIST:
+            return false;
+        default:
+            log_warning("error when querying ip: (%d) %s", errcode, ipset_strerror(errcode));
+            return false;
+    }
+}
+
+static bool test_res_nft(const struct nlmsghdr *noalias nlmsg) {
     if (nlmsg->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM))
         return true;
     int errcode = nlmsg_errcode(nlmsg);
-    assert(errcode);
     if (errcode != ENOENT) /* ENOENT: table not exists; set not exists; elem not exists */
         log_error("error when querying ip: (%d) %s", errcode, strerror(errcode));
     return false;
@@ -544,8 +515,7 @@ bool ipset_test_ip(const void *noalias ip, bool v4) {
     memcpy(t_ipaddr(v4), ip, iplen(v4));
 
     /* send request */
-    struct nlmsghdr *nlmsg = t_nlmsg(v4);
-    set_iov(&s_iov[0], nlmsg, nlmsg->nlmsg_len);
+    set_iov(&s_iov[0], t_nlmsg(v4), t_nlmsg(v4)->nlmsg_len);
     set_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], 1, NULL, 0);
     unlikely_if (send_req(1) < 0) return false; /* send failed */
 
@@ -556,7 +526,7 @@ bool ipset_test_ip(const void *noalias ip, bool v4) {
         case 0: /* no msg */
             return true;
         case 1:
-            return test_res();
+            return test_res(s_buf_res);
         default: /* error occurs */
             return false;
     }
@@ -566,47 +536,46 @@ bool ipset_test_ip(const void *noalias ip, bool v4) {
 
 static void add_ip_ipset(bool v4, const void *noalias ip) {
     struct nlmsghdr *nlmsg = a_nlmsg(v4);
-    if (!a_ip_n(v4)) nlmsg->nlmsg_len = a_initlen(v4);
-    size_t bufsz = a_bufsz(v4);
-    add_elem_ipset(nlmsg, bufsz, ip, v4);
+    add_elem_ipset(nlmsg, ip, v4);
 }
 
 static void add_ip_nft(bool v4, const void *noalias ip) {
-    int len = iplen(v4);
-    void *start = (void *)a_nlmsg(v4) + a_initlen(v4) + a_ip_n(v4) * len * 2;
-    ubyte *end = start + len;
-
-    memcpy(start, ip, len);
-    memcpy(end, ip, len);
-
-    /* [start, end) */
-    for (int i = len - 1; i >= 0; --i) {
-        ubyte old = end[i];
-        if (++end[i] > old) break;
+    struct nlmsghdr *nlmsg = a_nlmsg(v4);
+    add_elem_nft(nlmsg, ip, v4, 0); /* start */
+    ubyte *p = nla_data(add_elem_nft(nlmsg, ip, v4, NFT_SET_ELEM_INTERVAL_END)); /* end */
+    for (int i = iplen(v4) - 1; i >= 0; --i) {
+        ubyte old = p[i];
+        if (++p[i] > old) break;
     }
 }
 
 void ipset_add_ip(const void *noalias ip, bool v4) {
-    if (a_ip_n(v4) >= IP_N) ipset_end_add_ip();
+    int n = a_ip_n(v4);
+    if (n <= 0)
+        a_nlmsg(v4)->nlmsg_len = a_initlen(v4);
+    else if (n >= IP_N) {
+        ipset_end_add_ip();
+        assert(a_ip_n(v4) == 0);
+        a_nlmsg(v4)->nlmsg_len = a_initlen(v4);
+    }
     add_ip(v4, ip);
-    ++a_ip_n(v4); /* must be after `add_ip` */
+    ++a_ip_n(v4);
 }
 
 /* ======================== end-add-ip ======================== */
 
-#define init_nlerr_msgv(n) ({ \
-    size_t sz_ = NLMSG_SPACE(sizeof(struct nlmsgerr)); \
-    for (__typeof__(n) i_ = 0; i_ < (n); ++i_) { \
-        set_iov(&s_iov[i_], s_buf_res + sz_ * i_, sz_); \
-        set_msghdr(&s_msgv[i_].msg_hdr, &s_iov[i_], 1, NULL, 0); \
-    } \
-})
+static inline void init_nlerr_msgv(int n) {
+    assert(n > 0);
+    assert(n <= MSG_N);
+    size_t sz = NLMSG_SPACE(sizeof(struct nlmsgerr));
+    for (int i = 0; i < n; ++i) {
+        set_iov(&s_iov[i], s_buf_res + sz * i, sz);
+        set_msghdr(&s_msgv[i].msg_hdr, &s_iov[i], 1, NULL, 0);
+    }
+}
 
-/* zero `exists` before calling */
-static void test_ips(bitvec_t exists[noalias],
-                     void (*next_ip)(bool v4, void **noalias p),
-                     bool (*test_ip)(const struct nlmsghdr *noalias nlmsg))
-{
+/* v4 and v6, zero `exists` before calling */
+static void test_ips(bitvec_t exists[noalias], void (*next_ip)(bool v4, void **noalias p)) {
     int n_msg = 0;
 
     /* fill ip-test msg */
@@ -641,7 +610,7 @@ static void test_ips(bitvec_t exists[noalias],
 
     /* save result to bit-vector */
     for (int i = 0; i < n_msg; ++i) {
-        if (test_ip(s_iov[i].iov_base))
+        if (test_res(s_iov[i].iov_base))
             bitvec_set1(exists, i);
     }
 }
@@ -653,10 +622,6 @@ static void next_ip_ipset(bool v4, void **noalias p) {
         *p += iplen(v4) /* aligned(4) */ + NLA_HDRLEN * 3;
 }
 
-static bool test_ip_ipset(const struct nlmsghdr *noalias nlmsg) {
-    return nlmsg_errcode(nlmsg) == 0;
-}
-
 static int end_add_ip_ipset(void) {
     int n_msg = 0;
 
@@ -664,8 +629,9 @@ static int end_add_ip_ipset(void) {
     t_nlmsg(true)->nlmsg_flags |= NLM_F_ACK;
     t_nlmsg(false)->nlmsg_flags |= NLM_F_ACK;
 
+    /* v4 and v6 */
     bitvec_t exists[bitvec_n(IP_N * 2)] = {0};
-    test_ips(exists, next_ip_ipset, test_ip_ipset);
+    test_ips(exists, next_ip_ipset);
 
     /* remove ack flag */
     t_nlmsg(true)->nlmsg_flags &= ~NLM_F_ACK;
@@ -688,14 +654,12 @@ static int end_add_ip_ipset(void) {
 
         int add_n = 0;
 
-        s_iov[iov_i].iov_base = nlmsg;
-        s_iov[iov_i].iov_len = nlmsg->nlmsg_len;
+        set_iov(&s_iov[iov_i], nlmsg, nlmsg->nlmsg_len);
         ++iov_i;
 
         for (int ipi = 0; ipi < ipn; ++ipi, elem += elemsz) {
             if (!bitvec_get(exists, ipi)) {
-                s_iov[iov_i].iov_base = elem;
-                s_iov[iov_i].iov_len = elemsz;
+                set_iov(&s_iov[iov_i], elem, elemsz);
                 ++iov_i;
                 ++add_n;
             }
@@ -719,20 +683,19 @@ static int end_add_ip_ipset(void) {
 
 static void next_ip_nft(bool v4, void **noalias p) {
     if (!*p)
-        *p = (void *)a_nlmsg(v4) + a_initlen(v4);
+        *p = (void *)a_nlmsg(v4) + a_initlen(v4) + NLA_HDRLEN * 3;
     else
-        *p += iplen(v4) * 2;
-}
-
-static bool test_ip_nft(const struct nlmsghdr *noalias nlmsg) {
-    return nlmsg->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM);
+        *p += NLA_HDRLEN * 7 + NLA_ALIGN(sizeof(u32)) + iplen(v4) * 2 /* aligned(4) */;
 }
 
 static int end_add_ip_nft(void) {
     int n_msg = 0;
 
+    /* v4 and v6 */
     bitvec_t exists[bitvec_n(IP_N * 2)] = {0};
-    test_ips(exists, next_ip_nft, test_ip_nft);
+    test_ips(exists, next_ip_nft);
+
+    int iov_i = 0;
 
     const bool v4vec[] = {true, false};
     for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
@@ -741,44 +704,42 @@ static int end_add_ip_nft(void) {
         int ipn = a_ip_n(v4);
         if (ipn <= 0) continue;
 
-        /* batch_begin|msg|batch_end */
-        void *nlmsg = a_nlmsg(v4);
-        u32 initlen = a_initlen(v4);
+        struct nlmsghdr *nlmsg = a_nlmsg(v4);
+        nlmsg->nlmsg_len = a_initlen(v4);
 
-        void *basev[5];
-        size_t lenv[5];
-        int iplen = iplen(v4);
+        void *elem = nlmsg_dataend(nlmsg);
+        size_t elemsz = NLA_HDRLEN * 7 + NLA_ALIGN(sizeof(u32)) + iplen(v4) * 2 /* aligned(4) */;
 
-        /* batch_end */
-        lenv[4] = NLMSG_SPACE(sizeof(struct nfgenmsg));
-        basev[4] = nlmsg + initlen - lenv[4];
+        int add_n = 0;
 
-        /* ip_end */
-        lenv[3] = iplen;
-        basev[3] = nlmsg + initlen + iplen; /* step:2 */
+        set_iov(&s_iov[iov_i], &s_batch_begin, sizeof(s_batch_begin));
+        ++iov_i;
 
-        /* elem2_nla */
-        lenv[2] = NLA_HDRLEN /* elem_h */ + nla_size_calc(sizeof(u32)) /* flags */ + NLA_HDRLEN /* key_h */ + NLA_HDRLEN /* data_h */;
-        basev[2] = basev[4] - lenv[3] - lenv[2];
+        set_iov(&s_iov[iov_i], nlmsg, nlmsg->nlmsg_len);
+        ++iov_i;
 
-        /* ip_start */
-        lenv[1] = iplen;
-        basev[1] = nlmsg + initlen; /* step:2 */
-
-        /* batch_begin... */
-        lenv[0] = initlen - lenv[4] - lenv[3] - lenv[2] - lenv[1];
-        basev[0] = nlmsg;
-
-        for (int ipi = 0; ipi < ipn; ++ipi) {
+        for (int ipi = 0; ipi < ipn; ++ipi, elem += elemsz) {
             if (!bitvec_get(exists, ipi)) {
-                int i = n_msg++;
-                for (int j = 0; j < (int)array_n(basev); ++j)
-                    set_iov(&s_iov[i*5+j], basev[j], lenv[j]);
-                set_msghdr(&s_msgv[i].msg_hdr, &s_iov[i*5], 5, NULL, 0);
+                set_iov(&s_iov[iov_i], elem, elemsz);
+                ++iov_i;
+                ++add_n;
             }
-            basev[1] += iplen + iplen;
-            basev[3] += iplen + iplen;
         }
+
+        if (add_n <= 0) {
+            iov_i -= 2;
+            continue;
+        }
+
+        set_iov(&s_iov[iov_i], &s_batch_end, sizeof(s_batch_end));
+        ++iov_i;
+
+        struct nlattr *elems_nla = nlmsg_dataend(nlmsg) - NLA_HDRLEN;
+        elems_nla->nla_len = nla_len_calc(add_n * elemsz);
+        nlmsg->nlmsg_len += add_n * elemsz;
+
+        int i = n_msg++;
+        set_msghdr(&s_msgv[i].msg_hdr, &s_iov[iov_i - 3 - add_n], 3 + add_n, NULL, 0);
     }
 
     return n_msg;
