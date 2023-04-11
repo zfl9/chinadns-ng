@@ -541,7 +541,7 @@ static void add_ip_nft(bool v4, const void *noalias ip) {
     struct nlmsghdr *nlmsg = a_nlmsg(v4);
     add_elem_nft(nlmsg, ip, v4, 0); /* start */
     ubyte *p = nla_data(add_elem_nft(nlmsg, ip, v4, NFT_SET_ELEM_INTERVAL_END)); /* end */
-    for (int i = iplen(v4) - 1; i >= 0; --i) {
+    for (int i = iplen(v4) - 1; i >= 0; --i) { /* lsb -> msb */
         ubyte old = p[i];
         if (++p[i] > old) break;
     }
@@ -617,12 +617,10 @@ static void next_ip_ipset(bool v4, void **noalias p) {
     if (!*p)
         *p = (void *)a_nlmsg(v4) + a_initlen(v4) + NLA_HDRLEN * 3;
     else
-        *p += iplen(v4) /* aligned(4) */ + NLA_HDRLEN * 3;
+        *p += NLA_HDRLEN * 3 + iplen(v4) /* aligned(4) */;
 }
 
 static int end_add_ip_ipset(void) {
-    int n_msg = 0;
-
     /* set ack flag */
     t_nlmsg(true)->nlmsg_flags |= NLM_F_ACK;
     t_nlmsg(false)->nlmsg_flags |= NLM_F_ACK;
@@ -636,6 +634,7 @@ static int end_add_ip_ipset(void) {
     t_nlmsg(false)->nlmsg_flags &= ~NLM_F_ACK;
 
     int iov_i = 0;
+    int n_msg = 0;
 
     const bool v4vec[] = {true, false};
     for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
@@ -673,7 +672,7 @@ static int end_add_ip_ipset(void) {
         nlmsg->nlmsg_len += add_n * elemsz;
 
         int i = n_msg++;
-        set_msghdr(&s_msgv[i].msg_hdr, &s_iov[iov_i - add_n - 1], 1 + add_n, NULL, 0);
+        set_msghdr(&s_msgv[i].msg_hdr, &s_iov[iov_i - 1 - add_n], 1 + add_n, NULL, 0);
     }
 
     return n_msg;
@@ -687,13 +686,15 @@ static void next_ip_nft(bool v4, void **noalias p) {
 }
 
 static int end_add_ip_nft(void) {
-    int n_msg = 0;
-
     /* v4 and v6 */
     bitvec_t exists[bitvec_n(IP_N * 2)] = {0};
     test_ips(exists, next_ip_nft);
 
     int iov_i = 0;
+
+    /* transaction begin */
+    set_iov(&s_iov[iov_i], &s_batch_begin, sizeof(s_batch_begin));
+    ++iov_i;
 
     const bool v4vec[] = {true, false};
     for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
@@ -710,9 +711,6 @@ static int end_add_ip_nft(void) {
 
         int add_n = 0;
 
-        set_iov(&s_iov[iov_i], &s_batch_begin, sizeof(s_batch_begin));
-        ++iov_i;
-
         set_iov(&s_iov[iov_i], nlmsg, nlmsg->nlmsg_len);
         ++iov_i;
 
@@ -725,22 +723,25 @@ static int end_add_ip_nft(void) {
         }
 
         if (add_n <= 0) {
-            iov_i -= 2;
+            --iov_i;
             continue;
         }
-
-        set_iov(&s_iov[iov_i], &s_batch_end, sizeof(s_batch_end));
-        ++iov_i;
 
         struct nlattr *elems_nla = nlmsg_dataend(nlmsg) - NLA_HDRLEN;
         elems_nla->nla_len = nla_len_calc(add_n * elemsz);
         nlmsg->nlmsg_len += add_n * elemsz;
-
-        int i = n_msg++;
-        set_msghdr(&s_msgv[i].msg_hdr, &s_iov[iov_i - 3 - add_n], 3 + add_n, NULL, 0);
     }
 
-    return n_msg;
+    if (iov_i <= 1)
+        return 0;
+
+    /* transaction end */
+    set_iov(&s_iov[iov_i], &s_batch_end, sizeof(s_batch_end));
+    ++iov_i;
+
+    set_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], iov_i, NULL, 0);
+
+    return 1;
 }
 
 void ipset_end_add_ip(void) {
@@ -762,7 +763,7 @@ void ipset_end_add_ip(void) {
     unlikely_if ((n_msg = send_req(n_msg)) < 0) return; /* all failed */
 
     /* recv nlmsgerr */
-    init_nlerr_msgv(n_msg);
+    init_nlerr_msgv(max(n_msg, 2)); /* nft send v4 and v6 together, but the res are separate */
     likely_if ((n_msg = recv_res(n_msg, false)) == 0) return; /* no msg */
 
     for (int i = 0; i < n_msg; ++i) {
