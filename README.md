@@ -126,7 +126,9 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 - `ipset-name4` 选项指定存储中国大陆 IPv4 地址的 ipset/nft 集合名。
 - `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset/nft 集合名。
-- nft 也是用这两选项，名称格式为：`family名称@table名称@set名称`。
+- nft 也是用这两选项，名称格式为：`family名@table名@set名`，自带的 nft 数据文件使用如下名称：
+  - 大陆 IPv4 地址集合：`inet@global@chnroute`
+  - 大陆 IPv6 地址集合：`inet@global@chnroute6`
 
 ---
 
@@ -202,14 +204,19 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ## 简单测试
 
-使用 ipset 工具导入项目根目录下的 `chnroute.ipset` 和 `chnroute6.ipset`：
+导入项目根目录下的 `chnroute*.ipset` 或 `chnroute*.nftset`：
 
 ```bash
+# 使用 ipset
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
+
+# 使用 nft
+nft -f chnroute.nftset
+nft -f chnroute6.nftset
 ```
 
-> 只要没有显式的从内核删除 ipset 集合，那么下次运行时就不需要再次导入了。
+> 只要没有显式的从内核删除 ipset/nft 集合，那么下次运行时就不需要再次导入了。
 
 然后运行 chinadns-ng，注意我是配置了全局代理的，所以 `8.8.8.8` 会走代理出去。
 
@@ -375,6 +382,19 @@ ipset -F chnroute
 ipset -F chnroute6
 ipset -R -exist <chnroute.ipset
 ipset -R -exist <chnroute6.ipset
+```
+
+---
+
+### 如何更新 chnroute.nftset、chnroute6.nftset
+
+```bash
+./update-chnroute-nft.sh
+./update-chnroute6-nft.sh
+nft flush set inet global chnroute
+nft flush set inet global chnroute6
+nft -f chnroute.nftset
+nft -f chnroute6.nftset
 ```
 
 ---
