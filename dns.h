@@ -1,7 +1,6 @@
 #pragma once
 
 #include "misc.h"
-#include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
@@ -9,7 +8,7 @@
 
 /* dns packet max size (in bytes) */
 #define DNS_PACKET_MAXSIZE 1472 /* compatible with edns */
-#define DNS_PACKET_MINSIZE (sizeof(dns_header_t) + DNS_NAME_ENC_MINLEN + sizeof(dns_query_t))
+#define DNS_PACKET_MINSIZE (sizeof(struct dns_header) + DNS_NAME_ENC_MINLEN + sizeof(struct dns_query))
 
 /* name max len (ASCII name) */
 #define DNS_NAME_MAXLEN 253 /* "www.example.com" length:15 */
@@ -32,76 +31,79 @@
 #define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
 
 /* dns header structure (fixed length) */
-typedef struct {
-    uint16_t id; // id of message
+struct dns_header {
+    u16 id; // id of message
 #if defined(__BIG_ENDIAN_BITFIELD)
-    uint8_t  qr:1; // query=0; response=1
-    uint8_t  opcode:4; // standard-query=0, etc.
-    uint8_t  aa:1; // is authoritative answer, set by server
-    uint8_t  tc:1; // message is truncated, set by server
-    uint8_t  rd:1; // is recursion desired, set by client
-    uint8_t  ra:1; // is recursion available, set by server
-    uint8_t  z:3; // reserved bits set to zero
-    uint8_t  rcode:4; // response code: no-error=0, etc.
+    u8  qr:1; // query=0; response=1
+    u8  opcode:4; // standard-query=0, etc.
+    u8  aa:1; // is authoritative answer, set by server
+    u8  tc:1; // message is truncated, set by server
+    u8  rd:1; // is recursion desired, set by client
+    u8  ra:1; // is recursion available, set by server
+    u8  z:3; // reserved bits set to zero
+    u8  rcode:4; // response code: no-error=0, etc.
 #elif defined(__LITTLE_ENDIAN_BITFIELD)
-    uint8_t  rd:1; // is recursion desired, set by client
-    uint8_t  tc:1; // message is truncated, set by server
-    uint8_t  aa:1; // is authoritative answer, set by server
-    uint8_t  opcode:4; // standard-query=0, etc.
-    uint8_t  qr:1; // query=0; response=1
-    uint8_t  rcode:4; // response code: no-error=0, etc.
-    uint8_t  z:3; // reserved bits set to zero
-    uint8_t  ra:1; // is recursion available, set by server
+    u8  rd:1; // is recursion desired, set by client
+    u8  tc:1; // message is truncated, set by server
+    u8  aa:1; // is authoritative answer, set by server
+    u8  opcode:4; // standard-query=0, etc.
+    u8  qr:1; // query=0; response=1
+    u8  rcode:4; // response code: no-error=0, etc.
+    u8  z:3; // reserved bits set to zero
+    u8  ra:1; // is recursion available, set by server
 #else
     #error "please fix <asm/byteorder.h>"
 #endif
-    uint16_t question_count; // question count
-    uint16_t answer_count; // answer record count
-    uint16_t authority_count; // authority record count
-    uint16_t additional_count; // additional record count
-} __attribute__((packed)) dns_header_t;
+    u16 question_count; // question count
+    u16 answer_count; // answer record count
+    u16 authority_count; // authority record count
+    u16 additional_count; // additional record count
+} __attribute__((packed));
 
 /* fixed length of query structure */
-typedef struct {
+struct dns_query {
     // field qname; variable length
-    uint16_t qtype; // query type: A/AAAA/CNAME/MX, etc.
-    uint16_t qclass; // query class: internet=0x0001
-} __attribute__((packed)) dns_query_t;
+    u16 qtype; // query type: A/AAAA/CNAME/MX, etc.
+    u16 qclass; // query class: internet=0x0001
+} __attribute__((packed));
 
 /* fixed length of record structure */
-typedef struct {
+struct dns_record {
     // field rname; variable length
-    uint16_t rtype; // record type: A/AAAA/CNAME/MX, etc.
-    uint16_t rclass; // record class: internet=0x0001
-    uint32_t rttl; // record ttl value (in seconds)
-    uint16_t rdatalen; // record data length
-    char     rdata[]; // record data pointer (sizeof=0)
-} __attribute__((packed)) dns_record_t;
+    u16 rtype; // record type: A/AAAA/CNAME/MX, etc.
+    u16 rclass; // record class: internet=0x0001
+    u32 rttl; // record ttl value (in seconds)
+    u16 rdatalen; // record data length
+    char rdata[]; // record data pointer (sizeof=0)
+} __attribute__((packed));
 
 /* check dns query, `name_buf` used to get domain name, return true if valid */
-bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
+bool dns_check_query(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
 
 /* check dns reply, `name_buf` used to get domain name, return true if valid */
-bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
+bool dns_check_reply(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen);
 
-/* result of dns_chnip_check() */
+/* result of dns_test_ip() */
 #define DNS_IPCHK_IS_CHNIP 0
 #define DNS_IPCHK_NOT_CHNIP 1
 #define DNS_IPCHK_NOT_FOUND 2
 #define DNS_IPCHK_BAD_PACKET 3
 
 /* check if the answer ip is in the chnroute ipset (check qtype before call) */
-int dns_chnip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen);
+int dns_test_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen);
 
-#define dns_qtype(buf, namelen) ({ \
-    const dns_query_t *q_ = (void *)(buf) + sizeof(dns_header_t) + (namelen); \
-    ntohs(q_->qtype); \
-})
+/* add the answer ip to ipset (chnroute/chnroute6) */
+void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen);
+
+static inline u16 dns_qtype(const void *noalias packet_buf, int namelen) {
+    const struct dns_query *q = packet_buf + sizeof(struct dns_header) + namelen;
+    return ntohs(q->qtype);
+}
 
 /* "\0" => 0 */
 /* "\1x\0" => 1 */
 /* "\3foo\3com\0" => 7 */
-#define dns_ascii_namelen(namelen) ({ \
-    int n_ = (int)(namelen) - 2; \
-    n_ > 0 ? n_ : 0; \
-})
+static inline int dns_ascii_namelen(int namelen) {
+    int n = namelen - 2;
+    return n > 0 ? n : 0;
+}

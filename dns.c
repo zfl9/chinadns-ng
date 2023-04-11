@@ -1,9 +1,8 @@
 #define _GNU_SOURCE
 #include "dns.h"
 #include "net.h"
+#include "ipset.h"
 #include "log.h"
-#include "misc.h"
-#include <stddef.h>
 #include <string.h>
 
 /* "\3www\6google\3com\0" => "www.google.com" */
@@ -24,15 +23,15 @@ static bool decode_name(char *noalias out, const char *noalias src, int len) {
         if (first) first = 0; else *out++ = '.';
         int label_len = *(const ubyte *)src++; --len;
         unlikely_if (label_len < 1) {
-            LOGE("label length is too short: %d", label_len);
+            log_error("label length is too short: %d", label_len);
             return false;
         }
         unlikely_if (label_len > DNS_NAME_LABEL_MAXLEN) {
-            LOGE("label length is too long: %d", label_len);
+            log_error("label length is too long: %d", label_len);
             return false;
         }
         unlikely_if (label_len > len) {
-            LOGE("label length is greater than remaining length: %d > %d", label_len, len);
+            log_error("label length is greater than remaining length: %d > %d", label_len, len);
             return false;
         }
         src += label_len;
@@ -41,7 +40,7 @@ static bool decode_name(char *noalias out, const char *noalias src, int len) {
     }
 
     unlikely_if (len != 0) {
-        LOGE("name format error, remaining length: %d", len);
+        log_error("name format error, remaining length: %d", len);
         return false;
     }
 
@@ -55,49 +54,49 @@ static bool check_packet(bool is_query,
 {
     /* check packet length */
     unlikely_if (packet_len < (ssize_t)DNS_PACKET_MINSIZE) {
-        LOGE("dns packet is too short: %zd", packet_len);
+        log_error("dns packet is too short: %zd", packet_len);
         return false;
     }
     unlikely_if (packet_len > DNS_PACKET_MAXSIZE) {
-        LOGE("dns packet is too long: %zd", packet_len);
+        log_error("dns packet is too long: %zd", packet_len);
         return false;
     }
 
     /* check header */
-    const dns_header_t *header = packet_buf;
+    const struct dns_header *header = packet_buf;
     unlikely_if (header->qr != (is_query ? DNS_QR_QUERY : DNS_QR_REPLY)) {
-        LOGE("this is a %s packet, but header->qr is %u", is_query ? "query" : "reply", (uint)header->qr);
+        log_error("this is a %s packet, but header->qr is %u", is_query ? "query" : "reply", (uint)header->qr);
         return false;
     }
     unlikely_if (header->opcode != DNS_OPCODE_QUERY) {
-        LOGE("this is not a standard query, opcode: %u", (uint)header->opcode);
+        log_error("this is not a standard query, opcode: %u", (uint)header->opcode);
         return false;
     }
     unlikely_if (ntohs(header->question_count) != 1) {
-        LOGE("there should be one and only one question section: %u", (uint)ntohs(header->question_count));
+        log_error("there should be one and only one question section: %u", (uint)ntohs(header->question_count));
         return false;
     }
 
-    /* move to question section (name + dns_query_t) */
-    packet_buf += sizeof(dns_header_t);
-    packet_len -= sizeof(dns_header_t);
+    /* move to question section (name + struct dns_query) */
+    packet_buf += sizeof(struct dns_header);
+    packet_len -= sizeof(struct dns_header);
 
     /* search the queried domain name */
     /* encoded name: "\3www\6google\3com\0" */
     const void *p = memchr(packet_buf, 0, packet_len);
     unlikely_if (!p) {
-        LOGE("format error: domain name end byte not found");
+        log_error("format error: domain name end byte not found");
         return false;
     }
 
     /* check name length */
     const int namelen = p + 1 - packet_buf;
     unlikely_if (namelen < DNS_NAME_ENC_MINLEN) {
-        LOGE("encoded domain name is too short: %d", namelen);
+        log_error("encoded domain name is too short: %d", namelen);
         return false;
     }
     unlikely_if (namelen > DNS_NAME_ENC_MAXLEN) {
-        LOGE("encoded domain name is too long: %d", namelen);
+        log_error("encoded domain name is too long: %d", namelen);
         return false;
     }
 
@@ -109,20 +108,20 @@ static bool check_packet(bool is_query,
     if (p_namelen)
         *p_namelen = namelen;
 
-    /* move to dns_query_t pos */
+    /* move to struct dns_query pos */
     packet_buf += namelen;
     packet_len -= namelen;
 
     /* check remaining length */
-    unlikely_if (packet_len < (ssize_t)sizeof(dns_query_t)) {
-        LOGE("remaining length is less than sizeof(dns_query_t): %zd < %zu", packet_len, sizeof(dns_query_t));
+    unlikely_if (packet_len < (ssize_t)sizeof(struct dns_query)) {
+        log_error("remaining length is less than sizeof(dns_query): %zd < %zu", packet_len, sizeof(struct dns_query));
         return false;
     }
 
     /* check query class */
-    const dns_query_t *query_ptr = packet_buf;
+    const struct dns_query *query_ptr = packet_buf;
     unlikely_if (ntohs(query_ptr->qclass) != DNS_CLASS_INTERNET) {
-        LOGE("only supports standard internet query class: %u", (uint)ntohs(query_ptr->qclass));
+        log_error("only supports standard internet query class: %u", (uint)ntohs(query_ptr->qclass));
         return false;
     }
 
@@ -151,13 +150,13 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
             ptr += 1 + label_len;
             len -= 1 + label_len;
         } else {
-            LOGE("label length is too long: %d", label_len);
+            log_error("label length is too long: %d", label_len);
             return false;
         }
     }
 
-    unlikely_if (len < (ssize_t)sizeof(dns_record_t)) {
-        LOGE("remaining length is less than sizeof(dns_record_t): %zd < %zu", len, sizeof(dns_record_t));
+    unlikely_if (len < (ssize_t)sizeof(struct dns_record)) {
+        log_error("remaining length is less than sizeof(dns_record): %zd < %zu", len, sizeof(struct dns_record));
         return false;
     }
 
@@ -166,59 +165,87 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
     return true;
 }
 
-int dns_chnip_check(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
-    const dns_header_t *h = packet_buf;
-    uint16_t answer_count = ntohs(h->answer_count);
+/* return false if packet is bad, if `f()` return true then break foreach */
+static bool foreach_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen,
+    bool (*f)(const void *noalias ip, bool v4, void *ud), void *ud)
+{
+    const struct dns_header *h = packet_buf;
+    u16 answer_count = ntohs(h->answer_count);
 
     /* move to answer section */
-    packet_buf += sizeof(dns_header_t) + namelen + sizeof(dns_query_t);
-    packet_len -= sizeof(dns_header_t) + namelen + sizeof(dns_query_t);
+    packet_buf += sizeof(struct dns_header) + namelen + sizeof(struct dns_query);
+    packet_len -= sizeof(struct dns_header) + namelen + sizeof(struct dns_query);
 
-    /* find the first A/AAAA record */
-    for (uint16_t i = 0; i < answer_count; ++i) {
+    /* foreach `A/AAAA` record */
+    for (u16 i = 0; i < answer_count; ++i) {
         unlikely_if (!skip_name(&packet_buf, &packet_len))
-            return DNS_IPCHK_BAD_PACKET;
+            return false;
 
-        const dns_record_t *record = packet_buf;
+        const struct dns_record *record = packet_buf;
         unlikely_if (ntohs(record->rclass) != DNS_CLASS_INTERNET) {
-            LOGE("only supports standard internet query class: %u", (uint)ntohs(record->rclass));
-            return DNS_IPCHK_BAD_PACKET;
+            log_error("only supports standard internet query class: %u", (uint)ntohs(record->rclass));
+            return false;
         }
 
-        uint16_t rdatalen = ntohs(record->rdatalen);
-        ssize_t recordlen = sizeof(dns_record_t) + rdatalen;
+        u16 rdatalen = ntohs(record->rdatalen);
+        ssize_t recordlen = sizeof(struct dns_record) + rdatalen;
         unlikely_if (packet_len < recordlen) {
-            LOGE("remaining length is less than sizeof(record): %zd < %zd", packet_len, recordlen);
-            return DNS_IPCHK_BAD_PACKET;
+            log_error("remaining length is less than sizeof(record): %zd < %zd", packet_len, recordlen);
+            return false;
         }
 
         switch (ntohs(record->rtype)) {
             case DNS_RECORD_TYPE_A:
                 unlikely_if (rdatalen != IPV4_BINADDR_LEN) {
-                    LOGE("rdatalen is not equal to sizeof(ipv4): %u != %d", (uint)rdatalen, IPV4_BINADDR_LEN);
-                    return DNS_IPCHK_BAD_PACKET;
+                    log_error("rdatalen is not equal to sizeof(ipv4): %u != %d", (uint)rdatalen, IPV4_BINADDR_LEN);
+                    return false;
                 }
-                return ipset_addr_is_exists(record->rdata, true) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP; /* in chnroute ? */
+                if (f(record->rdata, true, ud)) return true; /* break foreach */
+                break;
             case DNS_RECORD_TYPE_AAAA:
                 unlikely_if (rdatalen != IPV6_BINADDR_LEN) {
-                    LOGE("rdatalen is not equal to sizeof(ipv6): %u != %d", (uint)rdatalen, IPV6_BINADDR_LEN);
-                    return DNS_IPCHK_BAD_PACKET;
+                    log_error("rdatalen is not equal to sizeof(ipv6): %u != %d", (uint)rdatalen, IPV6_BINADDR_LEN);
+                    return false;
                 }
-                return ipset_addr_is_exists(record->rdata, false) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP; /* in chnroute6 ? */
+                if (f(record->rdata, false, ud)) return true; /* break foreach */
+                break;
         }
 
         packet_buf += recordlen;
         packet_len -= recordlen;
     }
 
-    /* not found A/AAAA record */
-    return DNS_IPCHK_NOT_FOUND;
+    return true;
 }
 
-bool dns_query_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
+bool dns_check_query(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
     return check_packet(true, packet_buf, packet_len, name_buf, p_namelen);
 }
 
-bool dns_reply_check(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
+bool dns_check_reply(const void *noalias packet_buf, ssize_t packet_len, char *noalias name_buf, int *noalias p_namelen) {
     return check_packet(false, packet_buf, packet_len, name_buf, p_namelen);
+}
+
+static bool test_ip(const void *noalias ip, bool v4, void *ud) {
+    int *res = ud;
+    *res = ipset_test_ip(ip, v4) ? DNS_IPCHK_IS_CHNIP : DNS_IPCHK_NOT_CHNIP;
+    return true; // break foreach
+}
+
+int dns_test_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
+    int res = DNS_IPCHK_NOT_FOUND;
+    unlikely_if (!foreach_ip(packet_buf, packet_len, namelen, test_ip, &res))
+        return DNS_IPCHK_BAD_PACKET;
+    return res;
+}
+
+static bool add_ip(const void *noalias ip, bool v4, void *ud) {
+    (void)ud;
+    ipset_add_ip(ip, v4);
+    return false; // not break foreach
+}
+
+void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
+    foreach_ip(packet_buf, packet_len, namelen, add_ip, NULL);
+    ipset_end_add_ip();
 }
