@@ -9,6 +9,9 @@
 - 修复原版对可信 DNS 先于国内 DNS 返回而导致判断失效的问题。
 - 支持 `gfwlist/chnlist` 黑/白名单模式，并对 **时空效率** 进行了优化。
 - 支持纯域名分流：要么走china上游，要么走trust上游，不依赖ipset。
+- 可动态添加大陆域名结果IP至`ipset/nftset`，实现完美chnroute分流。
+- 支持`nftables set`，并针对 add 操作进行了性能优化，避免操作延迟。
+- 更加细致的 no-ipv6(AAAA) 控制，可根据域名类型，上游类型进行过滤。
 
 ## 编译
 
@@ -70,7 +73,7 @@ qemu-aarch64-static ./chinadns-ng -v -l53 -g ./gfwlist.txt -m ./chnlist.txt
 
 ## Docker
 
-由于运行时会访问内核 ipset 子系统，所以 docker run 时请带上 `--privileged`。
+由于运行时会访问内核 ipset/nft 子系统，所以 docker run 时请带上 `--privileged`。
 
 建议去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的musl静态链接二进制，这样就不需要 build 了。
 
@@ -85,11 +88,13 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>
  -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute
  -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6
- -g, --gfwlist-file <file-path>       filepath of gfwlist, '-' indicate stdin
- -m, --chnlist-file <file-path>       filepath of chnlist, '-' indicate stdin
+                                      if it contains @, then use nftables set
+                                      format: family_name@table_name@set_name
+ -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin
+ -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin
  -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)
  -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
- -p, --repeat-times <repeat-times>    it is only used for trustdns, default: 1
+ -p, --repeat-times <repeat-times>    only used for trustdns, default:1, max:5
  -N, --no-ipv6=[rules]                filter AAAA query, rules can be a seq of:
                                       rule a: filter all domain name (default)
                                       rule g: filter the name with tag gfw
@@ -98,8 +103,10 @@ usage: chinadns-ng <options...>. the existing options are as follows:
                                       rule c: do not forward to china upstream
                                       rule t: do not forward to trust upstream
                                       rule C: check answer ip of china upstream
-                                      if no rules is given, it defaults to a
+                                      rule T: check answer ip of trust upstream
+                                      if no rules is given, it defaults to 'a'
  -M, --chnlist-first                  match chnlist first, default: <disabled>
+ -a, --add-tagchn-ip                  add the ip of name-tag:chn to ipset/nftset
  -f, --fair-mode                      enable fair mode (nop, only fair mode now)
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
  -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)
@@ -109,18 +116,34 @@ usage: chinadns-ng <options...>. the existing options are as follows:
 bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
 ```
 
-- 上游 DNS 服务器的默认端口号为 `53`，可手动指定其它端口号。
+---
+
 - `china-dns` 选项指定国内上游 DNS 服务器，最多两个，逗号隔开。
 - `trust-dns` 选项指定可信上游 DNS 服务器，最多两个，逗号隔开。
-- `ipset-name4` 选项指定存储中国大陆 IPv4 地址的 ipset 集合的名称。
-- `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset 集合的名称。
+- 上游 DNS 服务器的默认端口号为 `53`，可手动指定其它端口号。
+
+---
+
+- `ipset-name4` 选项指定存储中国大陆 IPv4 地址的 ipset/nft 集合名。
+- `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset/nft 集合名。
+- nft 也是用这两选项，名称格式为：`family名称@table名称@set名称`。
+
+---
+
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
+- 可指定多个文件路径，使用英文逗号隔开，如 `-g a.txt,b.txt,c.txt`。
 - `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
-- `default-tag` 用来"纯域名分流"，可提供比`dnsmasq`更优秀的时空效率。
-  - 通常与`-g`或`-m`一起用，用来实现域名分流，该模式下不执行ipset逻辑。
+
+---
+
+- `default-tag` 用来实现"纯域名分流"，可提供比`dnsmasq`更优秀的匹配性能。
+- 通常与`-g`或`-m`选项一起用，纯域名分流模式下不执行 ipset/nftset 逻辑，如：
   - `-g gfwlist.txt -d chn`：gfw列表的域名走可信上游，其他走国内上游。
   - `-m chnlist.txt -d gfw`：chn列表的域名走国内上游，其他走可信上游。
+  
+---
+
 - `no-ipv6` 选项表示过滤 IPv6-Address(AAAA) 查询，默认不设置此选项。
   - `2023.02.27`版本开始，允许指定一个可选的"规则串"，目前有如下规则：
   - `a`：过滤所有域名的v6查询，同之前
@@ -129,9 +152,15 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - `n`：过滤非gfwlist、非chnlist域名的v6查询
   - `c`：禁止向chinadns上游转发v6查询
   - `t`：禁止向trustdns上游转发v6查询
-  - `C`：若一个AAAA查询只转发给了chinadns上游（`非gfwlist域名` && `非chnlist域名` && `trustdns被禁用v6查询`），是否要对chinadns上游的响应进行chnip判断（过滤非chnip的reply）。默认不判断（直接接受），除非设置此规则
-  - 如`-N=gt`/`--no-ipv6=gt`：过滤gfwlist域名的v6、禁止向trustdns转发v6。
+  - `C`：若一个AAAA查询只转发给了china上游(非gfw域名 && 非chn域名 && trust被禁用v6)，是否过滤非大陆ip的响应；默认不过滤，除非设置此规则
+  - `T`：若一个AAAA查询只转发给了trust上游(非gfw域名 && 非chn域名 && china被禁用v6)，是否过滤非大陆ip的响应；默认不过滤，除非设置此规则
+  - 如`-N=gt`/`--no-ipv6=gt`：过滤gfwlist域名的v6、禁止向trustdns转发v6
+
+---
+
+- `add-tagchn-ip` 用于动态添加 大陆域名的解析结果ip 到 ipset/nftset。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
+- `timeout-sec` 选项用于指定上游的响应超时时长，单位秒，默认5秒。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
 - `fair-mode` 从`2023.03.06`版本开始，只有公平模式，指不指定都一样。
 - `noip-as-chnip` 选项表示接受 qtype 为 A/AAAA 但却没有 IP 的 reply。
@@ -157,12 +186,13 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
     - 如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果；
     - ~~如果可信 DNS 可能会比国内 DNS 先返回，请启用"公平模式"（默认"抢答模式"），即选项 `-f/--fair-mode`。按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式~~。从`2023.03.06`版本开始，只存在公平模式。
 
-- 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心黑白名单的查询效率问题，条目数量的多少只会影响一点儿内存占用，对查询速度是没有影响的，另外也不必担心内存占用会很多，我在`Linux x86-64 (CentOS 7)`上实测的数据如下：
+- 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心查询效率，条目数量只会影响一点内存占用，对查询速度没影响，另外也不必担心内存占用，我在`Linux x86-64 (CentOS 7)`上的实测数据如下：
   - 没有黑白名单时，内存为`140`KB；
   - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
   - 加载 5700+ 条`gfwlist`以及 73300+ 条`chnlist`时，内存为`2424`KB；
-  - 注：这些内存占用未计算`libc.so`、`libm.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多；
+  - 注：这些内存占用未计算`libc.so`、`libm.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多
   - 如果确实内存吃紧，那只加载`gfwlist`就ok了，绝对能满足日常需求，因为`chnlist`更多的我觉得是寻求一个心里安慰。或者你也可以寻找更加精简的chnlist替代源。
+  - UPDATE: 2023.04.11 版本针对域名列表的内存占用做了进一步的优化，因此内存占用会更少，这里就不贴测试数据了。
 
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
 
@@ -375,7 +405,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### chinadns-ng 并不读取 chnroute.ipset、chnroute6.ipset
 
-启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。TODO：支持`nftables sets`。
+启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。~~TODO：支持`nftables sets`~~（已支持）。
 
 ---
 
@@ -407,7 +437,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 是否支持 nftables 的 set 查询接口
 
-目前还不支持，但已加入 TODO 列表，不出意外应该快了（主要是还在寻找不依赖任何库的情况下访问`nft set`）。
+~~目前还不支持，但已加入 TODO 列表，不出意外应该快了（主要是还在寻找不依赖任何库的情况下访问`nft set`）~~，2023.04.11 版本开始已支持。
 
 ---
 
@@ -426,6 +456,12 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 ### chinadns-ng 原则上只为替代原版 chinadns，非必要功能暂不打算实现
 
 目前个人的用法是：dnsmasq 在前，chinadns-ng 在后；dnsmasq 做 DNS 缓存、ipset（将特定域名解析出来的 IP 动态添加至 ipset 集合，便于 iptables 操作）、以及相关附加服务（如 DHCP）；chinadns-ng 则作为 dnsmasq 的上游服务器，配合 ss-tproxy 透明代理，提供无污染的 DNS 解析服务。
+
+---
+
+### --add-tagchn-ip 选项的作用
+
+主要用于配合 chnroute 分流模式（透明代理），这样只要是 chnlist.txt 里面的域名，都必定走直连，不会走代理。
 
 ---
 
