@@ -766,10 +766,11 @@ void ipset_end_add_ip(void) {
 
     if (n_msg <= 0) return;
 
-    unlikely_if ((n_msg = send_req(n_msg)) < 0) return; /* all failed */
+    unlikely_if (send_req(n_msg) < 0) return; /* all failed */
 
     /* recv nlmsgerr */
-    init_nlerr_msgv(max(n_msg, 2)); /* nft send v4 and v6 together, but the res are separate */
+    n_msg = max(n_msg, 2); /* nft send v4 and v6 together, but the res are separate */
+    init_nlerr_msgv(n_msg);
     likely_if ((n_msg = recv_res(n_msg, false)) == 0) return; /* no msg */
 
     for (int i = 0; i < n_msg; ++i) {
