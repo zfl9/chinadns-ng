@@ -636,6 +636,9 @@ static int end_add_ip_ipset(void) {
     int iov_i = 0;
     int n_msg = 0;
 
+    /* exists (bitvec) */
+    int bit_i = 0;
+
     const bool v4vec[] = {true, false};
     for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
         const bool v4 = v4vec[v4i];
@@ -654,8 +657,8 @@ static int end_add_ip_ipset(void) {
         set_iov(&s_iov[iov_i], nlmsg, nlmsg->nlmsg_len);
         ++iov_i;
 
-        for (int ipi = 0; ipi < ipn; ++ipi, elem += elemsz) {
-            if (!bitvec_get(exists, ipi)) {
+        for (int ipi = 0; ipi < ipn; ++ipi, elem += elemsz, ++bit_i) {
+            if (!bitvec_get(exists, bit_i)) {
                 set_iov(&s_iov[iov_i], elem, elemsz);
                 ++iov_i;
                 ++add_n;
@@ -696,6 +699,9 @@ static int end_add_ip_nft(void) {
     set_iov(&s_iov[iov_i], &s_batch_begin, sizeof(s_batch_begin));
     ++iov_i;
 
+    /* exists (bitvec) */
+    int bit_i = 0;
+
     const bool v4vec[] = {true, false};
     for (int v4i = 0; v4i < (int)array_n(v4vec); ++v4i) {
         const bool v4 = v4vec[v4i];
@@ -714,8 +720,8 @@ static int end_add_ip_nft(void) {
         set_iov(&s_iov[iov_i], nlmsg, nlmsg->nlmsg_len);
         ++iov_i;
 
-        for (int ipi = 0; ipi < ipn; ++ipi, elem += elemsz) {
-            if (!bitvec_get(exists, ipi)) {
+        for (int ipi = 0; ipi < ipn; ++ipi, elem += elemsz, ++bit_i) {
+            if (!bitvec_get(exists, bit_i)) {
                 set_iov(&s_iov[iov_i], elem, elemsz);
                 ++iov_i;
                 ++add_n;
