@@ -7,13 +7,13 @@ else
 endif
 
 ifdef DEBUG
-	CFLAGS = -pipe -std=c99 -Wall -Wextra -Og -fno-pie -fno-PIE -ggdb3
+	CFLAGS = -pipe -std=c99 -Wall -Wextra -Wvla -Og -fno-pie -fno-PIE -ggdb3
 	LDFLAGS = -pipe -no-pie
 	ifneq ($(DEBUG),1)
 		CFLAGS += -DDEBUG
 	endif
 else
-	CFLAGS = -pipe -std=c99 -Wall -Wextra -O3 $(LTOFLAGS) -fno-pie -fno-PIE -DNDEBUG
+	CFLAGS = -pipe -std=c99 -Wall -Wextra -Wvla -O3 $(LTOFLAGS) -fno-pie -fno-PIE -DNDEBUG
 	LDFLAGS = -pipe -no-pie -O3 $(LTOFLAGS) -s
 endif
 
