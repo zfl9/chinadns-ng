@@ -90,6 +90,11 @@ qemu-aarch64-static ./chinadns-ng -v -l53 -g ./gfwlist.txt -m ./chnlist.txt
 
 建议去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的musl静态链接二进制，这样就不需要 build 了。
 
+## OpenWrt
+
+- 由 pexcn 维护：https://github.com/pexcn/openwrt-chinadns-ng
+- 部分科学上网插件自带了 chinadns-ng，你也可以直接使用它们
+
 ## 命令选项
 
 ```console
@@ -219,9 +224,30 @@ chinadns-ng -g gfwlist.txt -m chnlist.txt -a # 使用 ipset
 chinadns-ng -g gfwlist.txt -m chnlist.txt -a -4 inet@global@chnroute -6 inet@global@chnroute6 # 使用 nft
 ```
 
-chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v 参数，使用 dig 测试，并观察其日志输出。
+chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v 参数，使用 dig 测试，观察其日志。
 
 ## 常见问题
+
+### tag:chn、tag:gfw、tag:none 是指什么
+
+这是 chinadns-ng 对域名的一个简单分类：
+
+- 被 chnlist.txt 匹配的域名归为 `tag:chn`
+- 被 gfwlist.txt 匹配的域名归为 `tag:gfw`
+- 其它未匹配的域名归为 `tag:none`
+
+当使用纯域名分流模式时，不存在 `tag:none` 域名：
+
+- 对于 `-m chnlist.txt -d gfw`，未被匹配的域名归为 `tag:gfw`
+- 对于 `-g gfwlist.txt -d chn`，未被匹配的域名归为 `tag:chn`
+
+因此分流的核心流程，可以用三句话来描述：
+
+- `tag:chn` 域名：只走 china 上游，即单纯转发，没有 ipset/nftset 逻辑
+- `tag:gfw` 域名：只走 trust 上游，即单纯转发，没有 ipset/nftset 逻辑
+- `tag:none` 域名：同时走 china 和 trust，如果 china 上游返回国内 IP，则接受其结果，否则采纳 trust 结果
+
+---
 
 ### 如何以守护进程形式在后台运行 chinadns-ng
 
