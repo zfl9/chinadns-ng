@@ -13,6 +13,19 @@
 - 支持`nftables set`，并针对 add 操作进行了性能优化，避免操作延迟。
 - 更加细致的 no-ipv6(AAAA) 控制，可根据域名类型，上游类型进行过滤。
 
+---
+
+对于常规的使用模式，大致原理和流程可总结为：
+
+- 两组DNS上游：china组(大陆DNS)、trust组(国外DNS)
+- 两个域名列表：chnlist.txt(大陆域名)、gfwlist.txt(受污染域名)
+- 两个ip地址集合：chnroute(大陆v4地址段)、chnroute6(大陆v6地址段)
+- chnlist.txt域名，转发给china组，以保证大陆域名不会被解析到国外，对大陆域名cdn友好
+- gfwlist.txt域名，转发给trust组，trust需返回未受污染的结果，比如走代理(或透明代理)，具体方式不限
+- 其他域名，转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组
+- 如果使用纯域名分流模式，则不存在"其他域名"，因此要么走china组，要么走trust组，这样可完全避免dns泄露问题
+- 若启用`--add-tagchn-ip`，则chnlist.txt(准确来说是tag为chn的域名)的解析结果会被动态加入chnroute/chnroute6，当使用chnroute透明代理分流时，可保证大陆域名不会走代理，必定走直连
+
 ## 编译
 
 > 不想编译的，可以去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的可执行文件（静态链接musl）。
@@ -168,39 +181,19 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `noip-as-chnip` 选项表示接受 qtype 为 A/AAAA 但却没有 IP 的 reply。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
-## 工作原理
+## 域名列表
 
-- chinadns-ng 启动后会创建一个监听套接字，N 个上游套接字，N 为上游 DNS 数量。
-
-- 监听套接字用于处理本地请求客户端的 DNS 请求，以及向请求客户端发送 DNS 响应。
-
-- 上游套接字用于向上游 DNS 服务器发送 DNS 请求，以及从上游服务器接收 DNS 响应。
-
-- 当从监听套接字收到请求客户端的 DNS 查询时，将按照如下逻辑转发给对应上游 DNS：
-  - 如果启用了黑名单(gfwlist)且查询的域名命中了黑名单，则将该请求转发给可信 DNS。
-  - 如果启用了白名单(chnlist)且查询的域名命中了白名单，则将该请求转发给国内 DNS。
-  - 如果未启用黑名单、白名单，或未命中黑名单、白名单，则将请求转发给所有上游 DNS。
-
-- 当从上游套接字收到上游服务器的 DNS 响应时，将按照如下逻辑过滤收到的上游 DNS 响应：
-  - 如果关联的查询是命中了黑白名单的，则直接将其转发给请求客户端，并释放相关上下文。
-  - 如果关联的查询是未命中黑白名单的，则检查国内 DNS 返回的是否为 `chnroute/chnroute6` IP：
-    - 如果是，则接收此响应，将其转发给请求客户端，并释放相关上下文；
-    - 如果不是，则丢弃此响应，然后采用可信 DNS 的解析结果；
-    - ~~如果可信 DNS 可能会比国内 DNS 先返回，请启用"公平模式"（默认"抢答模式"），即选项 `-f/--fair-mode`。按理来说抢答模式是可以丢弃的，但考虑到一些特殊情况，还是打算留着抢答模式~~。从`2023.03.06`版本开始，只存在公平模式。
-
-- 域名黑白名单允许同时启用，且如果条件允许建议同时启用黑白名单。不必担心查询效率，条目数量只会影响一点内存占用，对查询速度没影响，另外也不必担心内存占用，我在`Linux x86-64 (CentOS 7)`上的实测数据如下：
-  - 没有黑白名单时，内存为`140`KB；
-  - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
-  - 加载 5700+ 条`gfwlist`以及 73300+ 条`chnlist`时，内存为`2424`KB；
-  - 注：这些内存占用未计算`libc.so`、`libm.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多。
-  - 如果确实内存吃紧，那只加载`gfwlist`就ok了，绝对能满足日常需求，因为`chnlist`更多的我觉得是寻求一个心里安慰。或者你也可以寻找更加精简的chnlist替代源。
-  - 2023.04.11 版本针对域名列表内存占用做了进一步优化，因此内存占用会更少，这里就不贴测试数据了。
+- 域名列表文件格式是按行分隔的**域名后缀**，如`baidu.com`、`www.google.com`、`www.google.com.hk`，不要以`.`开头或结尾，出于性能考虑，域名`label`数量做了人为限制，最多只能`4`个，过长的会被截断，如`test.www.google.com.hk`截断为`www.google.com.hk`。如果需要，也可以修改源码的`LABEL_MAXCNT`常量来调整最大`label`数。
 
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
 
-- 域名黑白名单文件是按行分隔的**域名后缀**，格式：`baidu.com`、`www.google.com`、`www.google.com.hk`，注意不要以`.`开头或结尾，另外域名的`label`数量也是做了人为限制的，最多只能`4`个，过长的会被截断（如`test.www.google.com.hk`截断为`www.google.com.hk`），这么做是为了尽量减少域名匹配次数。如果需要，可以修改源码的`LABEL_MAXCNT`常量来调整最大`label`数。
-
-- 光靠 `chinadns-ng` 无法防止 DNS 污染，防污染是**可信DNS上游**的任务，`chinadns-ng` 只负责 DNS 查询和 DNS 响应的简单处理，不修改任何 dns-query、dns-reply。同理，`chinadns-ng` 只是兼容 EDNS 请求和响应，并不提供 EDNS 的任何相关特性，任何 DNS 特性都是由上游 DNS 来实现的，请务必理解这一点。所以通常 `chinadns-ng` 都是与其它 dns 工具或代理工具一起使用的，具体与什么搭配，以及如何搭配，这里不展开讨论，由各位自由发挥（保证**可信DNS上游**的结果没有被污染即可，比如过墙时套上代理，如`ss-tunnel`）。
+- 建议同时启用黑名单和白名单，不必担心查询效率，条目数量只会影响一点内存占用，对查询速度没影响，也不必担心内存占用，我在`Linux x86-64 (CentOS 7)`上的实测数据如下：
+  - 没有黑白名单时，内存为`140`KB；
+  - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
+  - 加载 5700+ 条`gfwlist`以及 73300+ 条`chnlist`时，内存为`2424`KB；
+  - 注：这些内存占用未计算`libc.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多。
+  - 如果确实内存吃紧，可以只加载`gfwlist`，或者使用更加精简的chnlist替代源。
+  - 2023.04.11 版本针对域名列表的内存占用做了进一步优化，因此占用会更少，就不贴测试数据了。
 
 ## 简单测试
 
@@ -218,150 +211,15 @@ nft -f chnroute6.nftset
 
 > 只要没有显式的从内核删除 ipset/nft 集合，那么下次运行时就不需要再次导入了。
 
-然后运行 chinadns-ng，注意我是配置了全局代理的，所以 `8.8.8.8` 会走代理出去。
+运行 chinadns-ng，我自己配了全局透明代理，所以访问 `8.8.8.8` 会走代理出去。
 
-```console
-$ chinadns-ng -v
-2019-07-28 09:26:39 INF: [main] local listen addr: 127.0.0.1#65353
-2019-07-28 09:26:39 INF: [main] chinadns server#1: 114.114.114.114#53
-2019-07-28 09:26:39 INF: [main] trustdns server#1: 8.8.8.8#53
-2019-07-28 09:26:39 INF: [main] ipset ip4 setname: chnroute
-2019-07-28 09:26:39 INF: [main] ipset ip6 setname: chnroute6
-2019-07-28 09:26:39 INF: [main] dns query timeout: 5 seconds
-2019-07-28 09:26:39 INF: [main] print the verbose running log
+```bash
+# 加载 gfwlist 和 chnlist，并动态添加 chn 域名解析结果至 ipset
+chinadns-ng -g gfwlist.txt -m chnlist.txt -a # 使用 ipset
+chinadns-ng -g gfwlist.txt -m chnlist.txt -a -4 inet@global@chnroute -6 inet@global@chnroute6 # 使用 nft
 ```
 
-然后安装 dig 命令，用于测试 chinadns-ng 的工作是否正常，当然其它 dns 工具也可以：
-
-```shell
-# query A record for www.baidu.com
-$ dig @127.0.0.1 -p65353 www.baidu.com     
-
-; <<>> DiG 9.14.3 <<>> @127.0.0.1 -p65353 www.baidu.com
-; (1 server found)
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 47610
-;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 1
-
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 4096
-;; QUESTION SECTION:
-;www.baidu.com.			IN	A
-
-;; ANSWER SECTION:
-www.baidu.com.		3577	IN	CNAME	www.a.shifen.com.
-www.a.shifen.com.	3577	IN	A	183.232.231.172
-www.a.shifen.com.	3577	IN	A	183.232.231.174
-
-;; Query time: 14 msec
-;; SERVER: 127.0.0.1#65353(127.0.0.1)
-;; WHEN: Sun Jul 28 09:31:11 CST 2019
-;; MSG SIZE  rcvd: 104
-```
-
-```shell
-# query AAAA record for ipv6.baidu.com
-$ dig @127.0.0.1 -p65353 ipv6.baidu.com AAAA
-
-; <<>> DiG 9.14.3 <<>> @127.0.0.1 -p65353 ipv6.baidu.com AAAA
-; (1 server found)
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 17498
-;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
-
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 4096
-;; QUESTION SECTION:
-;ipv6.baidu.com.			IN	AAAA
-
-;; ANSWER SECTION:
-ipv6.baidu.com.		3559	IN	AAAA	2400:da00:2::29
-
-;; Query time: 22 msec
-;; SERVER: 127.0.0.1#65353(127.0.0.1)
-;; WHEN: Sun Jul 28 09:31:15 CST 2019
-;; MSG SIZE  rcvd: 71
-```
-
-```shell
-# the output of chinadns-ng
-2019-07-28 09:31:11 INF: [handle_local_packet] query [www.baidu.com] from 127.0.0.1#20942
-2019-07-28 09:31:11 INF: [handle_remote_packet] reply [www.baidu.com] from 114.114.114.114#53, result: pass
-2019-07-28 09:31:11 INF: [handle_remote_packet] reply [www.baidu.com] from 8.8.8.8#53, result: pass
-2019-07-28 09:31:15 INF: [handle_local_packet] query [ipv6.baidu.com] from 127.0.0.1#40293
-2019-07-28 09:31:15 INF: [handle_remote_packet] reply [ipv6.baidu.com] from 114.114.114.114#53, result: pass
-2019-07-28 09:31:15 INF: [handle_remote_packet] reply [ipv6.baidu.com] from 8.8.8.8#53, result: pass
-```
-
-```shell
-# query A record for www.google.com
-$ dig @127.0.0.1 -p65353 www.google.com     
-
-; <<>> DiG 9.14.3 <<>> @127.0.0.1 -p65353 www.google.com
-; (1 server found)
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 14754
-;; flags: qr rd ra; QUERY: 1, ANSWER: 6, AUTHORITY: 0, ADDITIONAL: 1
-
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 4096
-;; QUESTION SECTION:
-;www.google.com.            IN  A
-
-;; ANSWER SECTION:
-www.google.com.     3437    IN  A   74.125.24.147
-www.google.com.     3437    IN  A   74.125.24.106
-www.google.com.     3437    IN  A   74.125.24.105
-www.google.com.     3437    IN  A   74.125.24.99
-www.google.com.     3437    IN  A   74.125.24.103
-www.google.com.     3437    IN  A   74.125.24.104
-
-;; Query time: 60 msec
-;; SERVER: 127.0.0.1#65353(127.0.0.1)
-;; WHEN: Sun Jul 28 09:31:24 CST 2019
-;; MSG SIZE  rcvd: 139
-```
-
-```shell
-# query AAAA record for ipv6.google.com
-$ dig @127.0.0.1 -p65353 ipv6.google.com AAAA
-
-; <<>> DiG 9.14.3 <<>> @127.0.0.1 -p65353 ipv6.google.com AAAA
-; (1 server found)
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 23590
-;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1
-
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 512
-;; QUESTION SECTION:
-;ipv6.google.com.       IN  AAAA
-
-;; ANSWER SECTION:
-ipv6.google.com.    13733   IN  CNAME   ipv6.l.google.com.
-ipv6.l.google.com.  178 IN  AAAA    2404:6800:4003:c02::66
-
-;; Query time: 70 msec
-;; SERVER: 127.0.0.1#65353(127.0.0.1)
-;; WHEN: Sun Jul 28 09:31:34 CST 2019
-;; MSG SIZE  rcvd: 93
-```
-
-```shell
-# the output of chinadns-ng
-2019-07-28 09:31:24 INF: [handle_local_packet] query [www.google.com] from 127.0.0.1#10598
-2019-07-28 09:31:24 INF: [handle_remote_packet] reply [www.google.com] from 114.114.114.114#53, result: drop
-2019-07-28 09:31:24 INF: [handle_remote_packet] reply [www.google.com] from 8.8.8.8#53, result: pass
-2019-07-28 09:31:34 INF: [handle_local_packet] query [ipv6.google.com] from 127.0.0.1#36271
-2019-07-28 09:31:34 INF: [handle_remote_packet] reply [ipv6.google.com] from 114.114.114.114#53, result: drop
-2019-07-28 09:31:34 INF: [handle_remote_packet] reply [ipv6.google.com] from 8.8.8.8#53, result: pass
-```
-
-可以看到，对于国内 DNS 返回非国内 IP 的响应都正常过滤了，无论是 A 记录响应还是 AAAA 记录响应。
+chinadns-ng 默认监听 127.0.0.1#65353/udp，可以给 chinadns-ng 带上 -v 参数，使用 dig 测试，并观察其日志输出。
 
 ## 常见问题
 
@@ -421,6 +279,14 @@ dns2tcp -L"127.0.0.1#5353" -R"8.8.8.8#53"
 chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 ```
 
+> 其他协议同理，比如 DoH/DoT/DoQ，你可以借助 https://github.com/AdguardTeam/dnsproxy 等实用工具。
+
+---
+
+### 为什么不内置 TCP、DoH、DoT 等协议的支持
+
+并不是所有人都使用 DoH/DoT，如果要支持这些协议，必然要引入 openssl 等依赖，增加二进制体积（如果静态链接），但这不是主要原因，真正的原因是代码复杂度，我想让代码保持简单，只做真正必要的事情，其他事情就让专业工具去干吧；简而言之，保持代码的简单和愚蠢，只做一件事，并认真做好一件事。
+
 ---
 
 ### chinadns-ng 并不读取 chnroute.ipset、chnroute6.ipset
@@ -429,9 +295,9 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ---
 
-### 接受 china 上游返回的 IP 为保留地址的解析记录
+### 接受 china 上游返回的 IP为保留地址 的解析记录
 
-如果你指定的 china-dns 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受此国内上游的响应（即判定为国内 IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset 中。注意：chinadns-ng 判断是否为"国内 IP"的核心就是查询 chnroute、chnroute6 这两个 ipset 集合，程序内部没有任何隐含的判断规则。
+如果 china 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受其响应（判定为大陆IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset/nftset。chinadns-ng 判断是否为"大陆IP"的核心就是查询 chnroute、chnroute6 这两个 ipset/nftset，程序内部没有任何隐含的判断规则。注意：只有 tag:none 域名需要这么做，对于 tag:chn 域名，chinadns-ng 只是单纯转发，不涉及 ipset/nftset 判定；所以你也可以将相关域名加入 chnlist（支持从多个文件加载域名列表）。
 
 ---
 
@@ -475,13 +341,28 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### chinadns-ng 原则上只为替代原版 chinadns，非必要功能暂不打算实现
 
-目前个人的用法是：dnsmasq 在前，chinadns-ng 在后；dnsmasq 做 DNS 缓存、ipset（将特定域名解析出来的 IP 动态添加至 ipset 集合，便于 iptables 操作）、以及相关附加服务（如 DHCP）；chinadns-ng 则作为 dnsmasq 的上游服务器，配合 ss-tproxy 透明代理，提供无污染的 DNS 解析服务。
+目前个人用法：dnsmasq 做 DNS 缓存、ipset（处理某些特殊需求的域名，将其解析出来的 IP 动态添加至 ipset，便于 iptables 操作）、以及其他附加服务（如 DHCP）；chinadns-ng 则作为 dnsmasq 的上游服务器，配合 ss-tproxy 透明代理，提供无污染的 DNS 解析服务。
 
 ---
 
 ### --add-tagchn-ip 选项的作用
 
-主要用于配合 chnroute 分流模式（透明代理），这样只要是 chnlist.txt 里面的域名，都必定走直连，不会走代理。
+主要用于配合 chnroute 分流模式（透明代理），这样只要是 chnlist.txt 里面的域名，都必定走直连，不会走代理。在这之前，如果想实现类似功能，可能需要借助 dnsmasq，但 dnsmasq 不适合配置大量域名(server/ipset/nftset)，会影响解析性能。chinadns-ng 为此做了专门优化，以最大可能来降低开销。
+
+---
+
+### chinadns-ng 也可以实现 gfwlist 透明代理分流模式
+
+```bash
+# 创建 ipset，用于存储 gfwlist.txt 解析出来的 IP
+ipset create gfwlist hash:net family inet # ipv4
+ipset create gfwlist6 hash:net family inet6 # ipv6
+
+# 对调一下dns上游，指定 gfwlist.txt，以及`-d gfw`、`-a/--add-tagchn-ip`
+chinadns-ng -c 8.8.8.8 -t 119.29.29.29 -4 gfwlist -6 gfwlist6 -m gfwlist.txt -d gfw -a
+```
+
+传统上，这是利用 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能并不擅长处理大量域名，因此对性能有所影响，只是 gfwlist 域名数量比 chnlist.txt 少，所以影响比较小，但是如果你追求性能（比如低端路由器），我认为使用 chinadns-ng 来实现是有意义的。
 
 ---
 
@@ -494,6 +375,8 @@ qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、A
 chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；
 
 默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对**国内 DNS**，可信 DNS 不存在任何过滤；另外此过滤也仅针对`非gfwlist && 非chnlist`域名），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
+
+> 其实这里举的例子并没有体现出该选项的真正目的，当初
 
 ```bash
 $ dig @114.114.114.114 yys.163.com A
@@ -565,4 +448,4 @@ sudo setcap cap_net_bind_service,cap_net_admin+ep /usr/local/bin/chinadns-ng
 
 ---
 
-另外，chinadns-ng 是专门为 [ss-tproxy](https://github.com/zfl9/ss-tproxy) v4.x 编写的，欢迎使用。
+chinadns-ng 的诞生完全是因为 [ss-tproxy](https://github.com/zfl9/ss-tproxy)，由于原版 chinadns 的诸多痛点，我想寻找其替代品，但在 github 上看了看，都不是很满意，所以尝试写了此工具，并斗胆命名为 **下一代 chinadns**。
