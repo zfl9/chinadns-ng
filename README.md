@@ -20,11 +20,11 @@
 - 两组DNS上游：china组(大陆DNS)、trust组(国外DNS)
 - 两个域名列表：chnlist.txt(大陆域名)、gfwlist.txt(受污染域名)
 - 两个ip地址集合：chnroute(大陆v4地址段)、chnroute6(大陆v6地址段)
-- chnlist.txt域名，转发给china组，以保证大陆域名不会被解析到国外，对大陆域名cdn友好
+- chnlist.txt域名，转发给china组，保证大陆域名不会被解析到国外，对大陆域名cdn友好
 - gfwlist.txt域名，转发给trust组，trust需返回未受污染的结果，比如走代理(或透明代理)，具体方式不限
 - 其他域名，转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组
 - 如果使用纯域名分流模式，则不存在"其他域名"，因此要么走china组，要么走trust组，可完全避免dns泄露问题
-- 若启用`--add-tagchn-ip`，则chnlist.txt(准确来说是tag为chn的域名)的解析结果IP会被动态加入chnroute/chnroute6，当使用chnroute透明代理分流时，可保证大陆域名不会走代理，必定走直连，并让dns分流与ip分流尽量保持一致。
+- 若启用`--add-tagchn-ip`，则chnlist.txt域名（准确来说是tag为chn的域名）的解析结果IP会被动态添加到chnroute/chnroute6，当使用chnroute透明代理分流时，可保证大陆域名必定走直连（不被代理），使dns分流与ip分流一致；类似 gfwlist 分流模式的实现原理（借助 dnsmasq 的 ipset/nftset 指令）。
 
 ## 编译
 
@@ -198,7 +198,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 加载 5700+ 条`gfwlist`以及 73300+ 条`chnlist`时，内存为`2424`KB；
   - 注：这些内存占用未计算`libc.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多。
   - 如果确实内存吃紧，可以只加载`gfwlist`，或者使用更加精简的chnlist替代源。
-  - 2023.04.11 版本针对域名列表的内存占用做了进一步优化，因此占用会更少，就不贴测试数据了。
+  - 2023.04.11 版本针对域名列表的内存占用做了进一步优化，因此占用会更少，测试数据就不贴了。
 
 ## 简单测试
 
@@ -214,7 +214,7 @@ nft -f chnroute.nftset
 nft -f chnroute6.nftset
 ```
 
-> 只要没有显式的从内核删除 ipset/nft 集合，那么下次运行时就不需要再次导入了。
+> 只要没有从内核删除 ipset/nft 集合，下次运行就不需要再次导入了。
 
 运行 chinadns-ng，我自己配了全局透明代理，所以访问 `8.8.8.8` 会走代理出去。
 
@@ -311,7 +311,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 为什么不内置 TCP、DoH、DoT 等协议的支持
 
-并不是所有人都使用 DoH/DoT，如果要支持这些协议，必然要引入 openssl 等依赖，增加二进制体积（如果静态链接），但这不是主要原因，真正的原因是代码复杂度，我想让代码保持简单，只做真正必要的事情，其他事情就让专业工具去干吧；简而言之，保持简单和愚蠢，只做一件事，并认真做好这件事。
+并不是所有人都使用 DoH/DoT，如果要支持这些协议，必然要引入 openssl 等依赖，增加二进制体积（如果静态链接），但这不是主要原因，真正原因是代码复杂度，我想让代码保持简单，只做真正必要的事情，其他事情让专业的工具去干。简而言之，保持简单和愚蠢，只做一件事，并认真做好这件事。
 
 ---
 
@@ -325,7 +325,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 如果 china 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受其响应（判定为大陆IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset/nftset。chinadns-ng 判断是否为"大陆IP"的核心就是查询 chnroute、chnroute6 这两个 ipset/nftset，程序内部没有任何隐含的判断规则。注意：只有 tag:none 域名需要这么做，对于 tag:chn 域名，chinadns-ng 只是单纯转发，不涉及 ipset/nftset 判定；所以你也可以将相关域名加入 chnlist（支持从多个文件加载域名列表）。
 
-> 为什么没有默认将保留地址段加入 `chnroute*.ipset/nftset`？因为最初 chinadns-ng 没有 gfwlist/chnlist 黑白名单机制，单纯依赖 chnroute 判定，我担心 gfw 会给受污染域名返回保留地址，所以没放到 chnroute 去。虽然现在受污染域名都走 gfwlist.txt 机制了（只走 trust 上游），但谨慎起见，建议只添加真正用到的保留地址，比如 192.168.0.0/16，而不是一把梭把它们全加进去，怕出问题。
+> 为什么没有默认将保留地址段加入 `chnroute*.ipset/nftset`？因为我担心 gfw 会给受污染域名返回保留地址，所以没放到 chnroute 去。虽然现在受污染域名都走 gfwlist.txt 机制了（只走 trust 上游），但谨慎起见，我建议只添加真正用到的保留地址到 chnroute/chnroute6，比如 192.168.0.0/16，而不是一把梭把它们全加进去，避免出问题。
 
 ---
 
@@ -333,7 +333,9 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 意思是指定的 ipset 集合不存在；如果是 `[ipset_addr4_is_exists]` 提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。
 
-需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
+需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果
+
+> 只有 tag:none 域名存在 ipset/nftset 判断&&过滤，tag:gfw 和 tag:chn 域名不会走 ip test 逻辑。
 
 ---
 
@@ -357,7 +359,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 是否打算支持 geoip.dat 等格式的 chnroute
 
-目前没有这个计划，因为如果要自己实现 chnroute 集合，那就要实现高性能的数据结构和算法，这有点超出了我的能力范围。另外一个原因就是，chinadns-ng 通常与 iptables/nftables 一起使用（配合透明代理），若使用非 ipset/nft-set 实现，会导致两份重复的 chnroute。
+目前没有这个计划，因为如果要自己实现 chnroute 集合，那就要实现高性能的数据结构和算法，这有点超出了我的能力范围。但主要还是因为 chinadns-ng 通常与 iptables/nftables 一起使用（配合透明代理），若使用非 ipset/nftset 实现，会导致两份重复的 chnroute。
 
 ---
 
@@ -390,7 +392,7 @@ ipset create gfwlist6 hash:net family inet6 # ipv6
 chinadns-ng -c 8.8.8.8 -t 119.29.29.29 -4 gfwlist -6 gfwlist6 -m gfwlist.txt -d gfw -a
 ```
 
-传统上，这是利用 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能并不擅长处理大量域名，因此对性能有所影响，只是 gfwlist 域名数量比 chnlist.txt 少，所以影响比较小，但是如果你追求性能（比如低端路由器），我认为使用 chinadns-ng 来实现是有意义的。
+传统上，这是利用 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能并不擅长处理大量域名，因此对性能有所影响，只是 gfwlist.txt 的域名数量比 chnlist.txt 少，所以影响比较小，但是如果你追求性能（比如低端路由器），我认为使用 chinadns-ng 来实现是有意义的。
 
 ---
 
@@ -404,7 +406,8 @@ chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强
 
 默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对**国内 DNS**，可信 DNS 不存在任何过滤；另外此过滤也仅针对`非gfwlist && 非chnlist`域名），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
 
-> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对受污染域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项的作用（当然还是我的锅，怪我文档没写清楚）。
+> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对受污染域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项的作用（当然还是我的锅，文档没写清楚）。
+
 ```bash
 $ dig @114.114.114.114 yys.163.com A
 
@@ -461,7 +464,7 @@ yys.163.com.        1776    IN  CNAME   game-cache.nie.163.com.
 
 ### 如何以普通用户身份运行 chinadns-ng
 
-如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset 集合需要 `CAP_NET_ADMIN` 能力，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。
+如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset/nft 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset/nft 集合需要 `CAP_NET_ADMIN` 能力，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。
 
 那有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
 
