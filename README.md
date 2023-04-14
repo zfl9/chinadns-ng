@@ -214,12 +214,12 @@ nft -f chnroute6.nftset
 运行 chinadns-ng，我自己配了全局透明代理，所以访问 `8.8.8.8` 会走代理出去。
 
 ```bash
-# 加载 gfwlist 和 chnlist，并动态添加 chn 域名解析结果至 ipset
+# 加载 gfwlist 和 chnlist，并动态添加 tag:chn 域名解析结果至 ipset/nftset
 chinadns-ng -g gfwlist.txt -m chnlist.txt -a # 使用 ipset
 chinadns-ng -g gfwlist.txt -m chnlist.txt -a -4 inet@global@chnroute -6 inet@global@chnroute6 # 使用 nft
 ```
 
-chinadns-ng 默认监听 127.0.0.1#65353/udp，可以给 chinadns-ng 带上 -v 参数，使用 dig 测试，并观察其日志输出。
+chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v 参数，使用 dig 测试，并观察其日志输出。
 
 ## 常见问题
 
