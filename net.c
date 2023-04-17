@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "net.h"
 #include "log.h"
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -10,6 +11,78 @@
 #ifndef SO_REUSEPORT
   #define SO_REUSEPORT 15
 #endif
+
+int (*x_recvmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout);
+
+int (*x_sendmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags);
+
+static int my_recvmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout) {
+    unlikely_if (vlen <= 0 || timeout) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    bool wait_for_one = flags & MSG_WAITFORONE;
+    flags &= ~MSG_WAITFORONE;
+
+    int nrecv = 0;
+
+    for (uint i = 0; i < vlen; ++i) {
+        ssize_t res = recvmsg(sockfd, &msgvec[i].msg_hdr, flags);
+        if (res < 0) break;
+
+        msgvec[i].msg_len = res;
+        ++nrecv;
+
+        if (wait_for_one)
+            flags |= MSG_DONTWAIT;
+    }
+
+    return nrecv ?: -1;
+}
+
+static int my_sendmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags) {
+    unlikely_if (vlen <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    int nsent = 0;
+
+    for (uint i = 0; i < vlen; ++i) {
+        ssize_t res = sendmsg(sockfd, &msgvec[i].msg_hdr, flags);
+        if (res < 0) break;
+
+        msgvec[i].msg_len = res;
+        ++nsent;
+    }
+
+    return nsent ?: -1;
+}
+
+void net_init(void) {
+    int res = recvmmsg(-1, NULL, 0, 0, NULL);
+    assert(res == -1);
+    (void)res;
+
+    if (errno != ENOSYS) {
+        x_recvmmsg = recvmmsg;
+    } else {
+        log_info("recvmmsg not implemented, use recvmsg to simulate");
+        x_recvmmsg = my_recvmmsg;
+    }
+
+    res = sendmmsg(-1, NULL, 0, 0);
+    assert(res == -1);
+    (void)res;
+
+    if (errno != ENOSYS) {
+        x_sendmmsg = sendmmsg;
+    } else {
+        log_info("sendmmsg not implemented, use sendmsg to simulate");
+        x_sendmmsg = my_sendmmsg;
+    }
+}
 
 /* setsockopt(IPV6_V6ONLY) */
 static inline void set_ipv6_only(int sockfd) {

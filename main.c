@@ -161,7 +161,7 @@ static void handle_local_packet(void) {
 
         log_verbose("forward [%s] to %s (%s)", s_name_buf, g_upstream_addrs[i], is_chinadns_idx(i) ? "chinadns" : "trustdns");
 
-        int n_sent = sendmmsg(s_upstream_sockfds[i], msgv, msg_n, 0);
+        int n_sent = x_sendmmsg(s_upstream_sockfds[i], msgv, msg_n, 0);
         unlikely_if (n_sent != msg_n) {
             if (n_sent < 0)
                 log_error("failed to send query to %s: (%d) %s", g_upstream_addrs[i], errno, strerror(errno));
@@ -325,7 +325,7 @@ static void handle_remote_packet(int index) {
 }
 
 static void handle_timeout_event(struct queryctx *context) {
-    log_warning("upstream reply timeout, unique msgid: %u", (uint)context->unique_msgid);
+    log_verbose("upstream reply timeout, unique msgid: %u", (uint)context->unique_msgid);
     free_context(context);
 }
 
@@ -333,6 +333,8 @@ int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
     setvbuf(stdout, NULL, _IOLBF, 256);
     opt_parse(argc, argv);
+
+    net_init();
 
     log_info("local listen addr: %s#%u", g_bind_ip, (uint)g_bind_port);
 

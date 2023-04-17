@@ -26,6 +26,14 @@ union skaddr {
 #define skaddr_is_sin6(p) (skaddr_family(p) == AF_INET6)
 #define skaddr_size(p) (skaddr_is_sin(p) ? sizeof((p)->sin) : sizeof((p)->sin6))
 
+/* compatible with old kernel (runtime) */
+extern int (*x_recvmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout);
+
+/* compatible with old kernel (runtime) */
+extern int (*x_sendmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags);
+
+void net_init(void);
+
 void set_reuse_port(int sockfd);
 
 int new_udp_socket(int family);

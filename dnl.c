@@ -490,7 +490,7 @@ static void do_debug(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
         }
     }
 
-    /* check map2 hash collisions  */
+    /* check map2 hash collisions */
     if (!map_is_null(&s_map2)) {
         int maxlen = 0;
         for (u32 idx = 0, n = map_cap(&s_map2); idx < n; ++idx) {
@@ -579,8 +579,8 @@ u8 get_name_tag(const char *noalias name, int namelen) {
     assert(n > 0);
 
     u8 name_tag;
-    for (int i = 0; i < n; ++i) {
-        if (exists_in_dnl(sub_names[i], sub_namelens[i], &name_tag))
+    while (--n >= 0) {
+        if (exists_in_dnl(sub_names[n], sub_namelens[n], &name_tag))
             return name_tag;
     }
 
