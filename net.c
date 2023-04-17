@@ -66,7 +66,7 @@ void net_init(void) {
     (void)res;
 
     if (errno != ENOSYS) {
-        x_recvmmsg = recvmmsg;
+        x_recvmmsg = (__typeof__(x_recvmmsg))recvmmsg;
     } else {
         log_info("recvmmsg not implemented, use recvmsg to simulate");
         x_recvmmsg = my_recvmmsg;
@@ -77,7 +77,7 @@ void net_init(void) {
     (void)res;
 
     if (errno != ENOSYS) {
-        x_sendmmsg = sendmmsg;
+        x_sendmmsg = (__typeof__(x_sendmmsg))sendmmsg;
     } else {
         log_info("sendmmsg not implemented, use sendmsg to simulate");
         x_sendmmsg = my_sendmmsg;
