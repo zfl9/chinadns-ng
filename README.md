@@ -202,6 +202,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
 
+- 从 2023.04.17 版本开始，在匹配一个域名时，将优先考虑子域名模式而不是父域名模式，使匹配逻辑更加合理。举个例子，假设 gfwlist 中有 tw.iqiyi.com 模式，chnlist 中有 iqiyi.com 模式；则不论黑白名单哪个优先，查询 tw.iqiyi.com 和 *.tw.iqiyi.com 都是命中 gfwlist 列表。因此 gfwlist优先/chnlist优先 在新版本中只对完全相同的域名模式有影响，这种情况几乎可以忽略不计。
+
 - 建议同时启用黑名单和白名单，不必担心查询效率，条目数量只会影响一点内存占用，对查询速度没影响，也不必担心内存占用，我在`Linux x86-64 (CentOS 7)`上的实测数据如下：
   - 没有黑白名单时，内存为`140`KB；
   - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
