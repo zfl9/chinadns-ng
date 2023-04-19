@@ -501,6 +501,8 @@ void ipset_init(void) {
         end_add_ip = end_add_ip_ipset;
     }
 
+    // todo: test and add must be paired (chn_test,chn_add,gfw_test,gfw_add)
+
     /* chn_test */
     if (g_default_tag == NAME_TAG_NONE) {
         log_info("tag:chn test: %s", g_ipset_name4);
