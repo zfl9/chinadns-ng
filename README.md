@@ -10,6 +10,7 @@
 - 支持 `gfwlist/chnlist` 黑/白名单模式，并对 **时空效率** 进行了优化。
 - 支持纯域名分流：要么走china上游，要么走trust上游，不依赖ipset。
 - 可动态添加大陆域名结果IP至`ipset/nftset`，实现完美chnroute分流。
+- 可动态添加gfw域名结果IP至`ipset/nftset`，用于实现gfwlist透明代理。
 - 支持`nftables set`，并针对 add 操作进行了性能优化，避免操作延迟。
 - 更加细致的 no-ipv6(AAAA) 控制，可根据域名类型，上游类型进行过滤。
 
@@ -24,7 +25,8 @@
 - gfwlist.txt域名，转发给trust组，trust需返回未受污染的结果，比如走代理(或透明代理)，具体方式不限
 - 其他域名，转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组
 - 如果使用纯域名分流模式，则不存在"其他域名"，因此要么走china组，要么走trust组，可完全避免dns泄露问题
-- 若启用`--add-tagchn-ip`，则chnlist.txt域名（准确来说是tag为chn的域名）的解析结果IP会被动态添加到chnroute/chnroute6，当使用chnroute透明代理分流时，可保证大陆域名必定走直连（不被代理），使dns分流与ip分流一致；类似 gfwlist 分流模式的实现原理（借助 dnsmasq 的 ipset/nftset 指令）。
+- 若启用`--add-tagchn-ip`，则chnlist.txt域名（准确来说是tag为chn的域名）的解析结果IP会被动态添加到chnroute/chnroute6，当使用chnroute透明代理分流时，可保证大陆域名必定走直连（不被代理），使dns分流与ip分流一致；类似于 dnsmasq 的 ipset/nftset 功能
+- 若启用`--add-taggfw-ip`，则gfwlist.txt域名（准确来说是tag为gfw的域名）的解析结果IP会被动态添加到ipset/nftset，可用来实现gfwlist透明代理分流；也可配合chnroute透明代理分流，用来收集黑名单域名的IP，用于iptables/nftables操作，比如确保黑名单域名必走代理，即使某些黑名单域名的IP是大陆IP
 
 ## 编译
 
@@ -124,7 +126,8 @@ usage: chinadns-ng <options...>. the existing options are as follows:
                                       rule T: check answer ip of trust upstream
                                       if no rules is given, it defaults to 'a'
  -M, --chnlist-first                  match chnlist first, default: <disabled>
- -a, --add-tagchn-ip                  add the ip of name-tag:chn to ipset/nftset
+ -a, --add-tagchn-ip                  add the ip of name-tag:chn to ipset/nft
+ -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft
  -f, --fair-mode                      enable fair mode (nop, only fair mode now)
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
  -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)
@@ -178,7 +181,14 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ---
 
-- `add-tagchn-ip` 用于动态添加 大陆域名的解析结果ip 到 ipset/nftset。
+- `add-tagchn-ip` 用于动态添加 白名单域名的解析结果ip 到 ipset/nftset。
+  - 与`ipset-name4/6`用的是同一个集合(chnroute)，无需提供集合名。
+- `add-taggfw-ip` 用于动态添加 黑名单域名的解析结果ip 到 ipset/nftset。
+  - 格式是：`ipv4集合名,ipv6集合名`，nftset格式同`ipset-name4/6`。
+  - 如果使用nftset，创建set时，必须带上 `flags interval` 标志。
+
+---
+
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `timeout-sec` 选项用于指定上游的响应超时时长，单位秒，默认5秒。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
@@ -381,15 +391,15 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ---
 
-### chinadns-ng 也可用于 gfwlist 透明代理分流模式
+### chinadns-ng 也可用于 gfwlist 透明代理分流
 
 ```bash
-# 创建 ipset，用于存储 gfwlist.txt 解析出来的 IP
+# 创建 ipset，用于存储 tag:gfw 域名的 IP (nftset 同理)
 ipset create gfwlist hash:net family inet # ipv4
 ipset create gfwlist6 hash:net family inet6 # ipv6
 
-# 对调一下dns上游，指定 gfwlist.txt，纯域名分流，add-tagchn-ip
-chinadns-ng -c 8.8.8.8 -t 119.29.29.29 -4 gfwlist -6 gfwlist6 -m gfwlist.txt -d gfw -a
+# 指定 gfwlist.txt，default-tag，add-taggfw-ip 选项
+chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 ```
 
 传统上，这是利用 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能并不擅长处理大量域名，因此对性能有所影响，只是 gfwlist.txt 的域名数量比 chnlist.txt 少，所以影响比较小，但是如果你追求性能（比如低端路由器），我认为使用 chinadns-ng 来实现是有意义的。
