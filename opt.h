@@ -45,10 +45,11 @@ extern u8          g_default_tag;
 extern const char *g_gfwlist_fname;
 extern const char *g_chnlist_fname;
 extern bool        g_gfwlist_first;
-extern bool        g_add_tagchn_ip;
 
 extern const char *g_ipset_name4;
 extern const char *g_ipset_name6;
+extern bool        g_add_tagchn_ip;
+extern const char *g_add_taggfw_ip;
 
 extern const char  *g_bind_ip;
 extern u16          g_bind_port;

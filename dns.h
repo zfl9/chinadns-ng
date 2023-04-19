@@ -93,7 +93,7 @@ bool dns_check_reply(const void *noalias packet_buf, ssize_t packet_len, char *n
 int dns_test_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen);
 
 /* add the answer ip to ipset (chnroute/chnroute6) */
-void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen);
+void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen, bool chn);
 
 static inline u16 dns_qtype(const void *noalias packet_buf, int namelen) {
     const struct dns_query *q = packet_buf + sizeof(struct dns_header) + namelen;

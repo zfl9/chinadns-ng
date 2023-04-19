@@ -283,7 +283,7 @@ static void handle_remote_packet(int index) {
                 log_verbose("reply [%s] from <previous-trustdns> (%u), result: filter", s_name_buf, (uint)dns_header->id);
             if (g_add_tagchn_ip && context->name_tag == NAME_TAG_CHN) {
                 log_verbose("add the answer ip of name-tag:chn [%s] to ipset", s_name_buf);
-                dns_add_ip(reply_buffer, reply_length, namelen);
+                dns_add_ip(reply_buffer, reply_length, namelen, true);
             }
         } else {
             log_verbose("reply [%s] from %s (%u), result: filter", s_name_buf, addr, (uint)dns_header->id);
@@ -299,6 +299,10 @@ static void handle_remote_packet(int index) {
     } else {
         if (context->name_tag == NAME_TAG_GFW || context->chinadns_got || use_trust_reply(reply_buffer, &reply_length, namelen)) {
             log_verbose("reply [%s] from %s (%u), result: accept", s_name_buf, addr, (uint)dns_header->id);
+            if (g_add_taggfw_ip && context->name_tag == NAME_TAG_GFW) {
+                log_verbose("add the answer ip of name-tag:gfw [%s] to ipset", s_name_buf);
+                dns_add_ip(reply_buffer, reply_length, namelen, false);
+            }
         } else {
             /* trustdns returns before chinadns */
             if (!context->trustdns_buf) {
@@ -343,7 +347,7 @@ int main(int argc, char *argv[]) {
     if (g_upstream_addrs[TRUSTDNS1_IDX]) log_info("trustdns server#1: %s", g_upstream_addrs[TRUSTDNS1_IDX]);
     if (g_upstream_addrs[TRUSTDNS2_IDX]) log_info("trustdns server#2: %s", g_upstream_addrs[TRUSTDNS2_IDX]);
 
-    bool need_ipset = g_add_tagchn_ip || g_default_tag == NAME_TAG_NONE;
+    bool need_ipset = g_add_tagchn_ip || g_add_taggfw_ip || g_default_tag == NAME_TAG_NONE;
     if (need_ipset) ipset_init();
 
     dnl_init();

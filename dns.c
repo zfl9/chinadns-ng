@@ -240,12 +240,11 @@ int dns_test_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen)
 }
 
 static bool add_ip(const void *noalias ip, bool v4, void *ud) {
-    (void)ud;
-    ipset_add_ip(ip, v4);
+    ipset_add_ip(ip, v4, (uintptr_t)ud);
     return false; // not break foreach
 }
 
-void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen) {
-    foreach_ip(packet_buf, packet_len, namelen, add_ip, NULL);
-    ipset_end_add_ip();
+void dns_add_ip(const void *noalias packet_buf, ssize_t packet_len, int namelen, bool chn) {
+    foreach_ip(packet_buf, packet_len, namelen, add_ip, (void *)(uintptr_t)chn);
+    ipset_end_add_ip(chn);
 }
