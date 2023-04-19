@@ -628,7 +628,7 @@ void ipset_add_ip(const void *noalias ip, bool v4, bool chn) {
         a_nlmsg(ctx, v4)->nlmsg_len = a_initlen(ctx, v4);
     else if (n >= IP_N) {
         ipset_end_add_ip(chn);
-        assert(a_ip_n(v4) == 0);
+        assert(a_ip_n(ctx, v4) == 0);
         a_nlmsg(ctx, v4)->nlmsg_len = a_initlen(ctx, v4);
     }
     add_ip(ctx, v4, ip);
