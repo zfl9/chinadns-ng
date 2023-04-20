@@ -18,8 +18,8 @@ const char *g_gfwlist_fname = NULL; /* gfwlist filename(s) "a.txt,b.txt,..." */
 const char *g_chnlist_fname = NULL; /* chnlist filename(s) "m.txt,n.txt,..." */
 bool        g_gfwlist_first = true; /* match gfwlist first */
 
-const char *g_ipset_name4 = "chnroute"; /* (chnroute) ipset:"set_name" | nft:"family_name@table_name@set_name" */
-const char *g_ipset_name6 = "chnroute6"; /* (chnroute6) ipset:"set_name" | nft:"family_name@table_name@set_name" */
+const char *g_ipset_name4 = "chnroute"; /* (tag:none) ipset:"set_name" | nft:"family_name@table_name@set_name" */
+const char *g_ipset_name6 = "chnroute6"; /* (tag:none) ipset:"set_name" | nft:"family_name@table_name@set_name" */
 const char *g_add_tagchn_ip = NULL; /* add the answer ip of name-tag:chn to ipset/nft (setname4,setname6) */
 const char *g_add_taggfw_ip = NULL; /* add the answer ip of name-tag:gfw to ipset/nft (setname4,setname6) */
 

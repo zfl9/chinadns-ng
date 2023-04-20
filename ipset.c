@@ -514,7 +514,9 @@ void ipset_init(void) {
 
     __typeof__(&init_req_ipset) init_req;
 
-    if (strchr(g_ipset_name4, '@') || strchr(g_ipset_name6, '@') || strchr(g_add_taggfw_ip ?: "", '@')) {
+    if (strchr(g_ipset_name4, '@') || strchr(g_ipset_name6, '@') ||
+        strchr(g_add_tagchn_ip ?: "", '@') || strchr(g_add_taggfw_ip ?: "", '@'))
+    {
         log_info("current backend: nft");
         init_req = init_req_nft;
         test_res = test_res_nft;
