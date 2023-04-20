@@ -25,7 +25,7 @@
 - gfwlist.txt域名，转发给trust组，trust需返回未受污染的结果，比如走代理(或透明代理)，具体方式不限
 - 其他域名，转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组
 - 如果使用纯域名分流模式，则不存在"其他域名"，因此要么走china组，要么走trust组，可完全避免dns泄露问题
-- 若启用`--add-tagchn-ip`，则chnlist.txt域名（准确来说是tag为chn的域名）的解析结果IP会被动态添加到ipset/nftset，当使用chnroute透明代理分流时，可保证大陆域名必定走直连（不被代理），使dns分流与ip分流一致；类似于 dnsmasq 的 ipset/nftset 功能
+- 若启用`--add-tagchn-ip`，则chnlist.txt域名（准确来说是tag为chn的域名）的解析结果IP会被动态添加到ipset/nftset，配合chnroute透明代理分流时，可用于实现大陆域名必走直连（不被代理），使dns分流与ip分流一致；原理类似于 dnsmasq 的 ipset/nftset 功能
 - 若启用`--add-taggfw-ip`，则gfwlist.txt域名（准确来说是tag为gfw的域名）的解析结果IP会被动态添加到ipset/nftset，可用来实现gfwlist透明代理分流；也可配合chnroute透明代理分流，用来收集黑名单域名的IP，用于iptables/nftables操作，比如确保黑名单域名必走代理，即使某些黑名单域名的IP是大陆IP
 
 ## 编译
@@ -149,6 +149,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 - `ipset-name4` 选项指定存储中国大陆 IPv4 地址的 ipset/nft 集合名。
 - `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset/nft 集合名。
+- 该集合只用于 tag:none 域名，用于判定 china 上游的解析结果是否为大陆 IP。
 - nft 也是用这两选项，名称格式为：`family名@table名@set名`，自带的 nft 数据文件使用如下名称：
   - 大陆 IPv4 地址集合：`inet@global@chnroute`
   - 大陆 IPv6 地址集合：`inet@global@chnroute6`
