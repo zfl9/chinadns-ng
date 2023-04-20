@@ -48,7 +48,7 @@ extern bool        g_gfwlist_first;
 
 extern const char *g_ipset_name4;
 extern const char *g_ipset_name6;
-extern bool        g_add_tagchn_ip;
+extern const char *g_add_tagchn_ip;
 extern const char *g_add_taggfw_ip;
 
 extern const char  *g_bind_ip;
