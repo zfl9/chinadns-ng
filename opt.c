@@ -115,6 +115,7 @@ static void show_help(void) {
            " -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6\n"
            "                                      if it contains @, then use nftables set\n"
            "                                      format: family_name@table_name@set_name\n"
+           "                                      this ipset/nftset is used for tag:none\n"
            " -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin\n"
            " -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin\n"
            " -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)\n"
