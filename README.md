@@ -25,7 +25,7 @@
 - gfwlist.txt域名，转发给trust组，trust需返回未受污染的结果，比如走代理(或透明代理)，具体方式不限
 - 其他域名，转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组
 - 如果使用纯域名分流模式，则不存在"其他域名"，因此要么走china组，要么走trust组，可完全避免dns泄露问题
-- 若启用`--add-tagchn-ip`，则chnlist.txt域名（准确来说是tag为chn的域名）的解析结果IP会被动态添加到chnroute/chnroute6，当使用chnroute透明代理分流时，可保证大陆域名必定走直连（不被代理），使dns分流与ip分流一致；类似于 dnsmasq 的 ipset/nftset 功能
+- 若启用`--add-tagchn-ip`，则chnlist.txt域名（准确来说是tag为chn的域名）的解析结果IP会被动态添加到ipset/nftset，当使用chnroute透明代理分流时，可保证大陆域名必定走直连（不被代理），使dns分流与ip分流一致；类似于 dnsmasq 的 ipset/nftset 功能
 - 若启用`--add-taggfw-ip`，则gfwlist.txt域名（准确来说是tag为gfw的域名）的解析结果IP会被动态添加到ipset/nftset，可用来实现gfwlist透明代理分流；也可配合chnroute透明代理分流，用来收集黑名单域名的IP，用于iptables/nftables操作，比如确保黑名单域名必走代理，即使某些黑名单域名的IP是大陆IP
 
 ## 编译
@@ -110,6 +110,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6
                                       if it contains @, then use nftables set
                                       format: family_name@table_name@set_name
+                                      this ipset/nftset is used for tag:none
  -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin
  -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin
  -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)
@@ -126,7 +127,8 @@ usage: chinadns-ng <options...>. the existing options are as follows:
                                       rule T: check answer ip of trust upstream
                                       if no rules is given, it defaults to 'a'
  -M, --chnlist-first                  match chnlist first, default: <disabled>
- -a, --add-tagchn-ip                  add the ip of name-tag:chn to ipset/nft
+ -a, --add-tagchn-ip=[set4,set6]      add the ip of name-tag:chn to ipset/nft
+                                      use '--ipset-name4/6' set-name if no arg
  -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft
  -f, --fair-mode                      enable fair mode (nop, only fair mode now)
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
@@ -182,10 +184,12 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ---
 
 - `add-tagchn-ip` 用于动态添加 白名单域名的解析结果ip 到 ipset/nftset。
-  - 与`ipset-name4/6`用的是同一个集合(chnroute)，无需提供集合名。
+  - 与`ipset-name4/6`用的是同一个集合(chnroute)，无需提供集合名（2023.04.20版本之前）。
+  - 2023.04.20 版本开始，允许指定其他集合：`-a/--add-tagchn-ip=ipv4集合名,ipv6集合名`。
 - `add-taggfw-ip` 用于动态添加 黑名单域名的解析结果ip 到 ipset/nftset。
   - 格式是：`ipv4集合名,ipv6集合名`，nftset格式同`ipset-name4/6`。
-  - 如果使用nftset，创建set时，必须带上 `flags interval` 标志。
+- 如果使用nftset，在创建set时，必须带上 `flags interval` 标志。
+- 如果v6集合没用到（如使用-N屏蔽了AAAA），可以不创建v6集合，但参数中还是需要指定v6集合名。
 
 ---
 
@@ -202,7 +206,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
 
-- 从 2023.04.17 版本开始，在匹配一个域名时，将优先考虑子域名模式而不是父域名模式，使匹配逻辑更加合理。举个例子，假设 gfwlist 中有 tw.iqiyi.com 模式，chnlist 中有 iqiyi.com 模式；则不论黑白名单哪个优先，查询 tw.iqiyi.com 和 *.tw.iqiyi.com 都是命中 gfwlist 列表。因此 gfwlist优先/chnlist优先 在新版本中只对完全相同的域名模式有影响，这种情况几乎可以忽略不计。
+- 从 2023.04.17 版本开始，在匹配一个域名时，将优先考虑子域名模式而不是父域名模式，使匹配逻辑更加合理。举个例子，假设 gfwlist 中有 tw.iqiyi.com 模式，chnlist 中有 iqiyi.com 模式；则不论黑白名单哪个优先，查询 tw.iqiyi.com 和 *.tw.iqiyi.com 都是命中 gfwlist 列表。因此 gfwlist优先/chnlist优先 在新版本中只对完全相同的域名模式有影响。
 
 - 建议同时启用黑名单和白名单，不必担心查询效率，条目数量只会影响一点内存占用，对查询速度没影响，也不必担心内存占用，我在`Linux x86-64 (CentOS 7)`上的实测数据如下：
   - 没有黑白名单时，内存为`140`KB；
@@ -255,8 +259,8 @@ chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v
 
 因此分流的核心流程，可以用三句话来描述：
 
-- `tag:chn` 域名：只走 china 上游，即单纯转发，没有 ipset/nftset 逻辑
-- `tag:gfw` 域名：只走 trust 上游，即单纯转发，没有 ipset/nftset 逻辑
+- `tag:chn` 域名：只走 china 上游，即单纯转发，没有 ipset/nftset test 逻辑
+- `tag:gfw` 域名：只走 trust 上游，即单纯转发，没有 ipset/nftset test 逻辑
 - `tag:none` 域名：同时走 china 和 trust，如果 china 上游返回国内 IP，则接受其结果，否则采纳 trust 结果
 
 ---
