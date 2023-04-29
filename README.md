@@ -8,7 +8,7 @@
 - 修复原版对保留地址的处理问题，去除过时特性，只留核心功能。
 - 修复原版对可信 DNS 先于国内 DNS 返回而导致判断失效的问题。
 - 支持 `gfwlist/chnlist` 黑/白名单模式，并对 **时空效率** 进行了优化。
-- 支持纯域名分流：要么走china上游，要么走trust上游，不依赖ipset。
+- 支持纯域名分流：要么走china上游，要么走trust上游，不进行ip测试。
 - 可动态添加大陆域名结果IP至`ipset/nftset`，实现完美chnroute分流。
 - 可动态添加gfw域名结果IP至`ipset/nftset`，用于实现gfwlist透明代理。
 - 支持`nftables set`，并针对 add 操作进行了性能优化，避免操作延迟。
@@ -20,13 +20,15 @@
 
 - 两组DNS上游：china组(大陆DNS)、trust组(国外DNS)
 - 两个域名列表：chnlist.txt(大陆域名)、gfwlist.txt(受污染域名)
-- 两个ip地址集合：chnroute(大陆v4地址段)、chnroute6(大陆v6地址段)
-- chnlist.txt域名，转发给china组，保证大陆域名不会被解析到国外，对大陆域名cdn友好
-- gfwlist.txt域名，转发给trust组，trust需返回未受污染的结果，比如走代理(或透明代理)，具体方式不限
-- 其他域名，转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组
-- 如果使用纯域名分流模式，则不存在"其他域名"，因此要么走china组，要么走trust组，可完全避免dns泄露问题
-- 若启用`--add-tagchn-ip`，则chnlist.txt域名（准确来说是tag为chn的域名）的解析结果IP会被动态添加到ipset/nftset，配合chnroute透明代理分流时，可用于实现大陆域名必走直连（不被代理），使dns分流与ip分流一致；原理类似于 dnsmasq 的 ipset/nftset 功能
-- 若启用`--add-taggfw-ip`，则gfwlist.txt域名（准确来说是tag为gfw的域名）的解析结果IP会被动态添加到ipset/nftset，可用来实现gfwlist透明代理分流；也可配合chnroute透明代理分流，用来收集黑名单域名的IP，用于iptables/nftables操作，比如确保黑名单域名必走代理，即使某些黑名单域名的IP是大陆IP
+- 两个ip集合(用于tag:none域名，ip test)：chnroute(大陆v4地址段)、chnroute6(大陆v6地址段)
+- chnlist.txt域名(tag:chn域名)，转发给china组，保证大陆域名不会被解析到国外，对大陆域名cdn友好
+- gfwlist.txt域名(tag:gfw域名)，转发给trust组，trust需返回未受污染的结果，比如走代理(或透明代理)，具体方式不限
+- 其他域名(tag:none域名)，同时转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组。是否为大陆ip的核心依据，就是测试ip是否位于ipset/nftset，即`--ipset-name4/name6`指定的那个集合
+- 如果使用纯域名分流模式，则不存在tag:none域名，因此要么走china组，要么走trust组，可避免dns泄露问题
+- 若启用`--add-tagchn-ip`，则tag:chn域名的解析结果IP会被动态添加到ipset/nftset，配合chnroute透明代理分流时，可用于实现大陆域名必走直连（不被代理），使dns分流与ip分流一致；原理类似于 dnsmasq 的 ipset/nftset 功能
+- 若启用`--add-taggfw-ip`，则tag:gfw域名的解析结果IP会被动态添加到ipset/nftset，可用来实现gfwlist透明代理分流；也可配合chnroute透明代理分流，用来收集黑名单域名的IP，用于iptables/nftables操作，比如确保黑名单域名必走代理，即使某些黑名单域名的IP是大陆IP
+
+> chinadns-ng 根据域名 tag 来执行不同逻辑，包括 ipset/nftset 的逻辑（test、add），见 [原理](https://github.com/zfl9/chinadns-ng#tagchntaggfwtagnone-%E6%98%AF%E6%8C%87%E4%BB%80%E4%B9%88)。
 
 ## 编译
 
@@ -164,9 +166,10 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ---
 
 - `default-tag` 用来实现"纯域名分流"，可提供比`dnsmasq`更优秀的匹配性能。
-- 通常与`-g`或`-m`选项一起用，纯域名分流模式下不执行 ipset/nftset 逻辑，如：
+- 通常与`-g`或`-m`选项一起用，纯域名分流模式下不执行`ip test`逻辑，如：
   - `-g gfwlist.txt -d chn`：gfw列表的域名走可信上游，其他走国内上游。
   - `-m chnlist.txt -d gfw`：chn列表的域名走国内上游，其他走可信上游。
+  - 注意，纯域名分流只是不会执行`ip test`，`ip add`逻辑不会受影响。
   
 ---
 
@@ -184,10 +187,10 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ---
 
-- `add-tagchn-ip` 用于动态添加 白名单域名的解析结果ip 到 ipset/nftset。
+- `add-tagchn-ip` 用于动态添加 tag:chn域名 的解析结果ip 到 ipset/nftset。
   - 与`ipset-name4/6`用的是同一个集合(chnroute)，无需提供集合名（2023.04.20版本之前）。
   - 2023.04.20 版本开始，允许指定其他集合：`-a/--add-tagchn-ip=ipv4集合名,ipv6集合名`。
-- `add-taggfw-ip` 用于动态添加 黑名单域名的解析结果ip 到 ipset/nftset。
+- `add-taggfw-ip` 用于动态添加 tag:gfw域名 的解析结果ip 到 ipset/nftset。
   - 格式是：`ipv4集合名,ipv6集合名`，nftset格式同`ipset-name4/6`。
 - 如果使用nftset，在创建set时，必须带上 `flags interval` 标志。
 - 如果v6集合没用到（如使用-N屏蔽了AAAA），可以不创建v6集合，但参数中还是需要指定v6集合名。
@@ -260,9 +263,9 @@ chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v
 
 因此分流的核心流程，可以用三句话来描述：
 
-- `tag:chn` 域名：只走 china 上游，即单纯转发，没有 ipset/nftset test 逻辑
-- `tag:gfw` 域名：只走 trust 上游，即单纯转发，没有 ipset/nftset test 逻辑
-- `tag:none` 域名：同时走 china 和 trust，如果 china 上游返回国内 IP，则接受其结果，否则采纳 trust 结果
+- `tag:chn`：只走 china 上游（单纯转发），如果启用 --add-tagchn-ip，则添加解析结果至 ipset/nftset
+- `tag:gfw`：只走 trust 上游（单纯转发），如果启用 --add-taggfw-ip，则添加解析结果至 ipset/nftset
+- `tag:none`：同时走 china 和 trust，如果 china 上游返回国内 IP，则接受其结果，否则采纳 trust 结果
 
 ---
 
