@@ -165,25 +165,26 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ---
 
-- `default-tag` 用来实现"纯域名分流"，可提供比`dnsmasq`更优秀的匹配性能。
-- 通常与`-g`或`-m`选项一起用，纯域名分流模式下不执行`ip test`逻辑，如：
+- `default-tag` 可用于实现"纯域名分流"，也可用于实现 [gfwlist分流模式](#chinadns-ng-也可用于-gfwlist-透明代理分流)。
+- 该选项的核心逻辑就是指定**不匹配任何列表的域名**的tag，并无特别之处。
+- 通常与`-g`或`-m`选项一起使用，比如下述例子，实现了"纯域名分流"模式：
   - `-g gfwlist.txt -d chn`：gfw列表的域名走可信上游，其他走国内上游。
   - `-m chnlist.txt -d gfw`：chn列表的域名走国内上游，其他走可信上游。
-  - 注意，纯域名分流只是不会执行`ip test`，`ip add`逻辑不会受影响。
+- 如果想了解更多细节，建议看一下 [chinadns-ng 的核心处理流程](#tagchntaggfwtagnone-是指什么)。
   
 ---
 
-- `no-ipv6` 选项表示过滤 IPv6-Address(AAAA) 查询，默认不设置此选项。
-  - `2023.02.27`版本开始，允许指定一个可选的"规则串"，目前有如下规则：
-  - `a`：过滤所有域名的v6查询，同之前
-  - `g`：过滤gfwlist域名的v6查询
-  - `m`：过滤chnlist域名的v6查询
-  - `n`：过滤非gfwlist、非chnlist域名的v6查询
-  - `c`：禁止向chinadns上游转发v6查询
-  - `t`：禁止向trustdns上游转发v6查询
-  - `C`：若一个AAAA查询只转发给了china上游(非gfw域名 && 非chn域名 && trust被禁用v6)，是否过滤非大陆ip的响应；默认不过滤，除非设置此规则
-  - `T`：若一个AAAA查询只转发给了trust上游(非gfw域名 && 非chn域名 && china被禁用v6)，是否过滤非大陆ip的响应；默认不过滤，除非设置此规则
-  - 如`-N=gt`/`--no-ipv6=gt`：过滤gfwlist域名的v6、禁止向trustdns转发v6
+- `no-ipv6` 用于过滤 AAAA 查询（查询域名的 IPv6 地址），默认不设置此选项。
+  - `2023.02.27`版本开始，允许指定一个可选的"规则串"，有如下规则：
+  - `a`：过滤 所有 域名的 AAAA 查询，同之前
+  - `g`：过滤 tag:gfw 域名的 AAAA 查询
+  - `m`：过滤 tag:chn 域名的 AAAA 查询
+  - `n`：过滤 tag:none 域名的 AAAA 查询
+  - `c`：禁止向 china 上游转发 AAAA 查询
+  - `t`：禁止向 trust 上游转发 AAAA 查询
+  - `C`：当 tag:none 域名的 AAAA 查询只存在 china 上游路径时，过滤 china 上游的 非大陆ip 响应
+  - `T`：当 tag:none 域名的 AAAA 查询只存在 trust 上游路径时，过滤 trust 上游的 非大陆ip 响应
+  - 如`-N=gt`/`--no-ipv6=gt`：过滤 tag:gfw 域名的 AAAA 查询、禁止向 trust 上游转发 AAAA 查询
 
 ---
 
