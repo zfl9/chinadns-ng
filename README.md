@@ -416,13 +416,15 @@ chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 
 ### --noip-as-chnip 选项的作用
 
+> 此选项只用于 tag:none 域名，下面说的过滤也仅针对 **大陆 DNS**。
+
 首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。
 
 qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、AAAA（查询给定域名的 IPv6 地址）、CNAME（查询给定域名的别名）、MX（查询给定域名的邮件服务器）；
 
 chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；
 
-默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply（此处的拒绝仅针对**国内 DNS**，可信 DNS 不存在任何过滤；另外此过滤也仅针对`非gfwlist && 非chnlist`域名），如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
+默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply，如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
 
 > 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对受污染域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项的作用（当然还是我的锅，文档没写清楚）。
 
