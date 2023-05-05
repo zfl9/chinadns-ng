@@ -255,14 +255,9 @@ chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v
 
 - 被 chnlist.txt 匹配的域名归为 `tag:chn`
 - 被 gfwlist.txt 匹配的域名归为 `tag:gfw`
-- 其它未匹配的域名归为 `tag:none`
+- 其它域名默认归为 `tag:none`，可通过 -d 修改
 
-当使用纯域名分流模式时，不存在 `tag:none` 域名：
-
-- 对于 `-m chnlist.txt -d gfw`，未被匹配的域名归为 `tag:gfw`
-- 对于 `-g gfwlist.txt -d chn`，未被匹配的域名归为 `tag:chn`
-
-因此分流的核心流程，可以用三句话来描述：
+**域名分流** 和 **ipset/nftset** 的核心流程，可以用三句话来描述：
 
 - `tag:chn`：只走 china 上游（单纯转发），如果启用 --add-tagchn-ip，则添加解析结果至 ipset/nftset
 - `tag:gfw`：只走 trust 上游（单纯转发），如果启用 --add-taggfw-ip，则添加解析结果至 ipset/nftset
