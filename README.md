@@ -28,7 +28,7 @@
 - 若启用`--add-tagchn-ip`，则tag:chn域名的解析结果IP会被动态添加到指定的ipset/nftset，配合chnroute透明代理分流时，可用于实现大陆域名必走直连（不被代理），使dns分流与ip分流一致；原理类似于 dnsmasq 的 ipset/nftset 功能
 - 若启用`--add-taggfw-ip`，则tag:gfw域名的解析结果IP会被动态添加到指定的ipset/nftset，可用来实现gfwlist透明代理分流；也可配合chnroute透明代理分流，用来收集黑名单域名的IP，用于iptables/nftables操作，比如确保黑名单域名必走代理，即使某些黑名单域名的IP是大陆IP
 
-> chinadns-ng 根据域名 tag 来执行不同逻辑，包括 ipset/nftset 的逻辑（test、add），见 [原理](https://github.com/zfl9/chinadns-ng#tagchntaggfwtagnone-%E6%98%AF%E6%8C%87%E4%BB%80%E4%B9%88)。
+> chinadns-ng 根据域名 tag 来执行不同逻辑，包括 ipset/nftset 的逻辑（test、add），见 [原理](#tagchntaggfwtagnone-%E6%98%AF%E6%8C%87%E4%BB%80%E4%B9%88)。
 
 ## 编译
 
@@ -199,7 +199,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ---
 
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
-- `timeout-sec` 选项用于指定上游的响应超时时长，单位秒，默认5秒。
+- `timeout-sec` 选项用于指定上游的响应超时时长，单位秒，默认 5 秒。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
 - `fair-mode` 从`2023.03.06`版本开始，只有公平模式，指不指定都一样。
 - `noip-as-chnip` 选项表示接受 qtype 为 A/AAAA 但却没有 IP 的 reply。
@@ -354,7 +354,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 意思是指定的 ipset 集合不存在；如果是 `[ipset_addr4_is_exists]` 提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。
 
-需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果
+需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
 
 > 只有 tag:none 域名存在 ipset/nftset 判断&&过滤，tag:gfw 和 tag:chn 域名不会走 ip test 逻辑。
 
@@ -362,7 +362,9 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### trust上游存在一定的丢包，怎么缓解
 
-如果 trust-dns 上游存在丢包的情况（特别是 udp-based 类型的代理隧道），可以使用 `--repeat-times` 选项进行一定的缓解。比如设置为 3，则表示：chinadns-ng 从客户端收到一个 query 包后，会同时向 trust-dns 发送 3 个相同的 query 包，向 china-dns 发送 1 个 query 包（所以该选项仅针对 trust-dns）。也就是所谓的 **多倍发包**、**重复发包**，并没有其它魔力。
+如果 trust 上游存在丢包的情况（特别是 udp-based 类型的代理隧道），可以使用 `--repeat-times` 选项进行一定的缓解。比如设置为 3，表示：chinadns-ng 从客户端收到一个 query 包后，会同时向 trust 上游转发 3 个相同的 query 包（默认是发 1 个包）。其实就是 **多倍发包**、**重复发包**，并没有其它魔力。
+
+或者换个思路，将发往 trust 上游的 dns 查询从 udp 转为 tcp；因为对于天朝网络，由于 QoS 等因素，tcp 流量的优先级通常比 udp 高，而且 tcp 传输协议本身就提供丢包重传，比重复发包策略更可靠。另外，大部分代理处理 udp 流量的效率要低于 tcp，因此绝大多数时候，tcp 查询的耗时要低于 udp 查询。
 
 ---
 
