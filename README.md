@@ -202,7 +202,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `timeout-sec` 选项用于指定上游的响应超时时长，单位秒，默认 5 秒。
 - `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
 - `fair-mode` 从`2023.03.06`版本开始，只有公平模式，指不指定都一样。
-- `noip-as-chnip` 选项表示接受 qtype 为 A/AAAA 但却没有 IP 的 reply。
+- `noip-as-chnip` 表示接受 qtype=A/AAAA 但没有 IP 的响应，[详细说明](#--noip-as-chnip-选项的作用)。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 ## 域名列表
@@ -262,6 +262,8 @@ chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v
 - `tag:chn`：只走 china 上游（单纯转发），如果启用 --add-tagchn-ip，则添加解析结果至 ipset/nftset
 - `tag:gfw`：只走 trust 上游（单纯转发），如果启用 --add-taggfw-ip，则添加解析结果至 ipset/nftset
 - `tag:none`：同时走 china 和 trust，如果 china 上游返回国内 IP，则接受其结果，否则采纳 trust 结果
+
+> `tag:chn`和`tag:gfw`不存在任何判定/过滤；`tag:none`的判定/过滤也仅限于 china 上游的响应结果
 
 ---
 
