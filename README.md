@@ -359,7 +359,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 如果 trust 上游存在丢包的情况（特别是 udp-based 类型的代理隧道），可以使用 `--repeat-times` 选项进行一定的缓解。比如设置为 3，表示：chinadns-ng 从客户端收到一个 query 包后，会同时向 trust 上游转发 3 个相同的 query 包（默认是发 1 个包）。其实就是 **多倍发包**、**重复发包**，并没有其它魔力。
 
-或者换个思路，将发往 trust 上游的 dns 查询从 udp 转为 tcp；因为对于天朝网络，由于 QoS 等因素，tcp 流量的优先级通常比 udp 高，而且 tcp 传输协议本身就提供丢包重传，比重复发包策略更可靠。另外，大部分代理处理 udp 流量的效率要低于 tcp，因此绝大多数时候，tcp 查询的耗时要低于 udp 查询。
+或者换个思路，将发往 trust 上游的 dns 查询从 udp 转为 tcp；因为对于天朝网络，由于 QoS 等因素，tcp 流量的优先级通常比 udp 高，而且 tcp 传输协议本身就提供丢包重传，比重复发包策略更可靠。另外，有些代理处理 udp 流量的效率要低于 tcp，可能会出现 tcp 查询耗时低于 udp 的情况。
 
 ---
 
@@ -416,7 +416,7 @@ chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 
 ### --noip-as-chnip 选项的作用
 
-> 此选项只用于 tag:none 域名，下面说的过滤也仅针对 **大陆 DNS**。
+> 此选项只用于 tag:none 域名，下面说的 拒绝接受 也仅针对 **大陆 DNS**。
 
 首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。
 
