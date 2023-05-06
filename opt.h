@@ -16,7 +16,7 @@
 /* max number of chinadns or trustdns */
 #define SERVER_GROUP_CNT 2
 
-#define is_chinadns_idx(idx) ((idx) == CHINADNS1_IDX || (idx) == CHINADNS2_IDX)
+#define is_chinadns_idx(idx) ((idx) <= CHINADNS2_IDX)
 
 /* no-ipv6 bit flag (u8) */
 #define NOAAAA_ALL         (-1) /* max value of unsigned integer of any width, all bits are 1 */

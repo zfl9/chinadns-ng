@@ -20,9 +20,11 @@
 #include <sys/socket.h>
 #include <sys/epoll.h>
 
-#define EPOLL_MAXEVENTS 8
+#define MAX_EVENTS 8
 
 #define PACKET_BUFSZ DNS_PACKET_MAXSIZE
+
+#define SOCK_LIFETIME 30 /* for upstream socket */
 
 struct u16_buf {
     u16 len;
@@ -43,6 +45,7 @@ struct queryctx {
 static int s_epollfd            = -1;
 static int s_bind_sockfd        = -1;
 static int s_upstream_sockfds[] = {[0 ... SERVER_MAXIDX] = -1};
+static int s_sock_create_time   = 0; /* for upstream socket */
 
 static u16              s_unique_msgid = 0;
 static struct queryctx *s_context_list = NULL;
@@ -82,6 +85,41 @@ static inline void reply_with_no_answer(const union skaddr *noalias addr, sockle
         u16 port = 0;
         skaddr_parse(addr, s_ipstr_buf, &port);
         log_error("failed to send reply to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
+    }
+}
+
+static void update_upstream_sock(int now) {
+    likely_if (s_sock_create_time && now - s_sock_create_time < SOCK_LIFETIME)
+        return;
+
+    if (s_sock_create_time)
+        log_verbose("create new socket, old socket is used for %d seconds", now - s_sock_create_time);
+
+    if (MYHASH_CNT(s_context_list) > 0U) {
+        log_verbose("there are still unfinished queries, continue to use the old");
+        assert(s_sock_create_time);
+        return;
+    }
+
+    s_sock_create_time = now;
+
+    /* create upstream socket */
+    for (int i = 0; i <= SERVER_MAXIDX; ++i) {
+        if (!g_upstream_addrs[i]) continue;
+
+        if (s_upstream_sockfds[i] >= 0)
+            close(s_upstream_sockfds[i]); /* fd will be auto removed from the interest-list when it is closed */
+
+        s_upstream_sockfds[i] = new_udp_socket(skaddr_family(&g_upstream_skaddrs[i]));
+
+        struct epoll_event ev = {
+            .events = EPOLLIN,
+            .data.u32 = i,
+        };
+        unlikely_if (epoll_ctl(s_epollfd, EPOLL_CTL_ADD, s_upstream_sockfds[i], &ev)) {
+            log_error("failed to register epoll event: (%d) %s", errno, strerror(errno));
+            exit(errno);
+        }
     }
 }
 
@@ -125,6 +163,9 @@ static void handle_local_packet(void) {
             return;
         }
     }
+
+    int now = time(NULL);
+    update_upstream_sock(now);
 
     u16 unique_msgid = s_unique_msgid++;
     struct dns_header *dns_header = s_packet_buf;
@@ -181,7 +222,7 @@ static void handle_local_packet(void) {
     struct queryctx *context = malloc(sizeof(*context));
     context->unique_msgid = unique_msgid;
     context->origin_msgid = origin_msgid;
-    context->request_time = time(NULL);
+    context->request_time = now;
     context->trustdns_buf = NULL;
     context->chinadns_got = false;
     context->name_tag = name_tag;
@@ -389,12 +430,6 @@ int main(int argc, char *argv[]) {
         return errno;
     }
 
-    /* create upstream socket */
-    for (int i = 0; i <= SERVER_MAXIDX; ++i) {
-        if (g_upstream_addrs[i])
-            s_upstream_sockfds[i] = new_udp_socket(skaddr_family(&g_upstream_skaddrs[i]));
-    }
-
     /* create epoll fd */
     unlikely_if ((s_epollfd = epoll_create1(0)) < 0) {
         log_error("failed to create epoll fd: (%d) %s", errno, strerror(errno));
@@ -402,7 +437,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* register epoll event */
-    struct epoll_event ev, events[EPOLL_MAXEVENTS];
+    struct epoll_event ev, events[MAX_EVENTS];
 
     /* listen socket readable event */
     ev.events = EPOLLIN;
@@ -412,22 +447,11 @@ int main(int argc, char *argv[]) {
         return errno;
     }
 
-    /* upstream socket readable event */
-    for (int i = 0; i <= SERVER_MAXIDX; ++i) {
-        if (s_upstream_sockfds[i] < 0) continue;
-        ev.events = EPOLLIN;
-        ev.data.u32 = i;
-        unlikely_if (epoll_ctl(s_epollfd, EPOLL_CTL_ADD, s_upstream_sockfds[i], &ev)) {
-            log_error("failed to register epoll event: (%d) %s", errno, strerror(errno));
-            return errno;
-        }
-    }
-
     /* run event loop (blocking here) */
     int timeout_ms = -1;
 
     for (;;) {
-        int event_count = retry_EINTR(epoll_wait(s_epollfd, events, EPOLL_MAXEVENTS, timeout_ms));
+        int event_count = retry_EINTR(epoll_wait(s_epollfd, events, MAX_EVENTS, timeout_ms));
 
         unlikely_if (event_count < 0)
             log_error("epoll_wait() reported an error: (%d) %s", errno, strerror(errno));
@@ -481,16 +505,19 @@ int main(int argc, char *argv[]) {
         /* handle timeout event */
         struct queryctx *cur, *tmp;
         int now = time(NULL), remain_sec;
+
         MYHASH_FOR(s_context_list, cur, tmp) {
             remain_sec = cur->request_time + g_upstream_timeout_sec - now;
             if (remain_sec <= 0) {
-                handle_timeout_event(cur); //remove current entry
+                handle_timeout_event(cur); /* remove current entry */
             } else {
                 timeout_ms = remain_sec * 1000;
                 break;
             }
         }
-        if (MYHASH_CNT(s_context_list) <= 0U) timeout_ms = -1;
+
+        if (MYHASH_CNT(s_context_list) <= 0U)
+            timeout_ms = -1;
     }
 
     return 0;
