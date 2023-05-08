@@ -255,16 +255,13 @@ static void parse_noaaaa_rules(const char *rules) {
 
 void opt_parse(int argc, char *argv[]) {
     opterr = 0; /* disable default error msg */
-
-    int optindex = -1;
-    int shortopt = -1;
+    int shortopt;
 
     const char *chinadns_optarg = "114.114.114.114";
     const char *trustdns_optarg = "8.8.8.8";
-
     char no_arg;
 
-    while ((shortopt = getopt_long(argc, argv, s_shortopts, s_options, &optindex)) != -1) {
+    while ((shortopt = getopt_long(argc, argv, s_shortopts, s_options, NULL)) != -1) {
         switch (shortopt) {
             case OPT_BIND_ADDR:
                 if (get_ipstr_family(optarg) == -1)
@@ -388,8 +385,15 @@ void opt_parse(int argc, char *argv[]) {
                     err_exit("unknown option: '%.*s'", len, longopt);
                 }
                 break;
+
+            default:
+                err_exit("unprocessed option: '%s'", argv[optind - 1]);
+                break;
         }
     }
+
+    for (int i = optind; i < argc; ++i)
+        err_exit("non-option argument: %s", argv[i]);
 
     if ((uintptr_t)g_add_tagchn_ip == (uintptr_t)&no_arg) {
         size_t len4 = strlen(g_ipset_name4) + 1;
