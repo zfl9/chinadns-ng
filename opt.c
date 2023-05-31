@@ -124,8 +124,8 @@ static void show_help(void) {
            "                                      format: family_name@table_name@set_name\n"
            " -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:\n"
            "                                      rule a: filter all domain name (default)\n"
-           "                                      rule g: filter the name with tag gfw\n"
            "                                      rule m: filter the name with tag chn\n"
+           "                                      rule g: filter the name with tag gfw\n"
            "                                      rule n: filter the name with tag none\n"
            "                                      rule c: do not forward to china upstream\n"
            "                                      rule t: do not forward to trust upstream\n"
@@ -214,11 +214,11 @@ static void parse_noaaaa_rules(const char *rules) {
             case 'a':
                 g_noaaaa_query = NOAAAA_ALL;
                 break;
-            case 'g':
-                g_noaaaa_query |= NOAAAA_TAG_GFW;
-                break;
             case 'm':
                 g_noaaaa_query |= NOAAAA_TAG_CHN;
+                break;
+            case 'g':
+                g_noaaaa_query |= NOAAAA_TAG_GFW;
                 break;
             case 'n':
                 g_noaaaa_query |= NOAAAA_TAG_NONE;
