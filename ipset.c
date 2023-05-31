@@ -249,8 +249,8 @@ static struct iovec   s_iov[IOV_N];
 static struct nlnfhdr s_batch_begin;
 static struct nlnfhdr s_batch_end;
 
-static void *s_buf_req4 = (char [BUFSZ_4]){0}; /* tag:none{test} + tag:chn{test,add} | tag:gfw{test,add} */
-static void *s_buf_req6 = (char [BUFSZ_6]){0}; /* tag:none{test} + tag:chn{test,add} | tag:gfw{test,add} */
+static void *s_buf_req4 = (char [BUFSZ_4]){0}; /* tag:none{test} + tag:chn{test,add} + tag:gfw{test,add} */
+static void *s_buf_req6 = (char [BUFSZ_6]){0}; /* tag:none{test} + tag:chn{test,add} + tag:gfw{test,add} */
 static void *s_buf_res  = (char [BUFSZ_R]){0};
 
 /* tag:none */
