@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CHINADNS_VERSION "ChinaDNS-NG 2023.05.08 <https://github.com/zfl9/chinadns-ng>"
+#define CHINADNS_VERSION "ChinaDNS-NG 2023.05.31 <https://github.com/zfl9/chinadns-ng>"
 
 bool    g_verbose       = false;
 bool    g_reuse_port    = false;
@@ -121,7 +121,7 @@ static void show_help(void) {
            " -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)\n"
            " -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5\n"
            " -p, --repeat-times <repeat-times>    only used for trustdns, default:1, max:5\n"
-           " -N, --no-ipv6=[rules]                filter AAAA query, rules can be a seq of:\n"
+           " -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:\n"
            "                                      rule a: filter all domain name (default)\n"
            "                                      rule g: filter the name with tag gfw\n"
            "                                      rule m: filter the name with tag chn\n"
@@ -132,7 +132,7 @@ static void show_help(void) {
            "                                      rule T: check answer ip of trust upstream\n"
            "                                      if no rules is given, it defaults to 'a'\n"
            " -M, --chnlist-first                  match chnlist first, default: <disabled>\n"
-           " -a, --add-tagchn-ip=[set4,set6]      add the ip of name-tag:chn to ipset/nft\n"
+           " -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nft\n"
            "                                      use '--ipset-name4/6' set-name if no arg\n"
            " -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft\n"
            " -f, --fair-mode                      enable fair mode (nop, only fair mode now)\n"
@@ -253,6 +253,11 @@ static void parse_noaaaa_rules(const char *rules) {
     }
 }
 
+static void check_optional_arg(int argc, char *argv[]) {
+    if (!optarg && optind < argc && *argv[optind] != '-')
+        optarg = argv[optind++];
+}
+
 void opt_parse(int argc, char *argv[]) {
     opterr = 0; /* disable default error msg */
     int shortopt;
@@ -321,6 +326,7 @@ void opt_parse(int argc, char *argv[]) {
                 break;
 
             case OPT_NO_IPV6:
+                check_optional_arg(argc, argv);
                 parse_noaaaa_rules(optarg);
                 break;
 
@@ -329,6 +335,7 @@ void opt_parse(int argc, char *argv[]) {
                 break;
 
             case OPT_ADD_TAGCHN_IP:
+                check_optional_arg(argc, argv);
                 if (!optarg)
                     g_add_tagchn_ip = &no_arg;
                 else if (*optarg == '=')
