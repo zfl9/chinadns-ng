@@ -377,25 +377,26 @@ static void handle_timeout_event(struct queryctx *context) {
 int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
     setvbuf(stdout, NULL, _IOLBF, 256);
-    opt_parse(argc, argv);
-
     net_init();
+
+    opt_parse(argc, argv);
 
     log_info("local listen addr: %s#%u", g_bind_ip, (uint)g_bind_port);
 
-    if (g_upstream_addrs[CHINADNS1_IDX]) log_info("chinadns server#1: %s", g_upstream_addrs[CHINADNS1_IDX]);
-    if (g_upstream_addrs[CHINADNS2_IDX]) log_info("chinadns server#2: %s", g_upstream_addrs[CHINADNS2_IDX]);
-    if (g_upstream_addrs[TRUSTDNS1_IDX]) log_info("trustdns server#1: %s", g_upstream_addrs[TRUSTDNS1_IDX]);
-    if (g_upstream_addrs[TRUSTDNS2_IDX]) log_info("trustdns server#2: %s", g_upstream_addrs[TRUSTDNS2_IDX]);
+    if (g_upstream_addrs[CHINADNS1_IDX])
+        log_info("chinadns server#1: %s", g_upstream_addrs[CHINADNS1_IDX]);
+    if (g_upstream_addrs[CHINADNS2_IDX])
+        log_info("chinadns server#2: %s", g_upstream_addrs[CHINADNS2_IDX]);
+    if (g_upstream_addrs[TRUSTDNS1_IDX])
+        log_info("trustdns server#1: %s", g_upstream_addrs[TRUSTDNS1_IDX]);
+    if (g_upstream_addrs[TRUSTDNS2_IDX])
+        log_info("trustdns server#2: %s", g_upstream_addrs[TRUSTDNS2_IDX]);
+
+    dnl_init();
+    log_info("default domain name tag: %s", nametag_val2name(g_default_tag));
 
     bool need_ipset = g_add_tagchn_ip || g_add_taggfw_ip || g_default_tag == NAME_TAG_NONE;
     if (need_ipset) ipset_init();
-
-    dnl_init();
-
-    log_info("default domain name tag: %s", nametag_val2name(g_default_tag));
-    log_info("%s reply without ip addr", g_noip_as_chnip ? "accept" : "filter");
-    log_info("dns query timeout: %d seconds", g_upstream_timeout_sec);
 
     if (is_filter_all_v6(g_noaaaa_query))
         log_info("filter AAAA for all name");
@@ -416,8 +417,14 @@ int main(int argc, char *argv[]) {
             log_info("filter AAAA, check ip for trustdns");
     }
 
+    log_info("dns query timeout: %d seconds", g_upstream_timeout_sec);
+
     if (g_repeat_times > 1) log_info("enable repeat mode, times: %u", (uint)g_repeat_times);
+
+    log_info("%s no-ip reply from chinadns", g_noip_as_chnip ? "accept" : "filter");
+
     if (g_reuse_port) log_info("enable `SO_REUSEPORT` feature");
+
     log_verbose("print the verbose running log");
 
     /* create listen socket */

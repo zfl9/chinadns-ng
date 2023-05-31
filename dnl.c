@@ -547,11 +547,11 @@ void dnl_init(void) {
     g_dnl_nitems = dnl_nitems();
     assert(g_dnl_nitems == gfw_nitems + chn_nitems);
 
-    if (has_gfw)
-        log_info("gfwlist loaded:%lu added:%lu cost:%.3fk", (ulong)gfw_n, (ulong)gfw_nitems, gfw_cost/1024.0);
-
     if (has_chn)
         log_info("chnlist loaded:%lu added:%lu cost:%.3fk", (ulong)chn_n, (ulong)chn_nitems, chn_cost/1024.0);
+
+    if (has_gfw)
+        log_info("gfwlist loaded:%lu added:%lu cost:%.3fk", (ulong)gfw_n, (ulong)gfw_nitems, gfw_cost/1024.0);
 
     log_info("L1 items:%lu lists:%lu buckets:%lu cost:%.3fk",
         (ulong)s_map1.nitems, (ulong)s_map1.nlists, (ulong)map_cap(&s_map1), map_cap(&s_map1)*sizeof(struct bucket)/1024.0);
