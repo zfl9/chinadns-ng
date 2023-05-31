@@ -1,6 +1,7 @@
 #pragma once
 
 #include "misc.h"
+#include <stdbool.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <assert.h>
@@ -36,7 +37,7 @@ void net_init(void);
 
 void set_reuse_port(int sockfd);
 
-int new_udp_socket(int family);
+int new_udp_socket(int family, bool for_bind);
 
 int get_ipstr_family(const char *noalias ipstr);
 

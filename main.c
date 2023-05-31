@@ -24,7 +24,7 @@
 
 #define PACKET_BUFSZ DNS_PACKET_MAXSIZE
 
-#define SOCK_LIFETIME 30 /* for upstream socket */
+#define SOCK_LIFETIME 60 /* for upstream socket */
 
 struct u16_buf {
     u16 len;
@@ -96,7 +96,7 @@ static void update_upstream_sock(int now) {
         log_verbose("create new socket, old socket is used for %d seconds", now - s_sock_create_time);
 
     if (MYHASH_CNT(s_context_list) > 0U) {
-        log_verbose("there are still unfinished queries, continue to use the old");
+        log_verbose("there are %u unfinished queries, continue to use the old", MYHASH_CNT(s_context_list));
         assert(s_sock_create_time);
         return;
     }
@@ -110,7 +110,7 @@ static void update_upstream_sock(int now) {
         if (s_upstream_sockfds[i] >= 0)
             close(s_upstream_sockfds[i]); /* fd will be auto removed from the interest-list when it is closed */
 
-        s_upstream_sockfds[i] = new_udp_socket(skaddr_family(&g_upstream_skaddrs[i]));
+        s_upstream_sockfds[i] = new_udp_socket(skaddr_family(&g_upstream_skaddrs[i]), false);
 
         struct epoll_event ev = {
             .events = EPOLLIN,
@@ -401,10 +401,10 @@ int main(int argc, char *argv[]) {
     if (is_filter_all_v6(g_noaaaa_query))
         log_info("filter AAAA for all name");
     else if (g_noaaaa_query != 0) {
-        if (g_noaaaa_query & NOAAAA_TAG_GFW)
-            log_info("filter AAAA for tag_gfw name");
         if (g_noaaaa_query & NOAAAA_TAG_CHN)
             log_info("filter AAAA for tag_chn name");
+        if (g_noaaaa_query & NOAAAA_TAG_GFW)
+            log_info("filter AAAA for tag_gfw name");
         if (g_noaaaa_query & NOAAAA_TAG_NONE)
             log_info("filter AAAA for tag_none name");
         if (g_noaaaa_query & NOAAAA_CHINA_DNS)
@@ -428,7 +428,7 @@ int main(int argc, char *argv[]) {
     log_verbose("print the verbose running log");
 
     /* create listen socket */
-    s_bind_sockfd = new_udp_socket(skaddr_family(&g_bind_skaddr));
+    s_bind_sockfd = new_udp_socket(skaddr_family(&g_bind_skaddr), true);
     if (g_reuse_port) set_reuse_port(s_bind_sockfd);
 
     /* bind address to listen socket */

@@ -109,14 +109,16 @@ void set_reuse_port(int sockfd) {
 }
 
 /* create a udp socket (v4/v6) */
-int new_udp_socket(int family) {
+int new_udp_socket(int family, bool for_bind) {
     int sockfd = socket(family, SOCK_DGRAM | SOCK_NONBLOCK, 0); /* since Linux 2.6.27 */
     unlikely_if (sockfd < 0) {
         log_error("failed to create udp%c socket: (%d) %s", family == AF_INET ? '4' : '6', errno, strerror(errno));
         exit(errno);
     }
-    if (family == AF_INET6) set_ipv6_only(sockfd);
-    set_reuse_addr(sockfd);
+    if (for_bind) {
+        if (family == AF_INET6) set_ipv6_only(sockfd);
+        set_reuse_addr(sockfd);
+    }
     return sockfd;
 }
 
