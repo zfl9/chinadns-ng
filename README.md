@@ -351,9 +351,11 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 接受 china 上游返回的 IP为保留地址 的解析记录
 
-如果 china 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受其响应（判定为大陆IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset/nftset。chinadns-ng 判断是否为"大陆IP"的核心就是查询 chnroute、chnroute6 这两个 ipset/nftset，程序内部没有任何隐含的判断规则。注意：只有 tag:none 域名需要这么做，对于 tag:chn 域名，chinadns-ng 只是单纯转发，不涉及 ipset/nftset 判定；所以你也可以将相关域名加入 chnlist（支持从多个文件加载域名列表）。
+将对应的保留地址(段)加入到 `chnroute`、`chnroute6` 集合即可。chinadns-ng 判断是否为"大陆IP"的核心就是查询 chnroute、chnroute6 集合，程序内部并没有其他隐含的判断规则。
 
-> 为什么没有默认将保留地址段加入 `chnroute*.ipset/nftset`？因为我担心 gfw 会给受污染域名返回保留地址，所以没放到 chnroute 去。虽然现在受污染域名都走 gfwlist.txt 机制了（只走 trust 上游），但谨慎起见，建议只添加真正用到的保留地址到 chnroute/chnroute6，比如 192.168.0.0/16。
+注意：只有 tag:none 域名需要这么做；对于 tag:chn 域名，chinadns-ng 只是单纯转发，不涉及 ipset/nftset 判定；所以你也可以将相关域名加入 chnlist.txt（支持从多个文件加载域名列表）。
+
+为什么没有默认将保留地址加入 `chnroute*.ipset/nftset`？因为我担心 gfw 会给受污染域名返回保留地址，所以没放到 chnroute 去。不过现在受污染域名都走 gfwlist.txt 机制了，只会走 trust 上游，所以加进去应该也没问题。
 
 ---
 
@@ -436,9 +438,9 @@ qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、A
 
 chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；
 
-默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply，如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
+默认情况下，chinadns-ng 不会接受来自 china 上游的没有 IP 地址的 reply（仅针对 tag:none 域名），如果你希望 chinadns-ng 接受它，请指定 `--noip-as-chnip` 选项。
 
-> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对受污染域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项的作用（我的锅，文档没写清楚）。
+> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对某些域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项的作用（怪我文档没写清楚）。
 
 ```bash
 $ dig @114.114.114.114 yys.163.com A
