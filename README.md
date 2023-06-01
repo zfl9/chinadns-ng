@@ -424,7 +424,7 @@ ipset create gfwlist6 hash:net family inet6 # ipv6
 chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 ```
 
-传统上，这是通过 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 不擅长处理大量域名，对性能有影响，只是 gfwlist.txt 的域名数量比 chnlist.txt 少，所以影响比较小。如果你在意性能，如低端路由器，可使用 chinadns-ng 来实现。
+传统上，这是通过 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能不擅长处理大量域名，会影响性能，只是 gfwlist.txt 域名数量比 chnlist.txt 少，所以影响较小。如果你在意性能，如低端路由器，可使用 chinadns-ng 来实现。
 
 ---
 
@@ -440,7 +440,7 @@ chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强
 
 默认情况下，chinadns-ng 不会接受来自 china 上游的没有 IP 地址的 reply（仅针对 tag:none 域名），如果你希望 chinadns-ng 接受它，请指定 `--noip-as-chnip` 选项。
 
-> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对某些域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项的作用（怪我文档没写清楚）。
+> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对某些域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项（怪我没写清楚）。
 
 ```bash
 $ dig @114.114.114.114 yys.163.com A
