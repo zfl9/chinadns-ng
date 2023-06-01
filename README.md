@@ -19,20 +19,26 @@
 对于常规的使用模式，大致原理和流程可总结为：
 
 - 两组DNS上游：china组(大陆DNS)、trust组(国外DNS)
+
 - 两个域名列表：chnlist.txt(大陆域名)、gfwlist.txt(受污染域名)
-- 两个ip集合(用于tag:none域名，ip test)：chnroute(大陆v4地址段)、chnroute6(大陆v6地址段)
+
 - chnlist.txt域名(tag:chn域名)，转发给china组，保证大陆域名不会被解析到国外，对大陆域名cdn友好
+
 - gfwlist.txt域名(tag:gfw域名)，转发给trust组，trust需返回未受污染的结果，比如走代理(或透明代理)，方式不限
+
 - 其他域名(tag:none域名)，同时转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组。是否为大陆ip的核心依据，就是测试ip是否位于ipset/nftset，即`--ipset-name4/name6`指定的那个集合
+
 - 如果使用纯域名分流模式，则不存在tag:none域名，因此要么走china组，要么走trust组，可避免dns泄露问题
+
 - 若启用`--add-tagchn-ip`，则tag:chn域名的解析结果IP会被动态添加到指定的ipset/nftset，配合chnroute透明代理分流时，可用于实现大陆域名必走直连（不被代理），使dns分流与ip分流一致；原理类似于 dnsmasq 的 ipset/nftset 功能
+
 - 若启用`--add-taggfw-ip`，则tag:gfw域名的解析结果IP会被动态添加到指定的ipset/nftset，可用来实现gfwlist透明代理分流；也可配合chnroute透明代理分流，用来收集黑名单域名的IP，用于iptables/nftables操作，比如确保黑名单域名必走代理，即使某些黑名单域名的IP是大陆IP
 
 > chinadns-ng 根据域名 tag 来执行不同逻辑，包括 ipset/nftset 的逻辑（test、add），见 [原理](#tagchntaggfwtagnone-%E6%98%AF%E6%8C%87%E4%BB%80%E4%B9%88)。
 
 ## 编译
 
-> 不想编译的，可以去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的可执行文件（静态链接musl）。
+> 不想编译或无法编译的（如低版本gcc），请前往 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的可执行文件（静态链接musl）。
 
 ```bash
 git clone https://github.com/zfl9/chinadns-ng
@@ -108,33 +114,32 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -l, --bind-port <port-number>        listen port number, default: 65353
  -c, --china-dns <ip[#port],...>      china dns server, default: <114DNS>
  -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>
- -4, --ipset-name4 <ipv4-setname>     ipset ipv4 set name, default: chnroute
- -6, --ipset-name6 <ipv6-setname>     ipset ipv6 set name, default: chnroute6
-                                      if it contains @, then use nftables set
-                                      format: family_name@table_name@set_name
-                                      this ipset/nftset is used for tag:none
- -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin
  -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin
- -d, --default-tag <name-tag>         domain default tag: gfw,chn,none(default)
- -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
- -p, --repeat-times <repeat-times>    only used for trustdns, default:1, max:5
- -N, --no-ipv6=[rules]                filter AAAA query, rules can be a seq of:
+ -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin
+ -M, --chnlist-first                  match chnlist first, default gfwlist first
+ -d, --default-tag <name-tag>         domain default tag: chn,gfw,none(default)
+ -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nft
+                                      use '--ipset-name4/6' set-name if no arg
+ -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft
+ -4, --ipset-name4 <set4>             ip test for tag:none, default: chnroute
+ -6, --ipset-name6 <set6>             ip test for tag:none, default: chnroute6
+                                      if setname contains @, then use nft-set
+                                      format: family_name@table_name@set_name
+ -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:
                                       rule a: filter all domain name (default)
-                                      rule g: filter the name with tag gfw
                                       rule m: filter the name with tag chn
+                                      rule g: filter the name with tag gfw
                                       rule n: filter the name with tag none
                                       rule c: do not forward to china upstream
                                       rule t: do not forward to trust upstream
                                       rule C: check answer ip of china upstream
                                       rule T: check answer ip of trust upstream
                                       if no rules is given, it defaults to 'a'
- -M, --chnlist-first                  match chnlist first, default: <disabled>
- -a, --add-tagchn-ip=[set4,set6]      add the ip of name-tag:chn to ipset/nft
-                                      use '--ipset-name4/6' set-name if no arg
- -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft
+ -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
+ -p, --repeat-times <repeat-times>    only used for trustdns, default:1, max:5
+ -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
  -f, --fair-mode                      enable fair mode (nop, only fair mode now)
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
- -n, --noip-as-chnip                  accept reply without ipaddr (A/AAAA query)
  -v, --verbose                        print the verbose log, default: <disabled>
  -V, --version                        print `chinadns-ng` version number and exit
  -h, --help                           print `chinadns-ng` help information and exit
@@ -143,25 +148,24 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ---
 
+- `bind-addr` 用于指定监听地址（IPv4 or IPv6），默认为 127.0.0.1。
+- `bind-port` 用于指定监听端口（UDP 端口），默认为 65353。
+
+---
+
 - `china-dns` 选项指定国内上游 DNS 服务器，最多两个，逗号隔开。
 - `trust-dns` 选项指定可信上游 DNS 服务器，最多两个，逗号隔开。
-- 上游 DNS 服务器的默认端口号为 `53`，可手动指定其它端口号。
+- 国内上游默认为 `114.114.114.114:53`，可信上游默认为 `8.8.8.8:53`。
+- 组内的多个上游服务器是并发查询的模式，采纳最先返回的那个结果。
+- 上游服务器的地址格式是 `IP#端口`，如果只给出 IP，则端口默认为 53。
 
 ---
 
-- `ipset-name4` 选项指定存储中国大陆 IPv4 地址的 ipset/nft 集合名。
-- `ipset-name6` 选项指定存储中国大陆 IPv6 地址的 ipset/nft 集合名。
-- 该集合只用于 tag:none 域名，用于判定 china 上游的解析结果是否为大陆 IP。
-- nft 也是用这两选项，名称格式为：`family名@table名@set名`，自带的 nft 数据文件使用如下名称：
-  - 大陆 IPv4 地址集合：`inet@global@chnroute`
-  - 大陆 IPv6 地址集合：`inet@global@chnroute6`
-
----
-
-- `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
+- `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
 - 可指定多个文件路径，使用英文逗号隔开，如 `-g a.txt,b.txt,c.txt`。
 - `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
+- 注意，只有 chnlist 和 gfwlist 文件都提供时，`*-first` 才有实际意义。
 
 ---
 
@@ -174,35 +178,43 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   
 ---
 
+- `add-tagchn-ip` 用于动态添加 tag:chn域名 的解析结果ip 到 ipset/nftset。
+  - 如果未给出集合名，则使用`ipset-name4/6`的那个集合。
+- `add-taggfw-ip` 用于动态添加 tag:gfw域名 的解析结果ip 到 ipset/nftset。
+- 参数格式：`ipv4集合名,ipv6集合名`，nftset 名称格式同 `ipset-name4/6`。
+- 如果 v6 集合没用到（如 -N 屏蔽了 AAAA），可以不创建，但参数中还是要指定。
+- 如果要使用 nftset，那么在创建 nftset 时，请记得带上 `flags interval` 标志。
+
+---
+
+- `ipset-name4` 用于指定存储了大陆 IPv4 地址的 ipset/nft 集合名，默认 chnroute。
+- `ipset-name6` 用于指定存储了大陆 IPv6 地址的 ipset/nft 集合名，默认 chnroute6。
+- 这两个集合只用于 tag:none 域名，用于判定 china 上游的解析结果是否为大陆 IP。
+- nftset 名称格式：`family名@table名@set名`，自带的 nftset 数据文件使用如下名称：
+  - 大陆 IPv4 地址集合：`inet@global@chnroute`
+  - 大陆 IPv6 地址集合：`inet@global@chnroute6`
+
+---
+
 - `no-ipv6` 用于过滤 AAAA 查询（查询域名的 IPv6 地址），默认不设置此选项。
   - `2023.02.27`版本开始，允许指定一个可选的"规则串"，有如下规则：
   - `a`：过滤 所有 域名的 AAAA 查询，同之前
-  - `g`：过滤 tag:gfw 域名的 AAAA 查询
   - `m`：过滤 tag:chn 域名的 AAAA 查询
+  - `g`：过滤 tag:gfw 域名的 AAAA 查询
   - `n`：过滤 tag:none 域名的 AAAA 查询
   - `c`：禁止向 china 上游转发 AAAA 查询
   - `t`：禁止向 trust 上游转发 AAAA 查询
   - `C`：当 tag:none 域名的 AAAA 查询只存在 china 上游路径时，过滤 china 上游的 非大陆ip 响应
   - `T`：当 tag:none 域名的 AAAA 查询只存在 trust 上游路径时，过滤 trust 上游的 非大陆ip 响应
-  - 如`-N=gt`/`--no-ipv6=gt`：过滤 tag:gfw 域名的 AAAA 查询、禁止向 trust 上游转发 AAAA 查询
+  - 如`-N gt`/`--no-ipv6 gt`：过滤 tag:gfw 域名的 AAAA 查询、禁止向 trust 上游转发 AAAA 查询
 
 ---
 
-- `add-tagchn-ip` 用于动态添加 tag:chn域名 的解析结果ip 到 ipset/nftset。
-  - 与`ipset-name4/6`用的是同一个集合(chnroute)，无需提供集合名（2023.04.20版本之前）。
-  - 2023.04.20 版本开始，允许指定其他集合：`-a/--add-tagchn-ip=ipv4集合名,ipv6集合名`。
-- `add-taggfw-ip` 用于动态添加 tag:gfw域名 的解析结果ip 到 ipset/nftset。
-  - 格式是：`ipv4集合名,ipv6集合名`，nftset格式同`ipset-name4/6`。
-- 如果使用nftset，在创建set时，必须带上 `flags interval` 标志。
-- 如果v6集合没用到（如使用-N屏蔽了AAAA），可以不创建v6集合，但参数中还是需要指定v6集合名。
-
----
-
-- `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `timeout-sec` 选项用于指定上游的响应超时时长，单位秒，默认 5 秒。
-- `repeat-times` 选项表示向可信 DNS 发送几个 dns 查询包，默认为 1。
+- `repeat-times` 用于给可信 DNS [重复发包](#trust上游存在一定的丢包怎么缓解)，默认值为 1，最大值为 5。
+- `noip-as-chnip` 表示接收来自 china 上游的没有 IP 的响应，[详细说明](#--noip-as-chnip-选项的作用)。
 - `fair-mode` 从`2023.03.06`版本开始，只有公平模式，指不指定都一样。
-- `noip-as-chnip` 表示接受 qtype=A/AAAA 但没有 IP 的响应，[详细说明](#--noip-as-chnip-选项的作用)。
+- `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 ## 域名列表
@@ -270,7 +282,7 @@ chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v
 ### 如何以守护进程形式在后台运行 chinadns-ng
 
 ```bash
-(chinadns-ng </dev/null &>>/var/log/chinadns-ng.log &)
+(chinadns-ng 参数... </dev/null &>>/var/log/chinadns-ng.log &)
 ```
 
 ---
@@ -306,24 +318,22 @@ nft -f chnroute6.nftset
 ```bash
 ./update-gfwlist.sh
 ./update-chnlist.sh
-chinadns-ng -g gfwlist.txt -m chnlist.txt <args...> #重新运行chinadns-ng
+chinadns-ng -g gfwlist.txt -m chnlist.txt 其他参数... # 重新运行 chinadns-ng
 ```
 
 ---
 
 ### 如何使用 TCP 协议与 DNS 上游进行通信
 
-如果想通过 TCP 协议来访问上游 DNS（原生只支持 UDP 访问），可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具将 chinadns-ng 向上游发出的 DNS 查询从 UDP 转换为 TCP，`dns2tcp` 是个人利用业余时间写的一个 DNS 实用小工具，专门用于实现 dns 的 udp2tcp 功能（虽然能实现类似功能的工具有很多，但它们大多都附带了我不想要的功能，还是比较喜欢简单专一点的东西）。
+原生只支持 UDP 协议，如果想使用 TCP 访问上游，可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具，作为 chinadns-ng 的上游。其他协议也是一样的道理，比如 DoH/DoT/DoQ，可以借助 https://github.com/AdguardTeam/dnsproxy 等实用工具。
 
 ```bash
 # 运行 dns2tcp
-dns2tcp -L"127.0.0.1#5353" -R"8.8.8.8#53"
+dns2tcp -L "127.0.0.1#5353" -R "8.8.8.8#53"
 
 # 运行 chinadns-ng
 chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 ```
-
-> 其他协议同理，比如 DoH/DoT/DoQ，你可以借助 https://github.com/AdguardTeam/dnsproxy 等实用工具。
 
 ---
 
@@ -343,7 +353,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 如果 china 上游会返回 **IP为保留地址** 的记录，且你希望 chinadns-ng 接受其响应（判定为大陆IP），那么你需要将对应的保留地址段加入到 `chnroute`、`chnroute6` ipset/nftset。chinadns-ng 判断是否为"大陆IP"的核心就是查询 chnroute、chnroute6 这两个 ipset/nftset，程序内部没有任何隐含的判断规则。注意：只有 tag:none 域名需要这么做，对于 tag:chn 域名，chinadns-ng 只是单纯转发，不涉及 ipset/nftset 判定；所以你也可以将相关域名加入 chnlist（支持从多个文件加载域名列表）。
 
-> 为什么没有默认将保留地址段加入 `chnroute*.ipset/nftset`？因为我担心 gfw 会给受污染域名返回保留地址，所以没放到 chnroute 去。虽然现在受污染域名都走 gfwlist.txt 机制了（只走 trust 上游），但谨慎起见，我建议只添加真正用到的保留地址到 chnroute/chnroute6，比如 192.168.0.0/16，而不是一把梭把它们全加进去，避免出问题。
+> 为什么没有默认将保留地址段加入 `chnroute*.ipset/nftset`？因为我担心 gfw 会给受污染域名返回保留地址，所以没放到 chnroute 去。虽然现在受污染域名都走 gfwlist.txt 机制了（只走 trust 上游），但谨慎起见，建议只添加真正用到的保留地址到 chnroute/chnroute6，比如 192.168.0.0/16。
 
 ---
 
@@ -412,13 +422,13 @@ ipset create gfwlist6 hash:net family inet6 # ipv6
 chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 ```
 
-传统上，这是利用 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能并不擅长处理大量域名，因此对性能有所影响，只是 gfwlist.txt 的域名数量比 chnlist.txt 少，所以影响比较小，但是如果你追求性能（比如低端路由器），我认为使用 chinadns-ng 来实现是有意义的。
+传统上，这是通过 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 不擅长处理大量域名，对性能有影响，只是 gfwlist.txt 的域名数量比 chnlist.txt 少，所以影响比较小。如果你在意性能，如低端路由器，可使用 chinadns-ng 来实现。
 
 ---
 
 ### --noip-as-chnip 选项的作用
 
-> 此选项只用于 tag:none 域名，下面说的 拒绝接受 也仅针对 **大陆 DNS**。
+> 此选项只作用于 tag:none 域名的 china 上游，trust 上游不存在过滤。
 
 首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。
 
@@ -428,7 +438,7 @@ chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强
 
 默认情况下，chinadns-ng 会拒绝接受这种没有 IP 地址的 reply，如果你希望 chinadns-ng 接受这种 reply，那么请指定 `--noip-as-chnip` 选项。
 
-> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对受污染域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项的作用（当然还是我的锅，文档没写清楚）。
+> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对受污染域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项的作用（我的锅，文档没写清楚）。
 
 ```bash
 $ dig @114.114.114.114 yys.163.com A
