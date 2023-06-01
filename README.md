@@ -424,7 +424,7 @@ ipset create gfwlist6 hash:net family inet6 # ipv6
 chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 ```
 
-传统上，这是通过 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能不擅长处理大量域名，会影响性能，只是 gfwlist.txt 域名数量比 chnlist.txt 少，所以影响较小。如果你在意性能，如低端路由器，可使用 chinadns-ng 来实现。
+传统上，这是通过 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能不擅长处理大量域名，影响性能，只是 gfwlist.txt 域名数量比 chnlist.txt 少，所以影响较小。如果你在意性能，如低端路由器，可使用 chinadns-ng 来实现。
 
 ---
 
