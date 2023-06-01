@@ -30,7 +30,7 @@
 
 - 如果使用纯域名分流模式，则不存在tag:none域名，因此要么走china组，要么走trust组，可避免dns泄露问题
 
-- 若启用`--add-tagchn-ip`，则tag:chn域名的解析结果IP会被动态添加到指定的ipset/nftset，配合chnroute透明代理分流时，可用于实现大陆域名必走直连（不被代理），使dns分流与ip分流一致；原理类似于 dnsmasq 的 ipset/nftset 功能
+- 若启用`--add-tagchn-ip`，则tag:chn域名的解析结果IP会被动态添加到指定的ipset/nftset，配合chnroute透明代理分流时，可用于实现大陆域名必走直连（不被代理），使dns分流与ip分流一致；类似 dnsmasq 的 ipset/nftset 功能
 
 - 若启用`--add-taggfw-ip`，则tag:gfw域名的解析结果IP会被动态添加到指定的ipset/nftset，可用来实现gfwlist透明代理分流；也可配合chnroute透明代理分流，用来收集黑名单域名的IP，用于iptables/nftables操作，比如确保黑名单域名必走代理，即使某些黑名单域名的IP是大陆IP
 
