@@ -203,9 +203,6 @@ static void parse_noaaaa_rules(const char *rules) {
         return;
     }
 
-    if (*rules == '=')
-        ++rules;
-
     if (strlen(rules) <= 0)
         err_exit("'-N/--no-ipv6' requires an argument");
 
@@ -255,6 +252,8 @@ static void parse_noaaaa_rules(const char *rules) {
 static void check_optional_arg(int argc, char *argv[]) {
     if (!optarg && optind < argc && *argv[optind] != '-')
         optarg = argv[optind++];
+    if (optarg && *optarg == '=')
+        ++optarg;
 }
 
 void opt_parse(int argc, char *argv[]) {
@@ -313,8 +312,6 @@ void opt_parse(int argc, char *argv[]) {
                 check_optional_arg(argc, argv);
                 if (!optarg)
                     g_add_tagchn_ip = &no_arg;
-                else if (*optarg == '=')
-                    g_add_tagchn_ip = optarg + 1;
                 else
                     g_add_tagchn_ip = optarg;
                 break;
