@@ -91,7 +91,7 @@ chinadns-ng: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), staticall
 
 # 可以使用 qemu-user-static 工具包来检查是否可运行
 pacman -S qemu-user-static # archlinux
-qemu-aarch64-static ./chinadns-ng -v -l53 -g ./gfwlist.txt -m ./chnlist.txt
+qemu-aarch64-static ./chinadns-ng --version
 ```
 
 ## Docker
@@ -182,8 +182,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 如果未给出集合名，则使用`ipset-name4/6`的那个集合。
 - `add-taggfw-ip` 用于动态添加 tag:gfw域名 的解析结果ip 到 ipset/nftset。
 - 参数格式：`ipv4集合名,ipv6集合名`，nftset 名称格式同 `ipset-name4/6`。
-- 如果 v6 集合没用到（如 -N 屏蔽了 AAAA），可以不创建，但参数中还是要指定。
 - 如果要使用 nftset，那么在创建 nftset 时，请记得带上 `flags interval` 标志。
+- 如果 v6 集合没用到（如 -N 屏蔽了 AAAA），可以不创建，但参数中还是要指定。
 
 ---
 

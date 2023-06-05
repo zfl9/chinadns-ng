@@ -284,7 +284,6 @@ animecrazy.net
 aniscartujo.com
 annatam.com
 anobii.com
-anonfiles.com
 anontext.com
 anonymitynetwork.com
 anonymizer.com
@@ -664,6 +663,7 @@ blogspot.cv
 blogspot.cz
 blogspot.de
 blogspot.dk
+blogspot.es
 blogspot.fi
 blogspot.fr
 blogspot.gr
@@ -681,7 +681,6 @@ blogspot.lt
 blogspot.lu
 blogspot.md
 blogspot.mk
-blogspot.mr
 blogspot.mx
 blogspot.my
 blogspot.nl
@@ -698,13 +697,10 @@ blogspot.sg
 blogspot.si
 blogspot.sk
 blogspot.sn
-blogspot.td
 blogspot.tw
 blogspot.ug
-blogspot.vn
 blogs.tampabay.com
 blogs.yahoo.co.jp
-blog.syx86.cn
 blog.syx86.com
 blog.taragana.com
 blogtd.net
@@ -715,7 +711,6 @@ blog.xuite.net
 blog.youthwant.com.tw
 blog.youxu.info
 bloodshed.net
-bloomberg.cn
 bloomberg.com
 bloomberg.de
 bloombergview.com
@@ -1092,7 +1087,6 @@ clinica-tibet.ru
 clipfish.de
 cloakpoint.com
 cloudflare-ipfs.com
-cloudfunctions.net
 cloud.mail.ru
 club1069.com
 clubhouseapi.com
@@ -1111,7 +1105,6 @@ cna.com.tw
 cnbbnews.wordpress.com
 cn.dayabook.com
 cnd.org
-cnex.org.cn
 cn.fmnnow.com
 cn.freeones.com
 cn.giganews.com
@@ -1297,7 +1290,6 @@ data-vocabulary.org
 daum.net
 david-kilgour.com
 dawangidc.com
-daxa.cn
 daylife.com
 dbc.hk
 dbgjd.com
@@ -1428,6 +1420,7 @@ doujincafe.com
 dowei.org
 download.aircrack-ng.org
 download.cnet.com
+download.ithome.com.tw
 dphk.org
 dpp.org.tw
 dpr.info
@@ -1519,7 +1512,6 @@ economist.com
 ecsm.vs.com
 edgecastcdn.net
 edicypages.com
-edmontonchina.cn
 edmontonservice.com
 edns.biz
 edoors.com
@@ -2165,7 +2157,6 @@ googlechinawebmaster.com
 google.ci
 google.cl
 google.cm
-google.cn
 google.co.ao
 google.co.bw
 google.co.ck
@@ -2203,6 +2194,7 @@ google.com.gh
 google.com.gi
 google.com.gt
 google.com.hk
+google.com.iq
 google.com.jm
 google.com.kh
 google.com.kw
@@ -2234,6 +2226,7 @@ google.com.sg
 google.com.sl
 google.com.sv
 google.com.tj
+google.com.tn
 google.com.tr
 google.com.tw
 google.com.ua
@@ -2294,6 +2287,7 @@ google.is
 google.it
 google.je
 google.jo
+google.jp
 google.kg
 google.ki
 google.kz
@@ -2318,12 +2312,14 @@ google.mv
 google.mw
 google.ne
 google.net
+google.ng
 google.nl
 google.no
 google.nr
 google.nu
 google.org
 googlepagecreator.com
+google.ph
 google.pl
 googleplay.com
 googleplus.com
@@ -2337,6 +2333,7 @@ google.rw
 google.sc
 googlescholar.comUSA
 google.se
+google.sg
 google.sh
 google.si
 googlesile.com
@@ -2355,6 +2352,7 @@ google.tm
 google.tn
 google.to
 google.tt
+google.uk
 googleusercontent.com
 google.vg
 googlevideo.com
@@ -2404,7 +2402,6 @@ greenreadings.com
 greenvpn.net
 greenvpn.org
 grotty-monday.com
-groups.google.cn
 grow.google
 gs-discuss.com
 gsearch.media
@@ -2639,7 +2636,6 @@ hostloc.com
 hotair.com
 hotav.tv
 hotcoin.com
-hotels.cn
 hotfrog.com.tw
 hotgoo.com
 hotpornshow.com
@@ -2892,7 +2888,6 @@ itaiwan.gov.tw
 italiatibet.org
 itasoftware.com
 itemdb.com
-itemfix.com
 ithelp.ithome.com.tw
 itsaol.com
 its.caltech.edu
@@ -3069,7 +3064,6 @@ kinmen.org.tw
 kinmen.travel
 kinokuniya.com
 kir.jp
-kissbbao.cn
 kiwi.kz
 kkbox.com
 kknews.cc
@@ -3121,9 +3115,7 @@ lamayeshe.com
 lamnia.co.uk
 lamrim.com
 landofhope.tv
-lanterncn.cn
 lantosfoundation.org
-laod.cn
 laogai.org
 laogairesearch.org
 laomiu.com
@@ -3139,8 +3131,6 @@ lbank.info
 ld.hao123img.com
 leafyvpn.net
 lecloud.net
-ledger.com
-leeao.com.cn
 lefora.com
 left21.hk
 legalporno.com
@@ -3176,7 +3166,6 @@ libredd.it
 lifemiles.com
 lighten.org.tw
 lighti.me
-lightnovel.cn
 lightyearvpn.com
 lihkg.com
 like.com
@@ -3851,7 +3840,6 @@ okx.com
 old-cat.net
 old.honeynet.org
 old.nabble.com
-olehdtv.com
 olevod.com
 olumpo.com
 olympicwatch.org
@@ -3899,7 +3887,6 @@ opentech.fund
 openvpn.net
 openvpn.org
 openwebster.com
-openwrt.org.cn
 opml.radiotime.com
 opus-gaming.com
 ordns.he.net
@@ -4025,6 +4012,7 @@ philborges.com
 philly.com
 phmsociety.org
 phncdn.com
+phobos.apple.com
 phosphation13.rssing.com
 photodharma.net
 photofocus.com
@@ -4221,7 +4209,6 @@ qidian.ca
 qienkuen.org
 qi-gong.me
 qiwen.lu
-qixianglu.cn
 qkshare.com
 qoos.com
 qpoe.com
@@ -4599,7 +4586,6 @@ sitemaps.org
 six-degrees.io
 sixth.biz
 sjrt.org
-sjum.cn
 sketchappsources.com
 skimtube.com
 skybet.com
@@ -5013,7 +4999,6 @@ tianhuayuan.com
 tianlawoffice.com
 tiantibooks.org
 tianti.io
-tianyantong.org.cn
 tianzhu.org
 tibet3rdpole.org
 tibetaction.net
@@ -5303,7 +5288,6 @@ twilightsex.com
 twilog.org
 twimbow.com
 twimg.com
-twimg.edgesuite.net
 twindexx.com
 twip.me
 twipple.jp
@@ -5488,7 +5472,6 @@ v2raytech.com
 valeursactuelles.com
 van001.com
 van698.com
-vanemu.cn
 vanilla-jp.com
 vanpeople.com
 vansky.com
@@ -5743,7 +5726,6 @@ wiki.cnitter.com
 wiki.esu.im
 wiki.gamerp.jp
 wiki.jqueryui.com
-wiki.keso.cn
 wikileaks.ch
 wikileaks.com
 wikileaks.de
@@ -6114,7 +6096,6 @@ zh.pokerstrategy.com
 zh.pttpedia.wikia.com
 zhreader.com
 zhuangbi.me
-zhuanxing.cn
 zhuatieba.com
 zhuichaguoji.org
 zh.uncyclopedia.wikia.com
@@ -6130,7 +6111,6 @@ ziporn.com
 zippyshare.com
 zkaip.com
 z-lib.org
-zmw.cn
 zodgame.us
 zomobo.net
 zonaeuropa.com
