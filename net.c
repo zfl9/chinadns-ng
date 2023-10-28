@@ -85,9 +85,9 @@ void net_init(void) {
 }
 
 /* setsockopt(IPV6_V6ONLY) */
-static inline void set_ipv6_only(int sockfd) {
-    unlikely_if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &(int){1}, sizeof(int))) {
-        log_error("setsockopt(%d, IPV6_V6ONLY): (%d) %s", sockfd, errno, strerror(errno));
+static inline void set_ipv6_only(int sockfd, int value) {
+    unlikely_if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &value, sizeof(value))) {
+        log_error("setsockopt(%d, IPV6_V6ONLY, %d): (%d) %s", sockfd, value, errno, strerror(errno));
         exit(errno);
     }
 }
@@ -116,7 +116,7 @@ int new_udp_socket(int family, bool for_bind) {
         exit(errno);
     }
     if (for_bind) {
-        if (family == AF_INET6) set_ipv6_only(sockfd);
+        if (family == AF_INET6) set_ipv6_only(sockfd, 0); /* allow msg from ipv4 when binding `::` addresses */
         set_reuse_addr(sockfd);
     }
     return sockfd;
