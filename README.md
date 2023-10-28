@@ -150,6 +150,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 - `bind-addr` 用于指定监听地址（IPv4 or IPv6），默认为 127.0.0.1。
 - `bind-port` 用于指定监听端口（UDP 端口），默认为 65353。
+- 若监听地址为 `::`，则允许来自 IPv4/IPv6 的 DNS 查询（2023.10.28 版本起）。
 
 ---
 
