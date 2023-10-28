@@ -381,9 +381,9 @@ int main(int argc, char *argv[]) {
     /* setting default values for TZ */
     setenv("TZ", ":/etc/localtime", 0);
 
-    net_init();
-
     opt_parse(argc, argv);
+
+    net_init();
 
     log_info("local listen addr: %s#%u", g_bind_ip, (uint)g_bind_port);
 
