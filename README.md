@@ -16,6 +16,10 @@
 
 ---
 
+**正在开发 2.0 版本，预计支持 DNS 缓存、TCP/UDP 监听、TCP/UDP/DoH 上游，详见 [#144](https://github.com/zfl9/chinadns-ng/issues/144)**
+
+---
+
 对于常规的使用模式，大致原理和流程可总结为：
 
 - 两组DNS上游：china组(大陆DNS)、trust组(国外DNS)。
