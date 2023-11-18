@@ -5,3 +5,5 @@ chinadns-ng
 .vscode/
 test.c
 test
+zig-cache/
+zig-out/
