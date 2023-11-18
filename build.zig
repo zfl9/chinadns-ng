@@ -37,7 +37,7 @@ fn addCFiles(exe: *LibExeObjStep, build_mode: Mode, comptime files: []const []co
     }
 
     inline for (files) |file| {
-        try flags.append("-DFILENAME=" ++ file);
+        try flags.append("-DFILENAME=\"" ++ file ++ "\"");
         exe.addCSourceFile("src/" ++ file, flags.items);
         _ = flags.pop();
     }
