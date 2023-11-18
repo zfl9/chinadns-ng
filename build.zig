@@ -71,8 +71,8 @@ pub fn build(b: *std.build.Builder) !void {
     // exe.verbose_cc = true;
     // exe.verbose_link = true;
 
-    const clean_cmd = b.addSystemCommand(&.{ "rm", "-fr", "./zig-cache" });
-    const clean_step = b.step("clean", "rm ./zig-cache directory");
+    const clean_cmd = b.addSystemCommand(&.{ "rm", "-fr", b.cache_root });
+    const clean_step = b.step("clean", "rm local zig cache files");
     clean_step.dependOn(&clean_cmd.step);
 
     const distclean_cmd = b.addSystemCommand(&.{ "rm", "-fr", b.global_cache_root });
