@@ -19,6 +19,7 @@ fn addCFiles(exe: *LibExeObjStep, build_mode: Mode, comptime files: []const []co
     defer flags.deinit();
 
     try flags.appendSlice(&.{
+        "-pipe",
         "-std=c99",
         "-Wall",
         "-Wextra",
@@ -71,5 +72,11 @@ pub fn build(b: *std.build.Builder) !void {
     // exe.verbose_link = true;
 
     const clean_cmd = b.addSystemCommand(&.{ "rm", "-fr", "./zig-cache" });
-    b.step("clean", "rm ./zig-cache directory").dependOn(&clean_cmd.step);
+    const clean_step = b.step("clean", "rm ./zig-cache directory");
+    clean_step.dependOn(&clean_cmd.step);
+
+    const distclean_cmd = b.addSystemCommand(&.{ "rm", "-fr", b.global_cache_root });
+    const distclean_step = b.step("distclean", "rm all zig cache files");
+    distclean_step.dependOn(clean_step);
+    distclean_step.dependOn(&distclean_cmd.step);
 }
