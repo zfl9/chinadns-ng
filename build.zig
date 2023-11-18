@@ -7,10 +7,10 @@ const LibExeObjStep = std.build.LibExeObjStep;
 fn buildModeOption(b: *Builder) Mode {
     const M = enum { fast, small, safe, debug };
     return switch (b.option(M, "build", "Build mode, default is `fast` (release-fast)") orelse .fast) {
-        .fast => Mode.ReleaseFast,
-        .small => Mode.ReleaseSmall,
-        .safe => Mode.ReleaseSafe,
-        .debug => Mode.Debug,
+        .fast => .ReleaseFast,
+        .small => .ReleaseSmall,
+        .safe => .ReleaseSafe,
+        .debug => .Debug,
     };
 }
 
@@ -30,7 +30,7 @@ fn addCFiles(exe: *LibExeObjStep, build_mode: Mode, comptime files: []const []co
     });
 
     switch (build_mode) {
-        .ReleaseFast, .ReleaseSafe => try flags.appendSlice(&.{ "-O2", "-flto" }),
+        .ReleaseFast, .ReleaseSafe => try flags.appendSlice(&.{ "-O3", "-flto" }),
         .ReleaseSmall => try flags.appendSlice(&.{ "-Os", "-flto" }),
         .Debug => try flags.appendSlice(&.{ "-Og", "-ggdb3" }),
     }
