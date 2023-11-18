@@ -71,6 +71,13 @@ pub fn build(b: *std.build.Builder) !void {
     // exe.verbose_cc = true;
     // exe.verbose_link = true;
 
+    const run_cmd = exe.run();
+    if (b.args) |args|
+        run_cmd.addArgs(args);
+
+    const run_step = b.step("run", "run chinadns-ng with args");
+    run_step.dependOn(&run_cmd.step);
+
     const clean_cmd = b.addSystemCommand(&.{ "rm", "-fr", b.cache_root });
     const clean_step = b.step("clean", "rm local zig cache files");
     clean_step.dependOn(&clean_cmd.step);
