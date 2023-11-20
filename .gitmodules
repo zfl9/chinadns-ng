@@ -1,8 +1,0 @@
-[submodule "openssl"]
-	path = openssl
-	url = https://github.com/openssl/openssl
-	shallow = true
-[submodule "jemalloc"]
-	path = jemalloc
-	url = https://github.com/jemalloc/jemalloc
-	shallow = true
