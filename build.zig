@@ -9,6 +9,7 @@ var _b: *Builder = undefined;
 var _target: CrossTarget = undefined;
 var _build_mode: Mode = undefined;
 
+// TODO: processing -Dtarget=xxx => zig cc -target=xxx
 const _jemalloc_argv = [_][]const u8{
     "sh", "-c",
     \\  set -o nounset
@@ -35,6 +36,7 @@ const _jemalloc_argv = [_][]const u8{
     \\	make install_include install_lib
 };
 
+// TODO: processing -Dtarget=xxx => zig cc -target=xxx
 const _openssl_argv = [_][]const u8{
     "sh", "-c",
     \\  set -o nounset
@@ -159,6 +161,8 @@ pub fn build(b: *Builder) !void {
 
     const rm_local_cache = b.addRemoveDirTree(b.cache_root);
     const rm_global_cache = b.addRemoveDirTree(b.global_cache_root);
+
+    // TODO: rm zig-out dir
 
     // zig build clean
     const clean = b.step("clean", b.fmt("rm local cache dir: '{s}'", .{b.cache_root}));
