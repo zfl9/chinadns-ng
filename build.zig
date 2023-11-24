@@ -129,6 +129,8 @@ pub fn build(b: *Builder) !void {
     exe.step.dependOn(jemalloc);
     exe.step.dependOn(openssl);
 
+    exe.unwind_tables = false;
+    exe.link_function_sections = true;
     exe.link_gc_sections = true;
     exe.pie = false;
     // exe.force_pic = false;
