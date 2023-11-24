@@ -1,4 +1,4 @@
 [submodule "mimalloc"]
-	path = mimalloc
+	path = dep/mimalloc
 	url = https://github.com/microsoft/mimalloc
 	shallow = true
