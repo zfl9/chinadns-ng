@@ -143,9 +143,10 @@ fn buildOpenSSL() !*Step {
         \\  export CFLAGS="-g0 -O3 -flto -fno-pie -fno-PIE -ffunction-sections -fdata-sections"
         \\  export AR='zig ar'
         \\  export RANLIB='zig ranlib'
-        \\	./Configure {s} --prefix=$installdir --libdir=lib \
+        \\  sed -i '/my @disablables/a \    "apps",' ./Configure
+        \\  ./Configure {s} --prefix=$installdir --libdir=lib --openssldir=/etc/ssl \
         \\      enable-ktls no-deprecated no-async no-comp no-dgram no-legacy no-pic \
-        \\      no-psk no-dso no-shared no-srp no-srtp no-ssl-trace no-tests
+        \\      no-psk no-dso no-shared no-srp no-srtp no-ssl-trace no-tests no-apps
         \\  make -j$(nproc) build_sw
         \\  make install_sw
     };
