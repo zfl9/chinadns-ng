@@ -64,6 +64,7 @@ fn getTargetCpuArg() []const u8 {
         _b.fmt("-target {s}", .{target});
 }
 
+/// `in_mode`: default is `_build_mode`
 fn addSuffix(name: []const u8, in_mode: ?BuildMode) []const u8 {
     const target = getTargetOptStr();
     const cpu = if (getCpuOptStr().len <= 0) "default" else getCpuOptStr();
@@ -255,7 +256,7 @@ fn addCFileApp(exe: *LibExeObjStep, comptime files: []const []const u8) void {
 }
 
 fn optionName() []const u8 {
-    const exe_name_default = addSuffix("chinadns-ng", _build_mode);
+    const exe_name_default = addSuffix("chinadns-ng", null);
     const exe_name_desc = _b.fmt("executable name, default: '{s}'", .{exe_name_default});
     const exe_name_orig = _b.option([]const u8, "name", exe_name_desc) orelse exe_name_default;
     const exe_name = trimBlank(exe_name_orig);
