@@ -1,13 +1,13 @@
 const std = @import("std");
 const Builder = std.build.Builder;
 const CrossTarget = std.zig.CrossTarget;
-const Mode = std.builtin.Mode;
+const StdBuildMode = std.builtin.Mode;
 const Step = std.build.Step;
 const LibExeObjStep = std.build.LibExeObjStep;
 
 var _b: *Builder = undefined;
 var _target: CrossTarget = undefined;
-var _build_mode: Mode = undefined;
+var _build_mode: StdBuildMode = undefined;
 
 /////////////////////////////////////// helper BEGIN ///////////////////////////////////////
 
@@ -45,60 +45,77 @@ fn getOptStr(name: []const u8) ?[]const u8 {
 }
 
 fn getTargetOptStr() []const u8 {
-    return getOptStr("target") orelse "";
+    return getOptStr("target") orelse "native";
 }
 
+/// if mode is not given, then return ""
 fn getCpuOptStr() []const u8 {
-    return getOptStr("cpu") orelse "";
+    return getOptStr("cpu") orelse ""; // no default value
 }
 
-/// used for command line arguments such as `zig cc`
+fn getModeOptStr() []const u8 {
+    return getOptStr("mode") orelse "fast";
+}
+
+/// used for command line arguments such as `zig cc` (for building dependencies)
 fn getTargetCpuArg() []const u8 {
     const target = getTargetOptStr();
     const cpu = getCpuOptStr();
 
-    return if (target.len > 0 and cpu.len > 0)
+    return if (cpu.len > 0)
         _b.fmt("-target {s} -mcpu={s}", .{ target, cpu })
-    else if (target.len > 0)
-        _b.fmt("-target {s}", .{target})
-    else if (cpu.len > 0)
-        _b.fmt("-mcpu={s}", .{cpu})
     else
-        "";
+        _b.fmt("-target {s}", .{target});
 }
 
-fn getSuffix() []const u8 {
+fn _withSuffix(name: []const u8, with_mode: bool) []const u8 {
     const target = getTargetOptStr();
-    const cpu = getCpuOptStr();
+    const cpu = if (getCpuOptStr().len <= 0) "default" else getCpuOptStr();
+    const mode = getModeOptStr();
 
-    return if (target.len > 0 and cpu.len > 0)
-        _b.fmt("{s}@{s}", .{ target, cpu })
-    else if (cpu.len > 0)
-        _b.fmt("@{s}", .{cpu})
+    return if (with_mode and !std.mem.eql(u8, mode, "fast"))
+        _b.fmt("{s}:{s}:{s}:{s}", .{ name, target, cpu, mode })
     else
-        target;
+        _b.fmt("{s}:{s}:{s}", .{ name, target, cpu });
 }
 
 fn withSuffix(name: []const u8) []const u8 {
-    const suffix = getSuffix();
-    return if (suffix.len > 0) _b.fmt("{s}.{s}", .{ name, suffix }) else name;
+    return _withSuffix(name, true);
+}
+
+fn withSuffixNoMode(name: []const u8) []const u8 {
+    return _withSuffix(name, false);
 }
 
 fn trimBlank(str: []const u8) []const u8 {
     return std.mem.trim(u8, str, " \t\r\n");
 }
 
-/////////////////////////////////////// helper END ///////////////////////////////////////
+const MyBuildMode = enum { fast, small, safe, debug };
 
-fn optionBuildMode() Mode {
-    const M = enum { fast, small, safe, debug };
-    const m = _b.option(M, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
-    return switch (m) {
+fn toMyBuildMode(mode: StdBuildMode) MyBuildMode {
+    return switch (mode) {
+        .ReleaseFast => .fast,
+        .ReleaseSmall => .small,
+        .ReleaseSafe => .safe,
+        .Debug => .debug,
+    };
+}
+
+fn toStdBuildMode(mode: MyBuildMode) StdBuildMode {
+    return switch (mode) {
         .fast => .ReleaseFast,
         .small => .ReleaseSmall,
         .safe => .ReleaseSafe,
         .debug => .Debug,
     };
+}
+
+/////////////////////////////////////// helper END ///////////////////////////////////////
+
+fn optionBuildMode() StdBuildMode {
+    const mode = _b.option(MyBuildMode, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
+    return toStdBuildMode(mode);
 }
 
 /// return "" if the openssl_target is `native`
@@ -127,7 +144,7 @@ fn getOpenSSLTarget() []const u8 {
 }
 
 fn stepOpenSSL(p_openssl_dir: *[]const u8) *Step {
-    const openssl_dir = withSuffix("dep/openssl");
+    const openssl_dir = withSuffixNoMode("dep/openssl");
     p_openssl_dir.* = openssl_dir;
 
     const openssl = _b.step("openssl", "build openssl dependency");
@@ -257,7 +274,10 @@ fn _build(b: *Builder) void {
     _target = b.standardTargetOptions(.{});
     _build_mode = optionBuildMode();
 
-    _b.prominent_compile_errors = true;
+    b.verbose = true;
+    b.verbose_cimport = true;
+    b.verbose_llvm_cpu_features = true;
+    b.prominent_compile_errors = true;
 
     // zig build openssl
     var openssl_dir: []const u8 = undefined;
