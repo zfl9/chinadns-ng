@@ -257,11 +257,12 @@ fn _build(b: *Builder) void {
     _target = b.standardTargetOptions(.{});
     _build_mode = optionBuildMode();
 
+    _b.prominent_compile_errors = true;
+
     // zig build openssl
     var openssl_dir: []const u8 = undefined;
     const openssl = stepOpenSSL(&openssl_dir);
 
-    // TODO: automatically suffixed with target and mcpu ?
     const exe_name_default = withSuffix("chinadns-ng");
     const exe_name_desc = b.fmt("executable filename, default: '{s}'", .{exe_name_default});
     const exe_name_raw = b.option([]const u8, "name", exe_name_desc) orelse exe_name_default;
