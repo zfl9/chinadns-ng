@@ -308,7 +308,8 @@ fn _build(b: *Builder) void {
 
     const rm_local_cache = b.addRemoveDirTree(b.cache_root);
     const rm_global_cache = b.addRemoveDirTree(b.global_cache_root);
-    const rm_dep_openssl = b.addRemoveDirTree(openssl_dir);
+    const rm_openssl = b.addRemoveDirTree(openssl_dir); // current target && cpu
+    const rm_openssl_all = b.addSystemCommand(&.{ "sh", "-c", "rm -fr dep/openssl dep/openssl.*" }); // all target && cpu
 
     // zig build clean-local
     const clean_local = b.step("clean-local", b.fmt("clean local build cache: '{s}'", .{b.cache_root}));
@@ -320,11 +321,21 @@ fn _build(b: *Builder) void {
 
     // zig build clean-openssl
     const clean_openssl = b.step("clean-openssl", b.fmt("clean openssl dependency: '{s}'", .{openssl_dir}));
-    clean_openssl.dependOn(&rm_dep_openssl.step);
+    clean_openssl.dependOn(&rm_openssl.step);
+
+    // zig build clean-openssl-all
+    const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl dependency: '{s}'", .{"dep/openssl*"}));
+    clean_openssl_all.dependOn(&rm_openssl_all.step);
 
     // zig build clean
     const clean = b.step("clean", b.fmt("clean all build caches and all dependencies", .{}));
     clean.dependOn(clean_local);
     clean.dependOn(clean_global);
     clean.dependOn(clean_openssl);
+
+    // zig build clean-all
+    const clean_all = b.step("clean-all", b.fmt("clean all build caches and all dependencies (*)", .{}));
+    clean_all.dependOn(clean_local);
+    clean_all.dependOn(clean_global);
+    clean_all.dependOn(clean_openssl_all);
 }
