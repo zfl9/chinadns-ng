@@ -269,6 +269,7 @@ fn _build(b: *Builder) void {
     _target = b.standardTargetOptions(.{});
     _build_mode = optionBuildMode();
 
+    // TODO: should I print verbose logs when `zig build run` ?
     b.verbose = true;
     b.verbose_cimport = true;
     b.verbose_llvm_cpu_features = true;
