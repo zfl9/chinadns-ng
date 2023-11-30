@@ -213,6 +213,7 @@ fn _build(b: *Builder) void {
     // zig build openssl
     const openssl = stepOpenSSL();
 
+    // TODO: automatically suffixed with target and mcpu ?
     const exe_name_raw = b.option([]const u8, "name", "executable filename, default: 'chinadns-ng'") orelse "chinadns-ng";
     const exe_name = std.mem.trim(u8, exe_name_raw, " \t\r\n");
     if (exe_name.len <= 0)
