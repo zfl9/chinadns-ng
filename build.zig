@@ -1,13 +1,13 @@
 const std = @import("std");
 const Builder = std.build.Builder;
 const CrossTarget = std.zig.CrossTarget;
-const StdBuildMode = std.builtin.Mode;
+const BuildMode = std.builtin.Mode;
 const Step = std.build.Step;
 const LibExeObjStep = std.build.LibExeObjStep;
 
 var _b: *Builder = undefined;
 var _target: CrossTarget = undefined;
-var _build_mode: StdBuildMode = undefined;
+var _build_mode: BuildMode = undefined;
 
 /////////////////////////////////////// helper BEGIN ///////////////////////////////////////
 
@@ -53,10 +53,6 @@ fn getCpuOptStr() []const u8 {
     return getOptStr("cpu") orelse ""; // no default value
 }
 
-fn getModeOptStr() []const u8 {
-    return getOptStr("mode") orelse "fast";
-}
-
 /// used for command line arguments such as `zig cc` (for building dependencies)
 fn getTargetCpuArg() []const u8 {
     const target = getTargetOptStr();
@@ -68,32 +64,33 @@ fn getTargetCpuArg() []const u8 {
         _b.fmt("-target {s}", .{target});
 }
 
-fn _withSuffix(name: []const u8, with_mode: bool) []const u8 {
+fn addSuffix(name: []const u8, in_mode: ?BuildMode) []const u8 {
     const target = getTargetOptStr();
     const cpu = if (getCpuOptStr().len <= 0) "default" else getCpuOptStr();
-    const mode = getModeOptStr();
+    const mode = in_mode orelse _build_mode;
 
-    return if (with_mode and !std.mem.eql(u8, mode, "fast"))
-        _b.fmt("{s}:{s}:{s}:{s}", .{ name, target, cpu, mode })
+    return if (mode != .ReleaseFast)
+        _b.fmt("{s}:{s}:{s}:{s}", .{ name, target, cpu, descBuildMode(mode) })
     else
         _b.fmt("{s}:{s}:{s}", .{ name, target, cpu });
-}
-
-fn withSuffix(name: []const u8) []const u8 {
-    return _withSuffix(name, true);
-}
-
-fn withSuffixNoMode(name: []const u8) []const u8 {
-    return _withSuffix(name, false);
 }
 
 fn trimBlank(str: []const u8) []const u8 {
     return std.mem.trim(u8, str, " \t\r\n");
 }
 
-const MyBuildMode = enum { fast, small, safe, debug };
+const ModeOption = enum { fast, small, safe, debug };
 
-fn toMyBuildMode(mode: StdBuildMode) MyBuildMode {
+fn toBuildMode(opt: ModeOption) BuildMode {
+    return switch (opt) {
+        .fast => .ReleaseFast,
+        .small => .ReleaseSmall,
+        .safe => .ReleaseSafe,
+        .debug => .Debug,
+    };
+}
+
+fn toModeOption(mode: BuildMode) ModeOption {
     return switch (mode) {
         .ReleaseFast => .fast,
         .ReleaseSmall => .small,
@@ -102,20 +99,15 @@ fn toMyBuildMode(mode: StdBuildMode) MyBuildMode {
     };
 }
 
-fn toStdBuildMode(mode: MyBuildMode) StdBuildMode {
-    return switch (mode) {
-        .fast => .ReleaseFast,
-        .small => .ReleaseSmall,
-        .safe => .ReleaseSafe,
-        .debug => .Debug,
-    };
+fn descBuildMode(mode: BuildMode) []const u8 {
+    return @tagName(toModeOption(mode));
 }
 
 /////////////////////////////////////// helper END ///////////////////////////////////////
 
-fn optionBuildMode() StdBuildMode {
-    const mode = _b.option(MyBuildMode, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
-    return toStdBuildMode(mode);
+fn optionBuildMode() BuildMode {
+    const opt = _b.option(ModeOption, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
+    return toBuildMode(opt);
 }
 
 /// return "" if the openssl_target is `native`
@@ -144,7 +136,7 @@ fn getOpenSSLTarget() []const u8 {
 }
 
 fn stepOpenSSL(p_openssl_dir: *[]const u8) *Step {
-    const openssl_dir = withSuffixNoMode("dep/openssl");
+    const openssl_dir = addSuffix("dep/openssl", .ReleaseFast);
     p_openssl_dir.* = openssl_dir;
 
     const openssl = _b.step("openssl", "build openssl dependency");
@@ -197,7 +189,7 @@ fn stepOpenSSL(p_openssl_dir: *[]const u8) *Step {
 }
 
 fn addCFileMalloc(exe: *LibExeObjStep) void {
-    const use_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator, default: false") orelse false;
+    const use_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
 
     if (!use_mimalloc)
         return;
@@ -262,11 +254,14 @@ fn addCFileApp(exe: *LibExeObjStep, comptime files: []const []const u8) void {
     }
 }
 
-pub fn build(b: *Builder) void {
-    _build(b);
-
-    if (b.invalid_user_input)
-        printToStdErr("", .{});
+fn optionName() []const u8 {
+    const exe_name_default = addSuffix("chinadns-ng", _build_mode);
+    const exe_name_desc = _b.fmt("executable name, default: '{s}'", .{exe_name_default});
+    const exe_name_orig = _b.option([]const u8, "name", exe_name_desc) orelse exe_name_default;
+    const exe_name = trimBlank(exe_name_orig);
+    if (exe_name.len <= 0 or !std.mem.eql(u8, exe_name, exe_name_orig))
+        errExit("invalid executable name (-Dname): '{s}'", .{exe_name_orig});
+    return exe_name;
 }
 
 fn _build(b: *Builder) void {
@@ -283,14 +278,8 @@ fn _build(b: *Builder) void {
     var openssl_dir: []const u8 = undefined;
     const openssl = stepOpenSSL(&openssl_dir);
 
-    const exe_name_default = withSuffix("chinadns-ng");
-    const exe_name_desc = b.fmt("executable filename, default: '{s}'", .{exe_name_default});
-    const exe_name_raw = b.option([]const u8, "name", exe_name_desc) orelse exe_name_default;
-    const exe_name = trimBlank(exe_name_raw);
-    if (exe_name.len <= 0)
-        errExit("invalid executable filename (-Dname): '{s}'", .{exe_name_raw});
-
     // exe: chinadns-ng
+    const exe_name = optionName();
     const exe = b.addExecutable(exe_name, null);
     exe.setTarget(_target);
     exe.setBuildMode(_build_mode);
@@ -328,8 +317,8 @@ fn _build(b: *Builder) void {
 
     const rm_local_cache = b.addRemoveDirTree(b.cache_root);
     const rm_global_cache = b.addRemoveDirTree(b.global_cache_root);
-    const rm_openssl = b.addRemoveDirTree(openssl_dir); // current target && cpu
-    const rm_openssl_all = b.addSystemCommand(&.{ "sh", "-c", "rm -fr dep/openssl dep/openssl.*" }); // all target && cpu
+    const rm_openssl = b.addRemoveDirTree(openssl_dir); // current target
+    const rm_openssl_all = b.addSystemCommand(&.{ "sh", "-c", "rm -fr dep/openssl:*" }); // all targets
 
     // zig build clean-local
     const clean_local = b.step("clean-local", b.fmt("clean local build cache: '{s}'", .{b.cache_root}));
@@ -344,7 +333,7 @@ fn _build(b: *Builder) void {
     clean_openssl.dependOn(&rm_openssl.step);
 
     // zig build clean-openssl-all
-    const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl dependency: '{s}'", .{"dep/openssl*"}));
+    const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl dependency: '{s}'", .{"dep/openssl:*"}));
     clean_openssl_all.dependOn(&rm_openssl_all.step);
 
     // zig build clean
@@ -358,4 +347,11 @@ fn _build(b: *Builder) void {
     clean_all.dependOn(clean_local);
     clean_all.dependOn(clean_global);
     clean_all.dependOn(clean_openssl_all);
+}
+
+pub fn build(b: *Builder) void {
+    _build(b);
+
+    if (b.invalid_user_input)
+        printToStdErr("", .{});
 }
