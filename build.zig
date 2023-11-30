@@ -8,6 +8,9 @@ const LibExeObjStep = std.build.LibExeObjStep;
 var _b: *Builder = undefined;
 var _target: CrossTarget = undefined;
 var _build_mode: Mode = undefined;
+
+/////////////////////////////////////// helper BEGIN ///////////////////////////////////////
+
 var _first_error: bool = true;
 
 fn printToStdErr(comptime format: []const u8, args: anytype) void {
@@ -22,13 +25,13 @@ fn err(comptime format: []const u8, args: anytype) void {
     printToStdErr("> ERROR: " ++ format, args);
 }
 
-fn errAndExit(comptime format: []const u8, args: anytype) noreturn {
+fn errExit(comptime format: []const u8, args: anytype) noreturn {
     err(format, args);
     printToStdErr("", .{});
     std.os.exit(1);
 }
 
-fn errAndMarkInvalid(comptime format: []const u8, args: anytype) void {
+fn errInvalid(comptime format: []const u8, args: anytype) void {
     err(format, args);
     _b.invalid_user_input = true;
 }
@@ -37,10 +40,60 @@ fn stepLog(comptime format: []const u8, args: anytype) *Step {
     return &_b.addLog(format, args).step;
 }
 
-fn optionBuildMode() void {
+fn getOptStr(name: []const u8) ?[]const u8 {
+    return if (_b.user_input_options.getPtr(name)) |opt| opt.value.scalar else null;
+}
+
+fn getTargetOptStr() []const u8 {
+    return getOptStr("target") orelse "";
+}
+
+fn getCpuOptStr() []const u8 {
+    return getOptStr("cpu") orelse "";
+}
+
+/// used for command line arguments such as `zig cc`
+fn getTargetCpuArg() []const u8 {
+    const target = getTargetOptStr();
+    const cpu = getCpuOptStr();
+
+    return if (target.len > 0 and cpu.len > 0)
+        _b.fmt("-target {s} -mcpu={s}", .{ target, cpu })
+    else if (target.len > 0)
+        _b.fmt("-target {s}", .{target})
+    else if (cpu.len > 0)
+        _b.fmt("-mcpu={s}", .{cpu})
+    else
+        "";
+}
+
+fn getSuffix() []const u8 {
+    const target = getTargetOptStr();
+    const cpu = getCpuOptStr();
+
+    return if (target.len > 0 and cpu.len > 0)
+        _b.fmt("{s}@{s}", .{ target, cpu })
+    else if (cpu.len > 0)
+        _b.fmt("@{s}", .{cpu})
+    else
+        target;
+}
+
+fn withSuffix(name: []const u8) []const u8 {
+    const suffix = getSuffix();
+    return if (suffix.len > 0) _b.fmt("{s}.{s}", .{ name, suffix }) else name;
+}
+
+fn trimBlank(str: []const u8) []const u8 {
+    return std.mem.trim(u8, str, " \t\r\n");
+}
+
+/////////////////////////////////////// helper END ///////////////////////////////////////
+
+fn optionBuildMode() Mode {
     const M = enum { fast, small, safe, debug };
     const m = _b.option(M, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
-    _build_mode = switch (m) {
+    return switch (m) {
         .fast => .ReleaseFast,
         .small => .ReleaseSmall,
         .safe => .ReleaseSafe,
@@ -48,10 +101,11 @@ fn optionBuildMode() void {
     };
 }
 
-/// zig_target="" means that it is `native`
 /// return "" if the openssl_target is `native`
-fn getOpenSSLTarget(zig_target: []const u8) []const u8 {
-    if (zig_target.len == 0)
+fn getOpenSSLTarget() []const u8 {
+    const zig_target = getTargetOptStr();
+
+    if (zig_target.len <= 0)
         return "";
 
     // {prefix, openssl_target}
@@ -69,28 +123,19 @@ fn getOpenSSLTarget(zig_target: []const u8) []const u8 {
         }
     }
 
-    errAndExit("TODO: for targets other than x86, x86_64, aarch64, use wolfssl instead of openssl", .{});
+    errExit("TODO: for targets other than x86, x86_64, aarch64, use wolfssl instead of openssl", .{});
 }
 
-fn stepOpenSSL() *Step {
+fn stepOpenSSL(p_openssl_dir: *[]const u8) *Step {
+    const openssl_dir = withSuffix("dep/openssl");
+    p_openssl_dir.* = openssl_dir;
+
     const openssl = _b.step("openssl", "build openssl dependency");
 
-    // TODO: allow specifying openssl installation path (for different targets), or handle it automatically ?
-
-    const zig_target: []const u8 = if (_b.user_input_options.getPtr("target")) |opt| opt.value.scalar else "";
-    const zig_mcpu: []const u8 = if (_b.user_input_options.getPtr("cpu")) |opt| opt.value.scalar else "";
-
-    const zig_target_mcpu = if (zig_target.len != 0 and zig_mcpu.len != 0)
-        _b.fmt("-target {s} -mcpu={s}", .{ zig_target, zig_mcpu })
-    else if (zig_target.len != 0)
-        _b.fmt("-target {s}", .{zig_target})
-    else if (zig_mcpu.len != 0)
-        _b.fmt("-mcpu={s}", .{zig_mcpu})
-    else
-        "";
+    const zig_target_mcpu = getTargetCpuArg();
     openssl.dependOn(stepLog("[openssl] zig target: {s}", .{zig_target_mcpu}));
 
-    var openssl_target = getOpenSSLTarget(zig_target);
+    var openssl_target = getOpenSSLTarget();
     openssl.dependOn(stepLog("[openssl] openssl target: {s}", .{openssl_target}));
 
     const argv_fmt = [_][]const u8{
@@ -99,7 +144,7 @@ fn stepOpenSSL() *Step {
         \\  set -o nounset
         \\  set -o errexit
         \\  set -o pipefail
-        \\  installdir=$(pwd)/dep/openssl
+        \\  installdir=$(pwd)/{s}
         \\  [ -f $installdir/lib/libssl.a ] && exit
         \\  set -x
         \\  mkdir -p dep
@@ -126,7 +171,7 @@ fn stepOpenSSL() *Step {
     const argv = [_][]const u8{
         argv_fmt[0],
         argv_fmt[1],
-        _b.fmt(argv_fmt[2], .{ zig_target_mcpu, openssl_target }),
+        _b.fmt(argv_fmt[2], .{ openssl_dir, zig_target_mcpu, openssl_target }),
     };
 
     openssl.dependOn(&_b.addSystemCommand(&argv).step);
@@ -141,6 +186,8 @@ fn addCFileMalloc(exe: *LibExeObjStep) void {
         return;
 
     exe.step.dependOn(stepLog("[mimalloc] using the mimalloc allocator instead of the default libc allocator", .{}));
+
+    exe.addIncludePath("dep/mimalloc/include");
 
     exe.addCSourceFile("dep/mimalloc/src/static.c", &.{
         "-std=gnu11",
@@ -208,16 +255,19 @@ pub fn build(b: *Builder) void {
 fn _build(b: *Builder) void {
     _b = b;
     _target = b.standardTargetOptions(.{});
-    optionBuildMode();
+    _build_mode = optionBuildMode();
 
     // zig build openssl
-    const openssl = stepOpenSSL();
+    var openssl_dir: []const u8 = undefined;
+    const openssl = stepOpenSSL(&openssl_dir);
 
     // TODO: automatically suffixed with target and mcpu ?
-    const exe_name_raw = b.option([]const u8, "name", "executable filename, default: 'chinadns-ng'") orelse "chinadns-ng";
-    const exe_name = std.mem.trim(u8, exe_name_raw, " \t\r\n");
+    const exe_name_default = withSuffix("chinadns-ng");
+    const exe_name_desc = b.fmt("executable filename, default: '{s}'", .{exe_name_default});
+    const exe_name_raw = b.option([]const u8, "name", exe_name_desc) orelse exe_name_default;
+    const exe_name = trimBlank(exe_name_raw);
     if (exe_name.len <= 0)
-        errAndExit("invalid executable filename (-Dname): '{s}'", .{exe_name});
+        errExit("invalid executable filename (-Dname): '{s}'", .{exe_name_raw});
 
     // exe: chinadns-ng
     const exe = b.addExecutable(exe_name, null);
@@ -235,15 +285,13 @@ fn _build(b: *Builder) void {
     if (_target.getAbi().isMusl()) exe.force_pic = false;
     if (_build_mode != .Debug) exe.strip = true;
 
-    exe.addIncludePath("dep/mimalloc/include");
-    exe.addIncludePath("dep/openssl/include");
+    exe.addIncludePath(b.fmt("{s}/include", .{openssl_dir}));
+    exe.addLibraryPath(b.fmt("{s}/lib", .{openssl_dir}));
 
     // to ensure that the standard malloc interface resolves to the mimalloc library, link it as the first object file
     addCFileMalloc(exe);
 
     addCFileApp(exe, &.{ "main.c", "opt.c", "net.c", "dns.c", "dnl.c", "ipset.c", "nl.c" });
-
-    exe.addLibraryPath("dep/openssl/lib");
 
     exe.linkSystemLibrary("ssl");
     exe.linkSystemLibrary("crypto");
@@ -259,7 +307,7 @@ fn _build(b: *Builder) void {
 
     const rm_local_cache = b.addRemoveDirTree(b.cache_root);
     const rm_global_cache = b.addRemoveDirTree(b.global_cache_root);
-    const rm_dep_openssl = b.addRemoveDirTree("dep/openssl");
+    const rm_dep_openssl = b.addRemoveDirTree(openssl_dir);
 
     // zig build clean-local
     const clean_local = b.step("clean-local", b.fmt("clean local build cache: '{s}'", .{b.cache_root}));
@@ -270,7 +318,7 @@ fn _build(b: *Builder) void {
     clean_global.dependOn(&rm_global_cache.step);
 
     // zig build clean-openssl
-    const clean_openssl = b.step("clean-openssl", b.fmt("clean openssl dependency: '{s}'", .{"dep/openssl"}));
+    const clean_openssl = b.step("clean-openssl", b.fmt("clean openssl dependency: '{s}'", .{openssl_dir}));
     clean_openssl.dependOn(&rm_dep_openssl.step);
 
     // zig build clean
