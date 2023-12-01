@@ -79,7 +79,8 @@ fn add_log(comptime format: []const u8, args: anytype) *Step {
 
 /// create step: /bin/sh command
 fn add_sh_cmd(sh_cmd: []const u8) *Step {
-    const run_step = _b.addSystemCommand(&.{ "sh", "-c", sh_cmd });
+    const cmd = _b.fmt("set -o nounset; set -o errexit; set -o pipefail; {s}", .{sh_cmd});
+    const run_step = _b.addSystemCommand(&.{ "sh", "-c", cmd });
     run_step.print = false; // disable print (use `set -x` instead)
     return &run_step.step;
 }
@@ -88,12 +89,8 @@ fn add_sh_cmd(sh_cmd: []const u8) *Step {
 
 /// get cli option value (str)
 fn optval(name: []const u8) ?[]const u8 {
-    const opt = _b.user_input_options.getPtr(name);
-
-    if (opt == null)
-        return null;
-
-    return switch (opt.?.value) {
+    const opt = _b.user_input_options.getPtr(name) orelse return null;
+    return switch (opt.value) {
         .scalar => |v| v,
         else => null,
     };
@@ -199,9 +196,6 @@ fn step_openssl(p_openssl_dir: *[]const u8) *Step {
     openssl.dependOn(add_log("[openssl] ./Configure {s}", .{openssl_target_display}));
 
     const cmd_ =
-        \\  set -o nounset
-        \\  set -o errexit
-        \\  set -o pipefail
         \\  installdir=$(pwd)/{s}
         \\  [ -f $installdir/lib/libssl.a ] && exit
         \\  set -x
@@ -244,6 +238,7 @@ fn add_src_malloc(exe: *LibExeObjStep) void {
 
     exe.addCSourceFile("dep/mimalloc/src/static.c", &.{
         "-std=gnu11",
+        "-Werror", // https://github.com/ziglang/zig/issues/10800
         "-Wall",
         "-Wextra",
         "-Wpedantic",
@@ -274,6 +269,7 @@ fn add_src_app(exe: *LibExeObjStep, comptime files: []const []const u8) void {
 
     flags.appendSlice(&.{
         "-std=c99",
+        "-Werror", // https://github.com/ziglang/zig/issues/10800
         "-Wall",
         "-Wextra",
         "-Wvla",
@@ -303,7 +299,6 @@ fn _build(b: *Builder) void {
     _target = b.standardTargetOptions(.{});
     _build_mode = option_mode();
 
-    // TODO: should I print verbose logs when `zig build run` ?
     b.verbose = true;
     b.verbose_cimport = true;
     b.verbose_llvm_cpu_features = true;
