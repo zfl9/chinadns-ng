@@ -3,8 +3,7 @@
 chinadns
 chinadns-ng
 .vscode/
-test.c
-test
 zig-cache/
 zig-out/
-dep/openssl*
+dep/openssl-*
+dep/openssl:*

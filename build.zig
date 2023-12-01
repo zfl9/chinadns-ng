@@ -73,8 +73,15 @@ fn err_invalid(comptime format: []const u8, args: anytype) void {
 // =========================================================================
 
 /// create step: log(info)
-fn addlog(comptime format: []const u8, args: anytype) *Step {
+fn add_log(comptime format: []const u8, args: anytype) *Step {
     return &_b.addLog(format, args).step;
+}
+
+/// create step: /bin/sh command
+fn add_sh_cmd(sh_cmd: []const u8) *Step {
+    const run_step = _b.addSystemCommand(&.{ "sh", "-c", sh_cmd });
+    run_step.print = false; // disable print (use `set -x` instead)
+    return &run_step.step;
 }
 
 // =========================================================================
@@ -177,14 +184,12 @@ fn step_openssl(p_openssl_dir: *[]const u8) *Step {
     const openssl = _b.step("openssl", "build openssl dependency");
 
     const zig_target_mcpu = cc_target_mcpu();
-    openssl.dependOn(addlog("[openssl] zig target: {s}", .{zig_target_mcpu}));
+    openssl.dependOn(add_log("[openssl] zig target: {s}", .{zig_target_mcpu}));
 
     var openssl_target = get_openssl_target();
-    openssl.dependOn(addlog("[openssl] openssl target: {s}", .{openssl_target}));
+    openssl.dependOn(add_log("[openssl] openssl target: {s}", .{openssl_target}));
 
-    const argv_fmt = [_][]const u8{
-        "sh",
-        "-c",
+    const cmd_ =
         \\  set -o nounset
         \\  set -o errexit
         \\  set -o pipefail
@@ -204,21 +209,17 @@ fn step_openssl(p_openssl_dir: *[]const u8) *Step {
         \\  export CFLAGS="-g0 -O3 -flto -fno-pie -fno-PIE -ffunction-sections -fdata-sections"
         \\  export AR='zig ar'
         \\  export RANLIB='zig ranlib'
-        \\  sed -i '/my @disablables/a \    "apps",' ./Configure
+        \\  sed -i '/my @disablables/a\    "apps",' ./Configure
         \\  ./Configure {s} --prefix=$installdir --libdir=lib --openssldir=/etc/ssl \
         \\      enable-ktls no-deprecated no-async no-comp no-dgram no-legacy no-pic \
         \\      no-psk no-dso no-shared no-srp no-srtp no-ssl-trace no-tests no-apps no-threads
         \\  make -j$(nproc) build_sw
         \\  make install_sw
-    };
+    ;
 
-    const argv = [_][]const u8{
-        argv_fmt[0],
-        argv_fmt[1],
-        _b.fmt(argv_fmt[2], .{ openssl_dir, zig_target_mcpu, openssl_target }),
-    };
+    const cmd = _b.fmt(cmd_, .{ openssl_dir, zig_target_mcpu, openssl_target });
 
-    openssl.dependOn(&_b.addSystemCommand(&argv).step);
+    openssl.dependOn(add_sh_cmd(cmd));
 
     return openssl;
 }
@@ -230,7 +231,7 @@ fn add_src_malloc(exe: *LibExeObjStep) void {
     if (!use_mimalloc)
         return;
 
-    exe.step.dependOn(addlog("[mimalloc] using the mimalloc allocator instead of the default libc allocator", .{}));
+    exe.step.dependOn(add_log("[mimalloc] using the mimalloc allocator instead of the default libc allocator", .{}));
 
     exe.addIncludePath("dep/mimalloc/include");
 
@@ -344,7 +345,7 @@ fn _build(b: *Builder) void {
     const rm_local_cache = b.addRemoveDirTree(b.cache_root);
     const rm_global_cache = b.addRemoveDirTree(b.global_cache_root);
     const rm_openssl = b.addRemoveDirTree(openssl_dir); // current target
-    const rm_openssl_all = b.addSystemCommand(&.{ "sh", "-c", "rm -fr dep/openssl:*" }); // all targets
+    const rm_openssl_all = add_sh_cmd("rm -fr dep/openssl:*"); // all targets
 
     // zig build clean-local
     const clean_local = b.step("clean-local", b.fmt("clean local build cache: '{s}'", .{b.cache_root}));
@@ -360,7 +361,7 @@ fn _build(b: *Builder) void {
 
     // zig build clean-openssl-all
     const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl dependency: '{s}'", .{"dep/openssl:*"}));
-    clean_openssl_all.dependOn(&rm_openssl_all.step);
+    clean_openssl_all.dependOn(rm_openssl_all);
 
     // zig build clean
     const clean = b.step("clean", b.fmt("clean all build caches and all dependencies", .{}));
