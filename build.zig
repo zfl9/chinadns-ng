@@ -9,80 +9,11 @@ var _b: *Builder = undefined;
 var _target: CrossTarget = undefined;
 var _build_mode: BuildMode = undefined;
 
-/////////////////////////////////////// helper BEGIN ///////////////////////////////////////
+// =========================================================================
 
-var _first_error: bool = true;
+const ModeOpt = enum { fast, small, safe, debug };
 
-fn printToStdErr(comptime format: []const u8, args: anytype) void {
-    _ = std.io.getStdErr().write(_b.fmt(format ++ "\n", args)) catch unreachable;
-}
-
-fn err(comptime format: []const u8, args: anytype) void {
-    if (_first_error) {
-        _first_error = false;
-        printToStdErr("", .{});
-    }
-    printToStdErr("> ERROR: " ++ format, args);
-}
-
-fn errExit(comptime format: []const u8, args: anytype) noreturn {
-    err(format, args);
-    printToStdErr("", .{});
-    std.os.exit(1);
-}
-
-fn errInvalid(comptime format: []const u8, args: anytype) void {
-    err(format, args);
-    _b.invalid_user_input = true;
-}
-
-fn stepLog(comptime format: []const u8, args: anytype) *Step {
-    return &_b.addLog(format, args).step;
-}
-
-fn getOptStr(name: []const u8) ?[]const u8 {
-    return if (_b.user_input_options.getPtr(name)) |opt| opt.value.scalar else null;
-}
-
-fn getTargetOptStr() []const u8 {
-    return getOptStr("target") orelse "native";
-}
-
-/// if mode is not given, then return ""
-fn getCpuOptStr() []const u8 {
-    return getOptStr("cpu") orelse ""; // no default value
-}
-
-/// used for command line arguments such as `zig cc` (for building dependencies)
-fn getTargetCpuArg() []const u8 {
-    const target = getTargetOptStr();
-    const cpu = getCpuOptStr();
-
-    return if (cpu.len > 0)
-        _b.fmt("-target {s} -mcpu={s}", .{ target, cpu })
-    else
-        _b.fmt("-target {s}", .{target});
-}
-
-/// `in_mode`: default is `_build_mode`
-fn addSuffix(name: []const u8, in_mode: ?BuildMode) []const u8 {
-    const target = getTargetOptStr();
-    const cpu = if (getCpuOptStr().len <= 0) "default" else getCpuOptStr();
-    const mode = in_mode orelse _build_mode;
-
-    return if (mode != .ReleaseFast)
-        _b.fmt("{s}:{s}:{s}:{s}", .{ name, target, cpu, descBuildMode(mode) })
-    else
-        _b.fmt("{s}:{s}:{s}", .{ name, target, cpu });
-}
-
-fn trimBlank(str: []const u8) []const u8 {
-    return std.mem.trim(u8, str, " \t\r\n");
-}
-
-const ModeOption = enum { fast, small, safe, debug };
-
-fn toBuildMode(opt: ModeOption) BuildMode {
+fn to_build_mode(opt: ModeOpt) BuildMode {
     return switch (opt) {
         .fast => .ReleaseFast,
         .small => .ReleaseSmall,
@@ -91,7 +22,7 @@ fn toBuildMode(opt: ModeOption) BuildMode {
     };
 }
 
-fn toModeOption(mode: BuildMode) ModeOption {
+fn to_mode_opt(mode: BuildMode) ModeOpt {
     return switch (mode) {
         .ReleaseFast => .fast,
         .ReleaseSmall => .small,
@@ -100,20 +31,122 @@ fn toModeOption(mode: BuildMode) ModeOption {
     };
 }
 
-fn descBuildMode(mode: BuildMode) []const u8 {
-    return @tagName(toModeOption(mode));
+/// fast | small | safe | debug
+fn desc_build_mode(mode: BuildMode) []const u8 {
+    return @tagName(to_mode_opt(mode));
 }
 
-/////////////////////////////////////// helper END ///////////////////////////////////////
+// =========================================================================
 
-fn optionBuildMode() BuildMode {
-    const opt = _b.option(ModeOption, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
-    return toBuildMode(opt);
+var _first_error: bool = true;
+
+/// print to stderr, auto append '\n'
+fn _print(comptime format: []const u8, args: anytype) void {
+    _ = std.io.getStdErr().write(_b.fmt(format ++ "\n", args)) catch unreachable;
 }
 
-/// return "" if the openssl_target is `native`
-fn getOpenSSLTarget() []const u8 {
-    const zig_target = getTargetOptStr();
+fn newline() void {
+    return _print("", .{});
+}
+
+fn _print_err(comptime format: []const u8, args: anytype) void {
+    if (_first_error) {
+        _first_error = false;
+        newline();
+    }
+    _print("> ERROR: " ++ format, args);
+}
+
+/// print err msg and exit process with code 1
+fn err_exit(comptime format: []const u8, args: anytype) noreturn {
+    _print_err(format, args);
+    newline();
+    std.os.exit(1);
+}
+
+/// print err msg and mark user input as invalid
+fn err_invalid(comptime format: []const u8, args: anytype) void {
+    _print_err(format, args);
+    _b.invalid_user_input = true;
+}
+
+// =========================================================================
+
+/// create step: log(info)
+fn addlog(comptime format: []const u8, args: anytype) *Step {
+    return &_b.addLog(format, args).step;
+}
+
+// =========================================================================
+
+/// get cli option value (str)
+fn optval(name: []const u8) ?[]const u8 {
+    return if (_b.user_input_options.getPtr(name)) |opt| opt.value.scalar else null;
+}
+
+/// default is `native`
+fn optval_target() []const u8 {
+    return optval("target") orelse "native";
+}
+
+/// return "" if not given
+fn optval_cpu() []const u8 {
+    return optval("cpu") orelse ""; // no default value
+}
+
+// =========================================================================
+
+/// for building dependencies (zig cc)
+fn cc_target_mcpu() []const u8 {
+    const target = optval_target();
+    const cpu = optval_cpu();
+
+    return if (cpu.len > 0)
+        _b.fmt("-target {s} -mcpu={s}", .{ target, cpu })
+    else
+        _b.fmt("-target {s}", .{target});
+}
+
+/// `in_mode`: default is `_build_mode`
+fn add_suffix(name: []const u8, in_mode: ?BuildMode) []const u8 {
+    const target = optval_target();
+    const cpu = if (optval_cpu().len > 0) optval_cpu() else "default";
+    const mode = in_mode orelse _build_mode;
+
+    return if (mode != .ReleaseFast)
+        _b.fmt("{s}:{s}:{s}:{s}", .{ name, target, cpu, desc_build_mode(mode) })
+    else
+        _b.fmt("{s}:{s}:{s}", .{ name, target, cpu });
+}
+
+fn trim_whitespace(str: []const u8) []const u8 {
+    return std.mem.trim(u8, str, " \t\r\n");
+}
+
+// =========================================================================
+
+/// option: build mode
+fn option_mode() BuildMode {
+    const opt = _b.option(ModeOpt, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
+    return to_build_mode(opt);
+}
+
+/// option: exe name
+fn option_name() []const u8 {
+    const name_default = add_suffix("chinadns-ng", null);
+    const name_desc = _b.fmt("executable name, default: '{s}'", .{name_default});
+    const name_orig = _b.option([]const u8, "name", name_desc) orelse name_default;
+    const name = trim_whitespace(name_orig);
+    if (name.len <= 0 or !std.mem.eql(u8, name, name_orig))
+        err_exit("invalid executable name (-Dname): '{s}'", .{name_orig});
+    return name;
+}
+
+// =========================================================================
+
+/// return "" if the target is `native`
+fn get_openssl_target() []const u8 {
+    const zig_target = optval_target();
 
     if (zig_target.len <= 0)
         return "";
@@ -133,20 +166,21 @@ fn getOpenSSLTarget() []const u8 {
         }
     }
 
-    errExit("TODO: for targets other than x86, x86_64, aarch64, use wolfssl instead of openssl", .{});
+    err_exit("TODO: for targets other than x86, x86_64, aarch64, use wolfssl instead of openssl", .{});
 }
 
-fn stepOpenSSL(p_openssl_dir: *[]const u8) *Step {
-    const openssl_dir = addSuffix("dep/openssl", .ReleaseFast);
+/// toplevel step: openssl
+fn step_openssl(p_openssl_dir: *[]const u8) *Step {
+    const openssl_dir = add_suffix("dep/openssl", .ReleaseFast);
     p_openssl_dir.* = openssl_dir;
 
     const openssl = _b.step("openssl", "build openssl dependency");
 
-    const zig_target_mcpu = getTargetCpuArg();
-    openssl.dependOn(stepLog("[openssl] zig target: {s}", .{zig_target_mcpu}));
+    const zig_target_mcpu = cc_target_mcpu();
+    openssl.dependOn(addlog("[openssl] zig target: {s}", .{zig_target_mcpu}));
 
-    var openssl_target = getOpenSSLTarget();
-    openssl.dependOn(stepLog("[openssl] openssl target: {s}", .{openssl_target}));
+    var openssl_target = get_openssl_target();
+    openssl.dependOn(addlog("[openssl] openssl target: {s}", .{openssl_target}));
 
     const argv_fmt = [_][]const u8{
         "sh",
@@ -189,13 +223,14 @@ fn stepOpenSSL(p_openssl_dir: *[]const u8) *Step {
     return openssl;
 }
 
-fn addCFileMalloc(exe: *LibExeObjStep) void {
+/// mimalloc .c files
+fn add_src_malloc(exe: *LibExeObjStep) void {
     const use_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
 
     if (!use_mimalloc)
         return;
 
-    exe.step.dependOn(stepLog("[mimalloc] using the mimalloc allocator instead of the default libc allocator", .{}));
+    exe.step.dependOn(addlog("[mimalloc] using the mimalloc allocator instead of the default libc allocator", .{}));
 
     exe.addIncludePath("dep/mimalloc/include");
 
@@ -224,8 +259,8 @@ fn addCFileMalloc(exe: *LibExeObjStep) void {
     });
 }
 
-// chinadns-ng .c files
-fn addCFileApp(exe: *LibExeObjStep, comptime files: []const []const u8) void {
+/// chinadns-ng .c files
+fn add_src_app(exe: *LibExeObjStep, comptime files: []const []const u8) void {
     var flags = std.ArrayList([]const u8).init(_b.allocator);
     defer flags.deinit();
 
@@ -255,20 +290,10 @@ fn addCFileApp(exe: *LibExeObjStep, comptime files: []const []const u8) void {
     }
 }
 
-fn optionName() []const u8 {
-    const exe_name_default = addSuffix("chinadns-ng", null);
-    const exe_name_desc = _b.fmt("executable name, default: '{s}'", .{exe_name_default});
-    const exe_name_orig = _b.option([]const u8, "name", exe_name_desc) orelse exe_name_default;
-    const exe_name = trimBlank(exe_name_orig);
-    if (exe_name.len <= 0 or !std.mem.eql(u8, exe_name, exe_name_orig))
-        errExit("invalid executable name (-Dname): '{s}'", .{exe_name_orig});
-    return exe_name;
-}
-
 fn _build(b: *Builder) void {
     _b = b;
     _target = b.standardTargetOptions(.{});
-    _build_mode = optionBuildMode();
+    _build_mode = option_mode();
 
     // TODO: should I print verbose logs when `zig build run` ?
     b.verbose = true;
@@ -278,11 +303,10 @@ fn _build(b: *Builder) void {
 
     // zig build openssl
     var openssl_dir: []const u8 = undefined;
-    const openssl = stepOpenSSL(&openssl_dir);
+    const openssl = step_openssl(&openssl_dir);
 
     // exe: chinadns-ng
-    const exe_name = optionName();
-    const exe = b.addExecutable(exe_name, null);
+    const exe = b.addExecutable(option_name(), null);
     exe.setTarget(_target);
     exe.setBuildMode(_build_mode);
 
@@ -301,9 +325,9 @@ fn _build(b: *Builder) void {
     exe.addLibraryPath(b.fmt("{s}/lib", .{openssl_dir}));
 
     // to ensure that the standard malloc interface resolves to the mimalloc library, link it as the first object file
-    addCFileMalloc(exe);
+    add_src_malloc(exe);
 
-    addCFileApp(exe, &.{ "main.c", "opt.c", "net.c", "dns.c", "dnl.c", "ipset.c", "nl.c" });
+    add_src_app(exe, &.{ "main.c", "opt.c", "net.c", "dns.c", "dnl.c", "ipset.c", "nl.c" });
 
     exe.linkSystemLibrary("ssl");
     exe.linkSystemLibrary("crypto");
@@ -355,5 +379,5 @@ pub fn build(b: *Builder) void {
     _build(b);
 
     if (b.invalid_user_input)
-        printToStdErr("", .{});
+        newline();
 }
