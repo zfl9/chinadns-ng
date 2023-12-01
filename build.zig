@@ -88,7 +88,15 @@ fn add_sh_cmd(sh_cmd: []const u8) *Step {
 
 /// get cli option value (str)
 fn optval(name: []const u8) ?[]const u8 {
-    return if (_b.user_input_options.getPtr(name)) |opt| opt.value.scalar else null;
+    const opt = _b.user_input_options.getPtr(name);
+
+    if (opt == null)
+        return null;
+
+    return switch (opt.?.value) {
+        .scalar => |v| v,
+        else => null,
+    };
 }
 
 /// default is `native`
