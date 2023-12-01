@@ -178,16 +178,17 @@ fn get_openssl_target() []const u8 {
 
 /// toplevel step: openssl
 fn step_openssl(p_openssl_dir: *[]const u8) *Step {
+    const openssl = _b.step("openssl", "build openssl dependency");
+
     const openssl_dir = add_suffix("dep/openssl", .ReleaseFast);
     p_openssl_dir.* = openssl_dir;
 
-    const openssl = _b.step("openssl", "build openssl dependency");
-
     const zig_target_mcpu = cc_target_mcpu();
-    openssl.dependOn(add_log("[openssl] zig target: {s}", .{zig_target_mcpu}));
+    openssl.dependOn(add_log("[openssl] zig cc {s}", .{zig_target_mcpu}));
 
-    var openssl_target = get_openssl_target();
-    openssl.dependOn(add_log("[openssl] openssl target: {s}", .{openssl_target}));
+    const openssl_target = get_openssl_target();
+    const openssl_target_display = if (openssl_target.len > 0) openssl_target else "<native>";
+    openssl.dependOn(add_log("[openssl] ./Configure {s}", .{openssl_target_display}));
 
     const cmd_ =
         \\  set -o nounset
@@ -216,9 +217,7 @@ fn step_openssl(p_openssl_dir: *[]const u8) *Step {
         \\  make -j$(nproc) build_sw
         \\  make install_sw
     ;
-
     const cmd = _b.fmt(cmd_, .{ openssl_dir, zig_target_mcpu, openssl_target });
-
     openssl.dependOn(add_sh_cmd(cmd));
 
     return openssl;
