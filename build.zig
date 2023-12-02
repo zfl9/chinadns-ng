@@ -130,12 +130,13 @@ fn add_download(url: []const u8, path: []const u8) *Step {
     const cmd_ =
         \\  url={s}; path={s}
         \\  mkdir -p $(dirname $path)
+        \\  echo "[INFO] downloading from $url"
         \\  if type -P wget &>/dev/null; then
         \\      wget $url -O $path
         \\  elif type -P curl &>/dev/null; then
-        \\      curl -fsSL $url -o $path
+        \\      curl -fL $url -o $path
         \\  else
-        \\      echo "==> [ERROR] please install 'wget' or 'curl'" 1>&2
+        \\      echo "[ERROR] please install 'wget' or 'curl'" 1>&2
         \\      exit 1
         \\  fi
     ;
