@@ -12,7 +12,6 @@ var _build_mode: BuildMode = undefined;
 // =========================================================================
 
 const DependLib = struct {
-    name: []const u8,
     version: []const u8,
     tarball: []const u8, // src tarball file path
     srcdir: []const u8,
@@ -23,7 +22,6 @@ const DependLib = struct {
 const _dep_openssl: DependLib = b: {
     const version = "3.2.0";
     break :b .{
-        .name = "openssl",
         .version = version,
         .tarball = "dep/openssl-" ++ version ++ ".tar.gz",
         .srcdir = "dep/openssl-" ++ version,
@@ -35,7 +33,6 @@ const _dep_openssl: DependLib = b: {
 const _dep_mimalloc: DependLib = b: {
     const version = "2.1.2";
     break :b .{
-        .name = "mimalloc",
         .version = version,
         .tarball = "dep/mimalloc-" ++ version ++ ".tar.gz",
         .srcdir = "dep/mimalloc-" ++ version,
@@ -110,12 +107,6 @@ fn err_invalid(comptime format: []const u8, args: anytype) void {
 
 // =========================================================================
 
-fn path_exists(rel_path: []const u8) bool {
-    return if (std.fs.cwd().access(rel_path, .{})) true else |_| false;
-}
-
-// =========================================================================
-
 /// step: log info
 fn add_log(comptime format: []const u8, args: anytype) *Step {
     return &_b.addLog(format, args).step;
@@ -154,11 +145,15 @@ fn add_download(url: []const u8, path: []const u8) *Step {
 
 /// step: tar xf $tarball -C $dir
 fn add_tar_extract(tarball_path: []const u8, to_dir: []const u8) *Step {
-    const cmd = _b.fmt("set -x; tar xf {s} -C {s}", .{ tarball_path, to_dir });
+    const cmd = _b.fmt("set -x; mkdir -p {s}; tar -xf {s} -C {s}", .{ to_dir, tarball_path, to_dir });
     return add_sh_cmd(cmd);
 }
 
 // =========================================================================
+
+fn path_exists(rel_path: []const u8) bool {
+    return if (std.fs.cwd().access(rel_path, .{})) true else |_| false;
+}
 
 fn init_dep(step: *Step, dep: DependLib) void {
     if (dep.srcdir_always_clean and path_exists(dep.srcdir))
@@ -251,9 +246,6 @@ fn option_name() []const u8 {
 /// return "" if the target is `native`
 fn get_openssl_target() []const u8 {
     const zig_target = optval_target();
-
-    if (zig_target.len <= 0)
-        return "";
 
     // {prefix, openssl_target}
     const prefix_target_map = .{
@@ -477,29 +469,28 @@ fn _build(b: *Builder) void {
     clean_global.dependOn(rm_global_cache);
 
     // zig build clean-openssl
-    const clean_openssl = b.step("clean-openssl", b.fmt("clean openssl dependency: '{s}'", .{openssl_dir}));
+    const clean_openssl = b.step("clean-openssl", b.fmt("clean openssl build cache: '{s}'", .{openssl_dir}));
     clean_openssl.dependOn(rm_openssl);
 
     // zig build clean-openssl-all
-    const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl dependency: '{s}:*'", .{_dep_openssl.srcdir}));
+    const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl build caches: '{s}:*'", .{_dep_openssl.srcdir}));
     clean_openssl_all.dependOn(rm_openssl_all);
 
     // zig build clean
-    const clean = b.step("clean", b.fmt("clean all build caches and all dependencies", .{}));
+    const clean = b.step("clean", b.fmt("clean all build caches", .{}));
     clean.dependOn(clean_local);
     clean.dependOn(clean_global);
     clean.dependOn(clean_openssl);
 
     // zig build clean-all
-    const clean_all = b.step("clean-all", b.fmt("clean all build caches and all dependencies (*)", .{}));
+    const clean_all = b.step("clean-all", b.fmt("clean all build caches (*)", .{}));
     clean_all.dependOn(clean_local);
     clean_all.dependOn(clean_global);
     clean_all.dependOn(clean_openssl_all);
 
-    // zig build clean-tarball
-    const clean_tarball = b.step("clean-tarball", b.fmt("clean all downloaded source tarballs from the 'dep' dir", .{}));
-    clean_tarball.dependOn(add_rm(_dep_openssl.tarball));
-    clean_tarball.dependOn(add_rm(_dep_mimalloc.tarball));
+    // zig build clean-dep
+    const clean_dep = b.step("clean-dep", b.fmt("clean all files in dep dir", .{}));
+    clean_dep.dependOn(add_rm("dep"));
 }
 
 pub fn build(b: *Builder) void {
