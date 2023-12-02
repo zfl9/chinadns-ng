@@ -116,7 +116,7 @@ fn path_exists(rel_path: []const u8) bool {
 
 // =========================================================================
 
-/// step: log_info
+/// step: log info
 fn add_log(comptime format: []const u8, args: anytype) *Step {
     return &_b.addLog(format, args).step;
 }
@@ -129,8 +129,8 @@ fn add_sh_cmd(sh_cmd: []const u8) *Step {
     return &run_step.step;
 }
 
-/// step: remove dir
-fn add_rm_dir(path: []const u8) *Step {
+/// step: remove dir or file
+fn add_rm(path: []const u8) *Step {
     return &_b.addRemoveDirTree(path).step;
 }
 
@@ -140,13 +140,9 @@ fn add_download(url: []const u8, path: []const u8) *Step {
         \\  url={s}; path={s}
         \\  mkdir -p $(dirname $path)
         \\  if type -P wget &>/dev/null; then
-        \\      echo "==> [INFO] downloading via wget ..."
         \\      wget $url -O $path
-        \\      echo "==> [INFO] downloading via wget ... DONE"
         \\  elif type -P curl &>/dev/null; then
-        \\      echo "==> [INFO] downloading via curl ..."
         \\      curl -fsSL $url -o $path
-        \\      echo "==> [INFO] downloading via curl ... DONE"
         \\  else
         \\      echo "==> [ERROR] please install 'wget' or 'curl'" 1>&2
         \\      exit 1
@@ -171,7 +167,7 @@ fn init_dep(step: *Step, dep: DependLib) void {
     if (!path_exists(dep.tarball))
         step.dependOn(add_download(dep.url, dep.tarball));
 
-    step.dependOn(add_rm_dir(dep.srcdir));
+    step.dependOn(add_rm(dep.srcdir));
 
     step.dependOn(add_tar_extract(dep.tarball, "dep"));
 }
@@ -194,12 +190,12 @@ fn optval_target() []const u8 {
 
 /// return "" if not given
 fn optval_cpu() []const u8 {
-    return optval("cpu") orelse ""; // no default value
+    return optval("cpu") orelse "";
 }
 
 /// return "default" if not given
 fn optval_cpu_or_default() []const u8 {
-    return optval("cpu") orelse "default"; // no default value
+    return optval("cpu") orelse "default";
 }
 
 // =========================================================================
@@ -398,7 +394,7 @@ fn add_src_app(exe: *LibExeObjStep, comptime files: []const []const u8) void {
 
     // mimalloc version
     if (_use_mimalloc)
-        flags.append("-DWITH_MIMALLOC=\"" ++ _dep_openssl.version ++ "\"") catch unreachable;
+        flags.append("-DWITH_MIMALLOC=\"" ++ _dep_mimalloc.version ++ "\"") catch unreachable;
 
     // target, cpu, mode
     flags.append(_b.fmt("-DCC_TARGET=\"{s}\"", .{optval_target()})) catch unreachable;
@@ -467,22 +463,22 @@ fn _build(b: *Builder) void {
     run.dependOn(b.getInstallStep());
     run.dependOn(&run_exe.step);
 
-    const rm_local_cache = b.addRemoveDirTree(b.cache_root);
-    const rm_global_cache = b.addRemoveDirTree(b.global_cache_root);
-    const rm_openssl = b.addRemoveDirTree(openssl_dir); // current target
+    const rm_local_cache = add_rm(b.cache_root);
+    const rm_global_cache = add_rm(b.global_cache_root);
+    const rm_openssl = add_rm(openssl_dir); // current target
     const rm_openssl_all = add_sh_cmd("rm -fr " ++ _dep_openssl.srcdir ++ ":*"); // all targets
 
     // zig build clean-local
     const clean_local = b.step("clean-local", b.fmt("clean local build cache: '{s}'", .{b.cache_root}));
-    clean_local.dependOn(&rm_local_cache.step);
+    clean_local.dependOn(rm_local_cache);
 
     // zig build clean-global
     const clean_global = b.step("clean-global", b.fmt("clean global build cache: '{s}'", .{b.global_cache_root}));
-    clean_global.dependOn(&rm_global_cache.step);
+    clean_global.dependOn(rm_global_cache);
 
     // zig build clean-openssl
     const clean_openssl = b.step("clean-openssl", b.fmt("clean openssl dependency: '{s}'", .{openssl_dir}));
-    clean_openssl.dependOn(&rm_openssl.step);
+    clean_openssl.dependOn(rm_openssl);
 
     // zig build clean-openssl-all
     const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl dependency: '{s}:*'", .{_dep_openssl.srcdir}));
@@ -499,6 +495,11 @@ fn _build(b: *Builder) void {
     clean_all.dependOn(clean_local);
     clean_all.dependOn(clean_global);
     clean_all.dependOn(clean_openssl_all);
+
+    // zig build clean-tarball
+    const clean_tarball = b.step("clean-tarball", b.fmt("clean all downloaded source tarballs from the 'dep' dir", .{}));
+    clean_tarball.dependOn(add_rm(_dep_openssl.tarball));
+    clean_tarball.dependOn(add_rm(_dep_mimalloc.tarball));
 }
 
 pub fn build(b: *Builder) void {
