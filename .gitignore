@@ -6,5 +6,4 @@ chinadns-ng
 zig-cache/
 zig-out/
 dep/openssl-*
-dep/openssl:*
 dep/mimalloc-*
