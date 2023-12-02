@@ -11,6 +11,43 @@ var _build_mode: BuildMode = undefined;
 
 // =========================================================================
 
+const DependLib = struct {
+    name: []const u8,
+    version: []const u8,
+    tarball: []const u8, // src tarball file path
+    srcdir: []const u8,
+    srcdir_always_clean: bool,
+    url: []const u8,
+};
+
+const _dep_openssl: DependLib = b: {
+    const version = "3.2.0";
+    break :b .{
+        .name = "openssl",
+        .version = version,
+        .tarball = "dep/openssl-" ++ version ++ ".tar.gz",
+        .srcdir = "dep/openssl-" ++ version,
+        .srcdir_always_clean = false,
+        .url = "https://www.openssl.org/source/openssl-" ++ version ++ ".tar.gz",
+    };
+};
+
+const _dep_mimalloc: DependLib = b: {
+    const version = "2.1.2";
+    break :b .{
+        .name = "mimalloc",
+        .version = version,
+        .tarball = "dep/mimalloc-" ++ version ++ ".tar.gz",
+        .srcdir = "dep/mimalloc-" ++ version,
+        .srcdir_always_clean = true,
+        .url = "https://github.com/microsoft/mimalloc/archive/refs/tags/v" ++ version ++ ".tar.gz",
+    };
+};
+
+var _use_mimalloc: bool = undefined;
+
+// =========================================================================
+
 const ModeOpt = enum { fast, small, safe, debug };
 
 fn to_build_mode(opt: ModeOpt) BuildMode {
@@ -32,8 +69,9 @@ fn to_mode_opt(mode: BuildMode) ModeOpt {
 }
 
 /// fast | small | safe | debug
-fn desc_build_mode(mode: BuildMode) []const u8 {
-    return @tagName(to_mode_opt(mode));
+/// @mode: default is `_build_mode`
+fn desc_build_mode(mode: ?BuildMode) []const u8 {
+    return @tagName(to_mode_opt(mode orelse _build_mode));
 }
 
 // =========================================================================
@@ -72,17 +110,70 @@ fn err_invalid(comptime format: []const u8, args: anytype) void {
 
 // =========================================================================
 
-/// create step: log(info)
+fn path_exists(rel_path: []const u8) bool {
+    return if (std.fs.cwd().access(rel_path, .{})) true else |_| false;
+}
+
+// =========================================================================
+
+/// step: log_info
 fn add_log(comptime format: []const u8, args: anytype) *Step {
     return &_b.addLog(format, args).step;
 }
 
-/// create step: /bin/sh command
+/// step: /bin/sh command
 fn add_sh_cmd(sh_cmd: []const u8) *Step {
     const cmd = _b.fmt("set -o nounset; set -o errexit; set -o pipefail; {s}", .{sh_cmd});
     const run_step = _b.addSystemCommand(&.{ "sh", "-c", cmd });
     run_step.print = false; // disable print (use `set -x` instead)
     return &run_step.step;
+}
+
+/// step: remove dir
+fn add_rm_dir(path: []const u8) *Step {
+    return &_b.addRemoveDirTree(path).step;
+}
+
+/// step: download file
+fn add_download(url: []const u8, path: []const u8) *Step {
+    const cmd_ =
+        \\  url={s}; path={s}
+        \\  mkdir -p $(dirname $path)
+        \\  if type -P wget &>/dev/null; then
+        \\      echo "==> [INFO] downloading via wget ..."
+        \\      wget $url -O $path
+        \\      echo "==> [INFO] downloading via wget ... DONE"
+        \\  elif type -P curl &>/dev/null; then
+        \\      echo "==> [INFO] downloading via curl ..."
+        \\      curl -fsSL $url -o $path
+        \\      echo "==> [INFO] downloading via curl ... DONE"
+        \\  else
+        \\      echo "==> [ERROR] please install 'wget' or 'curl'" 1>&2
+        \\      exit 1
+        \\  fi
+    ;
+    const cmd = _b.fmt(cmd_, .{ url, path });
+    return add_sh_cmd(cmd);
+}
+
+/// step: tar xf $tarball -C $dir
+fn add_tar_extract(tarball_path: []const u8, to_dir: []const u8) *Step {
+    const cmd = _b.fmt("set -x; tar xf {s} -C {s}", .{ tarball_path, to_dir });
+    return add_sh_cmd(cmd);
+}
+
+// =========================================================================
+
+fn init_dep(step: *Step, dep: DependLib) void {
+    if (dep.srcdir_always_clean and path_exists(dep.srcdir))
+        return;
+
+    if (!path_exists(dep.tarball))
+        step.dependOn(add_download(dep.url, dep.tarball));
+
+    step.dependOn(add_rm_dir(dep.srcdir));
+
+    step.dependOn(add_tar_extract(dep.tarball, "dep"));
 }
 
 // =========================================================================
@@ -106,6 +197,11 @@ fn optval_cpu() []const u8 {
     return optval("cpu") orelse ""; // no default value
 }
 
+/// return "default" if not given
+fn optval_cpu_or_default() []const u8 {
+    return optval("cpu") orelse "default"; // no default value
+}
+
 // =========================================================================
 
 /// for building dependencies (zig cc)
@@ -119,10 +215,10 @@ fn cc_target_mcpu() []const u8 {
         _b.fmt("-target {s}", .{target});
 }
 
-/// `in_mode`: default is `_build_mode`
+/// @in_mode: default is `_build_mode`
 fn add_suffix(name: []const u8, in_mode: ?BuildMode) []const u8 {
     const target = optval_target();
-    const cpu = if (optval_cpu().len > 0) optval_cpu() else "default";
+    const cpu = optval_cpu_or_default();
     const mode = in_mode orelse _build_mode;
 
     return if (mode != .ReleaseFast)
@@ -185,8 +281,14 @@ fn get_openssl_target() []const u8 {
 fn step_openssl(p_openssl_dir: *[]const u8) *Step {
     const openssl = _b.step("openssl", "build openssl dependency");
 
-    const openssl_dir = add_suffix("dep/openssl", .ReleaseFast);
+    const openssl_dir = add_suffix(_dep_openssl.srcdir, .ReleaseFast);
     p_openssl_dir.* = openssl_dir;
+
+    // already compiled ?
+    if (path_exists(openssl_dir))
+        return openssl;
+
+    init_dep(openssl, _dep_openssl);
 
     const zig_target_mcpu = cc_target_mcpu();
     openssl.dependOn(add_log("[openssl] zig cc {s}", .{zig_target_mcpu}));
@@ -196,30 +298,30 @@ fn step_openssl(p_openssl_dir: *[]const u8) *Step {
     openssl.dependOn(add_log("[openssl] ./Configure {s}", .{openssl_target_display}));
 
     const cmd_ =
-        \\  installdir=$(pwd)/{s}
-        \\  [ -f $installdir/lib/libssl.a ] && exit
         \\  set -x
-        \\  mkdir -p dep
-        \\  cd dep
-        \\  version=3.1.4
-        \\  tarball=openssl-$version.tar.gz
-        \\  sourcedir=openssl-$version
-        \\  [ -f $tarball ] || wget https://www.openssl.org/source/$tarball
-        \\  rm -fr $sourcedir $installdir
-        \\  tar -xf $tarball
-        \\  cd $sourcedir
-        \\  export CC="zig cc {s} -Xclang -O3"
+        \\
+        \\  installdir=$(pwd)/{s}
+        \\  srcdir={s}
+        \\  zig_target_mcpu="{s}"
+        \\  openssl_target={s}
+        \\
+        \\  cd $srcdir
+        \\
+        \\  export CC="zig cc $zig_target_mcpu -Xclang -O3"
         \\  export CFLAGS="-g0 -O3 -flto -fno-pie -fno-PIE -ffunction-sections -fdata-sections"
         \\  export AR='zig ar'
         \\  export RANLIB='zig ranlib'
-        \\  sed -i '/my @disablables/a\    "apps",' ./Configure
-        \\  ./Configure {s} --prefix=$installdir --libdir=lib --openssldir=/etc/ssl \
+        \\
+        \\  ./Configure $openssl_target --prefix=$installdir --libdir=lib --openssldir=/etc/ssl \
         \\      enable-ktls no-deprecated no-async no-comp no-dgram no-legacy no-pic \
         \\      no-psk no-dso no-shared no-srp no-srtp no-ssl-trace no-tests no-apps no-threads
+        \\
         \\  make -j$(nproc) build_sw
         \\  make install_sw
     ;
-    const cmd = _b.fmt(cmd_, .{ openssl_dir, zig_target_mcpu, openssl_target });
+
+    const cmd = _b.fmt(cmd_, .{ openssl_dir, _dep_openssl.srcdir, zig_target_mcpu, openssl_target });
+
     openssl.dependOn(add_sh_cmd(cmd));
 
     return openssl;
@@ -227,16 +329,18 @@ fn step_openssl(p_openssl_dir: *[]const u8) *Step {
 
 /// mimalloc .c files
 fn add_src_malloc(exe: *LibExeObjStep) void {
-    const use_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
+    _use_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
 
-    if (!use_mimalloc)
+    if (!_use_mimalloc)
         return;
 
     exe.step.dependOn(add_log("[mimalloc] using the mimalloc allocator instead of the default libc allocator", .{}));
 
-    exe.addIncludePath("dep/mimalloc/include");
+    init_dep(&exe.step, _dep_mimalloc);
 
-    exe.addCSourceFile("dep/mimalloc/src/static.c", &.{
+    exe.addIncludePath(_dep_mimalloc.srcdir ++ "/include");
+
+    exe.addCSourceFile(_dep_mimalloc.srcdir ++ "/src/static.c", &.{
         "-std=gnu11",
         "-Werror", // https://github.com/ziglang/zig/issues/10800
         "-Wall",
@@ -267,6 +371,7 @@ fn add_src_app(exe: *LibExeObjStep, comptime files: []const []const u8) void {
     var flags = std.ArrayList([]const u8).init(_b.allocator);
     defer flags.deinit();
 
+    // generic cflags
     flags.appendSlice(&.{
         "-std=c99",
         "-Werror", // https://github.com/ziglang/zig/issues/10800
@@ -281,14 +386,27 @@ fn add_src_app(exe: *LibExeObjStep, comptime files: []const []const u8) void {
         "-fdata-sections",
     }) catch unreachable;
 
+    // build_mode dependent cflags
     switch (_build_mode) {
         .ReleaseFast, .ReleaseSafe => flags.appendSlice(&.{ "-g0", "-O3", "-flto", "-DNDEBUG" }) catch unreachable,
         .ReleaseSmall => flags.appendSlice(&.{ "-g0", "-Os", "-flto", "-DNDEBUG" }) catch unreachable,
         .Debug => flags.appendSlice(&.{ "-ggdb3", "-Og" }) catch unreachable,
     }
 
+    // openssl version
+    flags.append("-DWITH_OPENSSL=\"" ++ _dep_openssl.version ++ "\"") catch unreachable;
+
+    // mimalloc version
+    if (_use_mimalloc)
+        flags.append("-DWITH_MIMALLOC=\"" ++ _dep_openssl.version ++ "\"") catch unreachable;
+
+    // target, cpu, mode
+    flags.append(_b.fmt("-DCC_TARGET=\"{s}\"", .{optval_target()})) catch unreachable;
+    flags.append(_b.fmt("-DCC_CPU=\"{s}\"", .{optval_cpu_or_default()})) catch unreachable;
+    flags.append(_b.fmt("-DCC_MODE=\"{s}\"", .{desc_build_mode(null)})) catch unreachable;
+
     inline for (files) |file| {
-        flags.append("-DFILENAME=\"" ++ file ++ "\"") catch unreachable;
+        flags.append("-DFILENAME=\"" ++ file ++ "\"") catch unreachable; // log.h
         exe.addCSourceFile("src/" ++ file, flags.items);
         _ = flags.pop();
     }
@@ -313,8 +431,6 @@ fn _build(b: *Builder) void {
     exe.setTarget(_target);
     exe.setBuildMode(_build_mode);
 
-    exe.step.dependOn(openssl);
-
     exe.use_stage1 = true; // async/await
     exe.want_lto = true;
     exe.single_threaded = true;
@@ -323,6 +439,9 @@ fn _build(b: *Builder) void {
     exe.pie = false;
     if (_target.getAbi().isMusl()) exe.force_pic = false;
     if (_build_mode != .Debug) exe.strip = true;
+
+    // openssl library
+    exe.step.dependOn(openssl);
 
     exe.addIncludePath(b.fmt("{s}/include", .{openssl_dir}));
     exe.addLibraryPath(b.fmt("{s}/lib", .{openssl_dir}));
@@ -339,15 +458,19 @@ fn _build(b: *Builder) void {
 
     exe.install();
 
+    const run_exe = exe.run();
+    if (b.args) |args|
+        run_exe.addArgs(args);
+
     // zig build run [-- ARGS...]
-    const run = exe.run();
-    if (b.args) |args| run.addArgs(args);
-    b.step("run", "run chinadns-ng with args").dependOn(&run.step);
+    const run = b.step("run", "run chinadns-ng with args");
+    run.dependOn(b.getInstallStep());
+    run.dependOn(&run_exe.step);
 
     const rm_local_cache = b.addRemoveDirTree(b.cache_root);
     const rm_global_cache = b.addRemoveDirTree(b.global_cache_root);
     const rm_openssl = b.addRemoveDirTree(openssl_dir); // current target
-    const rm_openssl_all = add_sh_cmd("rm -fr dep/openssl:*"); // all targets
+    const rm_openssl_all = add_sh_cmd("rm -fr " ++ _dep_openssl.srcdir ++ ":*"); // all targets
 
     // zig build clean-local
     const clean_local = b.step("clean-local", b.fmt("clean local build cache: '{s}'", .{b.cache_root}));
@@ -362,7 +485,7 @@ fn _build(b: *Builder) void {
     clean_openssl.dependOn(&rm_openssl.step);
 
     // zig build clean-openssl-all
-    const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl dependency: '{s}'", .{"dep/openssl:*"}));
+    const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl dependency: '{s}:*'", .{_dep_openssl.srcdir}));
     clean_openssl_all.dependOn(rm_openssl_all);
 
     // zig build clean

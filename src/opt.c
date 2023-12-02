@@ -6,7 +6,47 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CHINADNS_VERSION "ChinaDNS-NG 2023.10.28 <https://github.com/zfl9/chinadns-ng>"
+#define VERSION "ChinaDNS-NG 2023.10.28"
+#define GITURL " | <https://github.com/zfl9/chinadns-ng>"
+
+#ifdef CC_TARGET
+#define CC_TARGET_ " | target:" CC_TARGET
+#else
+#define CC_TARGET_ " | target:<unknown>"
+#endif
+
+#ifdef CC_CPU
+#define CC_CPU_ " cpu:" CC_CPU
+#else
+#define CC_CPU_ " cpu:<unknown>"
+#endif
+
+#ifdef CC_MODE
+#define CC_MODE_ " mode:" CC_MODE
+#else
+#define CC_MODE_ " mode:<unknown>"
+#endif
+
+#ifdef WITH_OPENSSL // version str
+#define DEP_OPENSSL " | openssl-" WITH_OPENSSL
+#else
+#define DEP_OPENSSL ""
+#endif
+
+#ifdef WITH_MIMALLOC // version str
+#define DEP_MIMALLOC " | mimalloc-" WITH_MIMALLOC
+#else
+#define DEP_MIMALLOC ""
+#endif
+
+#define CHINADNS_VERSION \
+    VERSION \
+    DEP_OPENSSL \
+    DEP_MIMALLOC \
+    CC_TARGET_ \
+    CC_CPU_ \
+    CC_MODE_ \
+    GITURL
 
 bool    g_verbose       = false;
 bool    g_reuse_port    = false;

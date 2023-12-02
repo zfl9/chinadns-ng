@@ -430,7 +430,7 @@ static bool load_list(u8 tag, const char *noalias filenames, u32 *noalias p_addr
         }
 
         if (fp == stdin)
-            freopen("/dev/null", "rb", stdin);
+            (void)freopen("/dev/null", "rb", stdin);
         else
             fclose(fp);
     } while (has_next);
