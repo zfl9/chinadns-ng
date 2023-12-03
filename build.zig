@@ -496,40 +496,8 @@ fn _build(b: *Builder) void {
     clean_dep.dependOn(add_rm("dep"));
 }
 
-/// targets of type 'clean*' and 'build*' cannot be executed together,
-/// prevents breaking previous assumptions about the external environment.
-fn check_conflict(b: *Builder) void {
-    const args = std.process.argsAlloc(b.allocator) catch unreachable;
-    defer std.process.argsFree(b.allocator, args);
-
-    var clean_steps = std.ArrayList([]const u8).init(b.allocator);
-    defer clean_steps.deinit();
-
-    var build_steps = std.ArrayList([]const u8).init(b.allocator);
-    defer build_steps.deinit();
-
-    // skip exe_name, zig_exe, build_root, cache_root, global_cache_root
-    for (args[5..]) |arg| {
-        if (std.mem.eql(u8, arg, "--")) break;
-        if (std.mem.startsWith(u8, arg, "-")) continue;
-
-        if (std.mem.startsWith(u8, arg, "clean"))
-            clean_steps.append(arg) catch unreachable
-        else
-            build_steps.append(arg) catch unreachable;
-    }
-
-    if (clean_steps.items.len > 0 and build_steps.items.len > 0) {
-        err_invalid("clean steps to run: {s}", .{string_concat(clean_steps.items, ", ")});
-        err_invalid("build steps to run: {s}", .{string_concat(build_steps.items, ", ")});
-        err_exit("clean steps and build steps cannot be executed at the same time !!!", .{});
-    }
-}
-
 pub fn build(b: *Builder) void {
     _build(b);
-
-    check_conflict(b);
 
     if (b.invalid_user_input)
         newline();
