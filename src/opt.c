@@ -16,15 +16,15 @@
 #endif
 
 #ifdef CC_CPU
-#define CC_CPU_ " cpu:" CC_CPU
+#define CC_CPU_ " | cpu:" CC_CPU
 #else
-#define CC_CPU_ " cpu:<unknown>"
+#define CC_CPU_ " | cpu:<unknown>"
 #endif
 
 #ifdef CC_MODE
-#define CC_MODE_ " mode:" CC_MODE
+#define CC_MODE_ " | mode:" CC_MODE
 #else
-#define CC_MODE_ " mode:<unknown>"
+#define CC_MODE_ " | mode:<unknown>"
 #endif
 
 #ifdef WITH_OPENSSL // version str

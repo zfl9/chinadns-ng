@@ -6,42 +6,114 @@ const Step = std.build.Step;
 const LibExeObjStep = std.build.LibExeObjStep;
 
 var _b: *Builder = undefined;
+
+// options
 var _target: CrossTarget = undefined;
 var _build_mode: BuildMode = undefined;
-
-// =========================================================================
+var _chinadns_name: []const u8 = undefined;
+var _use_mimalloc: bool = undefined;
 
 const DependLib = struct {
+    url: []const u8,
     version: []const u8,
     tarball: []const u8, // src tarball file path
-    srcdir: []const u8,
-    srcdir_always_clean: bool,
-    url: []const u8,
+    src_dir: []const u8,
+    src_dir_always_clean: bool,
+    base_dir: []const u8,
+    include_dir: []const u8,
+    lib_dir: []const u8,
 };
 
-const _dep_openssl: DependLib = b: {
+var _dep_openssl: DependLib = b: {
     const version = "3.2.0";
+    const src_dir = "dep/openssl-" ++ version;
     break :b .{
-        .version = version,
-        .tarball = "dep/openssl-" ++ version ++ ".tar.gz",
-        .srcdir = "dep/openssl-" ++ version,
-        .srcdir_always_clean = false,
         .url = "https://www.openssl.org/source/openssl-" ++ version ++ ".tar.gz",
+        .version = version,
+        .tarball = src_dir ++ ".tar.gz",
+        .src_dir = src_dir,
+        .src_dir_always_clean = false,
+        .base_dir = undefined, // set by init()
+        .include_dir = undefined, // set by init()
+        .lib_dir = undefined, // set by init()
     };
 };
 
 const _dep_mimalloc: DependLib = b: {
     const version = "2.1.2";
+    const src_dir = "dep/mimalloc-" ++ version;
     break :b .{
-        .version = version,
-        .tarball = "dep/mimalloc-" ++ version ++ ".tar.gz",
-        .srcdir = "dep/mimalloc-" ++ version,
-        .srcdir_always_clean = true,
         .url = "https://github.com/microsoft/mimalloc/archive/refs/tags/v" ++ version ++ ".tar.gz",
+        .version = version,
+        .tarball = src_dir ++ ".tar.gz",
+        .src_dir = src_dir,
+        .src_dir_always_clean = true,
+        .base_dir = src_dir,
+        .include_dir = src_dir ++ "/include",
+        .lib_dir = src_dir, // there is actually no lib_dir
     };
 };
 
-var _use_mimalloc: bool = undefined;
+fn init(b: *Builder) void {
+    _b = b;
+
+    if (_b.verbose) {
+        _b.verbose_cimport = true;
+        _b.verbose_llvm_cpu_features = true;
+        _b.prominent_compile_errors = true;
+    }
+
+    // keep everything in a local directory
+    _b.global_cache_root = _b.cache_root;
+
+    // -Dxxx options
+    option_target();
+    option_mode();
+    option_name();
+    option_mimalloc();
+
+    _dep_openssl.base_dir = with_suffix(_dep_openssl.src_dir, .ReleaseFast); // dependency lib always ReleaseFast
+    _dep_openssl.include_dir = fmt("{s}/include", .{_dep_openssl.base_dir});
+    _dep_openssl.lib_dir = fmt("{s}/lib", .{_dep_openssl.base_dir});
+}
+
+fn init_dep(step: *Step, dep: DependLib) void {
+    if (dep.src_dir_always_clean and path_exists(dep.src_dir))
+        return;
+
+    if (!path_exists(dep.tarball))
+        step.dependOn(add_download(dep.url, dep.tarball));
+
+    step.dependOn(add_rm(dep.src_dir));
+
+    step.dependOn(add_tar_extract(dep.tarball, "dep"));
+}
+
+fn option_target() void {
+    _target = _b.standardTargetOptions(.{});
+}
+
+fn option_mode() void {
+    const opt = _b.option(ModeOpt, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
+    _build_mode = to_build_mode(opt);
+}
+
+fn option_name() void {
+    const default = with_suffix("chinadns-ng", null);
+    const desc = fmt("executable name, default: '{s}'", .{default});
+    const name = _b.option([]const u8, "name", desc) orelse default;
+    const trimmed = trim_whitespace(name);
+    if (trimmed.len > 0 and std.mem.eql(u8, trimmed, name)) {
+        _chinadns_name = name;
+    } else {
+        err_invalid("invalid executable name (-Dname): '{s}'", .{name});
+        _chinadns_name = default;
+    }
+}
+
+fn option_mimalloc() void {
+    _use_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
+}
 
 // =========================================================================
 
@@ -77,7 +149,7 @@ var _first_error: bool = true;
 
 /// print to stderr, auto append '\n'
 fn _print(comptime format: []const u8, args: anytype) void {
-    _ = std.io.getStdErr().write(_b.fmt(format ++ "\n", args)) catch unreachable;
+    _ = std.io.getStdErr().write(fmt(format ++ "\n", args)) catch unreachable;
 }
 
 fn newline() void {
@@ -92,24 +164,20 @@ fn _print_err(comptime format: []const u8, args: anytype) void {
     _print("> ERROR: " ++ format, args);
 }
 
-/// print err msg and exit process with code 1
-fn err_exit(comptime format: []const u8, args: anytype) noreturn {
-    _print_err(format, args);
-    newline();
-    std.os.exit(1);
-}
-
 /// print err msg and mark user input as invalid
 fn err_invalid(comptime format: []const u8, args: anytype) void {
     _print_err(format, args);
     _b.invalid_user_input = true;
 }
 
-fn string_concat(str_list: []const []const u8, sep: []const u8) []const u8 {
-    return std.mem.join(_b.allocator, sep, str_list) catch unreachable;
-}
-
 // =========================================================================
+
+/// step: empty step to be used as a container
+fn add_step(name: []const u8) *Step {
+    const step = _b.allocator.create(Step) catch unreachable;
+    step.* = Step.initNoOp(.custom, name, _b.allocator);
+    return step;
+}
 
 /// step: log info
 fn add_log(comptime format: []const u8, args: anytype) *Step {
@@ -118,10 +186,15 @@ fn add_log(comptime format: []const u8, args: anytype) *Step {
 
 /// step: /bin/sh command
 fn add_sh_cmd(sh_cmd: []const u8) *Step {
-    const cmd = _b.fmt("set -o nounset; set -o errexit; set -o pipefail; {s}", .{sh_cmd});
+    const cmd = fmt("set -o nounset; set -o errexit; set -o pipefail; {s}", .{sh_cmd});
     const run_step = _b.addSystemCommand(&.{ "sh", "-c", cmd });
     run_step.print = false; // disable print (use `set -x` instead)
     return &run_step.step;
+}
+
+/// step: /bin/sh command (set -x)
+fn add_sh_cmd_x(sh_cmd: []const u8) *Step {
+    return add_sh_cmd(fmt("set -x; {s}", .{sh_cmd}));
 }
 
 /// step: remove dir or file
@@ -144,32 +217,36 @@ fn add_download(url: []const u8, path: []const u8) *Step {
         \\      exit 1
         \\  fi
     ;
-    const cmd = _b.fmt(cmd_, .{ url, path });
+    const cmd = fmt(cmd_, .{ url, path });
     return add_sh_cmd(cmd);
 }
 
 /// step: tar xf $tarball -C $dir
 fn add_tar_extract(tarball_path: []const u8, to_dir: []const u8) *Step {
-    const cmd = _b.fmt("set -x; mkdir -p {s}; tar -xf {s} -C {s}", .{ to_dir, tarball_path, to_dir });
-    return add_sh_cmd(cmd);
+    const cmd = fmt("mkdir -p {s}; tar -xf {s} -C {s}", .{ to_dir, tarball_path, to_dir });
+    return add_sh_cmd_x(cmd);
 }
 
 // =========================================================================
+
+fn fmt(comptime format: []const u8, args: anytype) []const u8 {
+    return _b.fmt(format, args);
+}
 
 fn path_exists(rel_path: []const u8) bool {
     return if (std.fs.cwd().access(rel_path, .{})) true else |_| false;
 }
 
-fn init_dep(step: *Step, dep: DependLib) void {
-    if (dep.srcdir_always_clean and path_exists(dep.srcdir))
-        return;
+fn string_concat(str_list: []const []const u8, sep: []const u8) []const u8 {
+    return std.mem.join(_b.allocator, sep, str_list) catch unreachable;
+}
 
-    if (!path_exists(dep.tarball))
-        step.dependOn(add_download(dep.url, dep.tarball));
+fn trim_whitespace(str: []const u8) []const u8 {
+    return std.mem.trim(u8, str, " \t\r\n");
+}
 
-    step.dependOn(add_rm(dep.srcdir));
-
-    step.dependOn(add_tar_extract(dep.tarball, "dep"));
+fn is_musl() bool {
+    return _target.getAbi().isMusl();
 }
 
 // =========================================================================
@@ -201,49 +278,26 @@ fn optval_cpu_or_default() []const u8 {
 // =========================================================================
 
 /// for building dependencies (zig cc)
-fn cc_target_mcpu() []const u8 {
+fn get_target_mcpu() []const u8 {
     const target = optval_target();
     const cpu = optval_cpu();
 
     return if (cpu.len > 0)
-        _b.fmt("-target {s} -mcpu={s}", .{ target, cpu })
+        fmt("-target {s} -mcpu={s}", .{ target, cpu })
     else
-        _b.fmt("-target {s}", .{target});
+        fmt("-target {s}", .{target});
 }
 
 /// @in_mode: default is `_build_mode`
-fn add_suffix(name: []const u8, in_mode: ?BuildMode) []const u8 {
+fn with_suffix(name: []const u8, in_mode: ?BuildMode) []const u8 {
     const target = optval_target();
     const cpu = optval_cpu_or_default();
     const mode = in_mode orelse _build_mode;
 
     return if (mode != .ReleaseFast)
-        _b.fmt("{s}:{s}:{s}:{s}", .{ name, target, cpu, desc_build_mode(mode) })
+        fmt("{s}:{s}:{s}:{s}", .{ name, target, cpu, desc_build_mode(mode) })
     else
-        _b.fmt("{s}:{s}:{s}", .{ name, target, cpu });
-}
-
-fn trim_whitespace(str: []const u8) []const u8 {
-    return std.mem.trim(u8, str, " \t\r\n");
-}
-
-// =========================================================================
-
-/// option: build mode
-fn option_mode() BuildMode {
-    const opt = _b.option(ModeOpt, "mode", "build mode, default: 'fast' (-O3/-OReleaseFast -flto)") orelse .fast;
-    return to_build_mode(opt);
-}
-
-/// option: exe name
-fn option_name() []const u8 {
-    const name_default = add_suffix("chinadns-ng", null);
-    const name_desc = _b.fmt("executable name, default: '{s}'", .{name_default});
-    const name_orig = _b.option([]const u8, "name", name_desc) orelse name_default;
-    const name = trim_whitespace(name_orig);
-    if (name.len <= 0 or !std.mem.eql(u8, name, name_orig))
-        err_exit("invalid executable name (-Dname): '{s}'", .{name_orig});
-    return name;
+        fmt("{s}:{s}:{s}", .{ name, target, cpu });
 }
 
 // =========================================================================
@@ -257,6 +311,7 @@ fn get_openssl_target() []const u8 {
         .{ "native", "" },
         .{ "i386-", "linux-x86-clang" },
         .{ "x86_64-", "linux-x86_64-clang" },
+        .{ "arm-", "linux-armv4" },
         .{ "aarch64-", "linux-aarch64" },
     };
 
@@ -265,45 +320,48 @@ fn get_openssl_target() []const u8 {
             return prefix_target[1];
     }
 
-    err_exit("TODO: for targets other than x86, x86_64, aarch64, use wolfssl instead of openssl", .{});
+    err_invalid("TODO: for targets other than [x86, arm], use wolfssl instead of openssl", .{});
+
+    return "";
 }
 
-/// toplevel step: openssl
-fn step_openssl(p_openssl_dir: *[]const u8) *Step {
+/// top-level step
+/// TODO: replace to wolfssl
+fn step_openssl() *Step {
     const openssl = _b.step("openssl", "build openssl dependency");
 
-    const openssl_dir = add_suffix(_dep_openssl.srcdir, .ReleaseFast);
-    p_openssl_dir.* = openssl_dir;
-
-    // already compiled ?
-    if (path_exists(openssl_dir))
+    // already installed ?
+    if (path_exists(_dep_openssl.base_dir))
         return openssl;
 
     init_dep(openssl, _dep_openssl);
 
-    const zig_target_mcpu = cc_target_mcpu();
-    openssl.dependOn(add_log("[openssl] zig cc {s}", .{zig_target_mcpu}));
+    const target_mcpu = get_target_mcpu();
 
     const openssl_target = get_openssl_target();
     const openssl_target_display = if (openssl_target.len > 0) openssl_target else "<native>";
     openssl.dependOn(add_log("[openssl] ./Configure {s}", .{openssl_target_display}));
 
     const cmd_ =
-        \\  set -x
-        \\
-        \\  installdir=$(pwd)/{s}
-        \\  srcdir={s}
-        \\  zig_target_mcpu="{s}"
+        \\  install_dir=$(pwd)/{s}
+        \\  src_dir={s}
+        \\  target_mcpu="{s}"
         \\  openssl_target={s}
+        \\  zig_cache_dir="$PWD/{s}"
+        \\  is_musl={}
         \\
-        \\  cd $srcdir
+        \\  cd $src_dir
         \\
-        \\  export CC="zig cc $zig_target_mcpu -Xclang -O3"
-        \\  export CFLAGS="-g0 -O3 -flto -fno-pie -fno-PIE -ffunction-sections -fdata-sections"
+        \\  export ZIG_LOCAL_CACHE_DIR="$zig_cache_dir"
+        \\  export ZIG_GLOBAL_CACHE_DIR="$zig_cache_dir"
+        \\
+        \\  ((is_musl)) && pic_flags="-fno-pic -fno-PIC" || pic_flags=""
+        \\  export CC="zig cc $target_mcpu -g0 -O3 -Xclang -O3 -flto -fno-pie -fno-PIE $pic_flags -ffunction-sections -fdata-sections"
+        \\
         \\  export AR='zig ar'
         \\  export RANLIB='zig ranlib'
         \\
-        \\  ./Configure $openssl_target --prefix=$installdir --libdir=lib --openssldir=/etc/ssl \
+        \\  ./Configure $openssl_target --prefix=$install_dir --libdir=lib --openssldir=/etc/ssl \
         \\      enable-ktls no-deprecated no-async no-comp no-dgram no-legacy no-pic \
         \\      no-psk no-dso no-shared no-srp no-srtp no-ssl-trace no-tests no-apps no-threads
         \\
@@ -311,194 +369,233 @@ fn step_openssl(p_openssl_dir: *[]const u8) *Step {
         \\  make install_sw
     ;
 
-    const cmd = _b.fmt(cmd_, .{ openssl_dir, _dep_openssl.srcdir, zig_target_mcpu, openssl_target });
+    const cmd = fmt(cmd_, .{
+        _dep_openssl.base_dir,
+        _dep_openssl.src_dir,
+        target_mcpu,
+        openssl_target,
+        _b.cache_root,
+        @as(i32, if (is_musl()) 1 else 0),
+    });
 
-    openssl.dependOn(add_sh_cmd(cmd));
+    openssl.dependOn(add_sh_cmd_x(cmd));
 
     return openssl;
 }
 
-/// mimalloc .c files
-fn add_src_malloc(exe: *LibExeObjStep) void {
-    _use_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
+fn setup_libexeobj_step(step: *LibExeObjStep) void {
+    step.setTarget(_target);
+    step.setBuildMode(_build_mode);
 
+    if (step.kind == .obj) // compiling
+        step.use_stage1 = true; // required by async/await (.zig)
+
+    step.want_lto = true;
+    step.single_threaded = true;
+
+    step.link_function_sections = true;
+    // step.link_data_sections = true; // not supported yet
+    step.link_gc_sections = true;
+
+    step.pie = false;
+
+    if (is_musl())
+        step.force_pic = false;
+
+    if (_build_mode == .ReleaseFast or _build_mode == .ReleaseSmall)
+        step.strip = true;
+
+    step.linkLibC();
+}
+
+/// zig build-obj -cflags <CFLAGS...>
+fn get_cflags(ex_cflags: []const []const u8) []const []const u8 {
+    var cflags = std.ArrayList([]const u8).init(_b.allocator);
+    defer cflags.deinit();
+
+    cflags.appendSlice(&.{
+        "-Werror", // https://github.com/ziglang/zig/issues/10800
+        "-fno-pic",
+        "-fno-PIC",
+        "-fno-pie",
+        "-fno-PIE",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fcolor-diagnostics",
+        "-fcaret-diagnostics",
+    }) catch unreachable;
+
+    if (_build_mode == .ReleaseFast)
+        cflags.append("-O3") catch unreachable; // default is -O2
+
+    // append ex cflags
+    cflags.appendSlice(ex_cflags) catch unreachable;
+
+    return cflags.toOwnedSlice();
+}
+
+fn link_obj_mimalloc(exe: *LibExeObjStep) void {
     if (!_use_mimalloc)
         return;
 
-    exe.step.dependOn(add_log("[mimalloc] using the mimalloc allocator instead of the default libc allocator", .{}));
+    const obj = _b.addObject("mimalloc.c", null);
+    setup_libexeobj_step(obj);
 
     init_dep(&exe.step, _dep_mimalloc);
 
-    exe.addIncludePath(_dep_mimalloc.srcdir ++ "/include");
+    obj.addIncludePath(_dep_mimalloc.include_dir);
 
-    exe.addCSourceFile(_dep_mimalloc.srcdir ++ "/src/static.c", &.{
+    obj.defineCMacro("NDEBUG", null);
+    obj.defineCMacro("MI_MALLOC_OVERRIDE", null);
+
+    const src_file = fmt("{s}/src/static.c", .{_dep_mimalloc.src_dir});
+
+    const cflags = get_cflags(&.{
         "-std=gnu11",
-        "-Werror", // https://github.com/ziglang/zig/issues/10800
         "-Wall",
         "-Wextra",
         "-Wpedantic",
         "-Wstrict-prototypes",
         "-Wno-unknown-pragmas",
         "-Wno-static-in-inline",
-        "-DNDEBUG",
-        "-DMI_MALLOC_OVERRIDE",
-        "-g0",
-        "-O3",
-        "-flto",
-        "-fno-pic",
-        "-fno-PIC",
-        "-fno-pie",
-        "-fno-PIE",
-        "-ffunction-sections",
-        "-fdata-sections",
         "-fvisibility=hidden",
         "-fno-builtin-malloc",
         "-ftls-model=initial-exec",
     });
+
+    obj.addCSourceFile(src_file, cflags);
+
+    // link to exe
+    exe.addObject(obj);
 }
 
-/// chinadns-ng .c files
-fn add_src_app(exe: *LibExeObjStep, comptime files: []const []const u8) void {
-    var flags = std.ArrayList([]const u8).init(_b.allocator);
-    defer flags.deinit();
-
+fn link_obj_chinadns(exe: *LibExeObjStep) void {
     // generic cflags
-    flags.appendSlice(&.{
+    const cflags = get_cflags(&.{
         "-std=c99",
-        "-Werror", // https://github.com/ziglang/zig/issues/10800
         "-Wall",
         "-Wextra",
         "-Wvla",
-        "-fno-pic",
-        "-fno-PIC",
-        "-fno-pie",
-        "-fno-PIE",
-        "-ffunction-sections",
-        "-fdata-sections",
-    }) catch unreachable;
-
-    // build_mode dependent cflags
-    switch (_build_mode) {
-        .ReleaseFast, .ReleaseSafe => flags.appendSlice(&.{ "-g0", "-O3", "-flto", "-DNDEBUG" }) catch unreachable,
-        .ReleaseSmall => flags.appendSlice(&.{ "-g0", "-Os", "-flto", "-DNDEBUG" }) catch unreachable,
-        .Debug => flags.appendSlice(&.{ "-ggdb3", "-Og" }) catch unreachable,
-    }
+    });
 
     // openssl version
-    flags.append("-DWITH_OPENSSL=\"" ++ _dep_openssl.version ++ "\"") catch unreachable;
+    const macro_openssl = fmt("WITH_OPENSSL=\"{s}\"", .{_dep_openssl.version});
 
     // mimalloc version
-    if (_use_mimalloc)
-        flags.append("-DWITH_MIMALLOC=\"" ++ _dep_mimalloc.version ++ "\"") catch unreachable;
+    const macro_mimalloc = if (_use_mimalloc) fmt("WITH_MIMALLOC=\"{s}\"", .{_dep_mimalloc.version}) else null;
 
     // target, cpu, mode
-    flags.append(_b.fmt("-DCC_TARGET=\"{s}\"", .{optval_target()})) catch unreachable;
-    flags.append(_b.fmt("-DCC_CPU=\"{s}\"", .{optval_cpu_or_default()})) catch unreachable;
-    flags.append(_b.fmt("-DCC_MODE=\"{s}\"", .{desc_build_mode(null)})) catch unreachable;
+    const macro_target = fmt("CC_TARGET=\"{s}\"", .{optval_target()});
+    const macro_cpu = fmt("CC_CPU=\"{s}\"", .{optval_cpu_or_default()});
+    const macro_mode = fmt("CC_MODE=\"{s}\"", .{desc_build_mode(null)});
 
-    inline for (files) |file| {
-        flags.append("-DFILENAME=\"" ++ file ++ "\"") catch unreachable; // log.h
-        exe.addCSourceFile("src/" ++ file, flags.items);
-        _ = flags.pop();
+    var dir = std.fs.cwd().openIterableDir("src", .{}) catch unreachable;
+    defer dir.close();
+
+    var it = dir.iterate();
+
+    // inline for (files) |file| {
+    while (it.next() catch unreachable) |file| {
+        if (file.kind != .File)
+            continue;
+
+        if (!std.mem.endsWith(u8, file.name, ".c") and !std.mem.endsWith(u8, file.name, ".zig"))
+            continue;
+
+        const obj = _b.addObject(file.name, null);
+        setup_libexeobj_step(obj);
+
+        obj.addIncludePath("src"); // required by .zig (@cInclude)
+        obj.addIncludePath(_dep_openssl.include_dir);
+
+        obj.defineCMacroRaw(macro_openssl);
+
+        if (macro_mimalloc) |macro| obj.defineCMacroRaw(macro);
+
+        obj.defineCMacroRaw(macro_target);
+        obj.defineCMacroRaw(macro_cpu);
+        obj.defineCMacroRaw(macro_mode);
+
+        obj.defineCMacroRaw(fmt("FILENAME=\"{s}\"", .{file.name}));
+
+        obj.addCSourceFile(fmt("src/{s}", .{file.name}), cflags);
+
+        // link to exe
+        exe.addObject(obj);
     }
 }
 
-fn _build(b: *Builder) void {
-    _b = b;
-    _target = b.standardTargetOptions(.{});
-    _build_mode = option_mode();
-
-    b.verbose = true;
-    b.verbose_cimport = true;
-    b.verbose_llvm_cpu_features = true;
-    b.prominent_compile_errors = true;
-
+fn configure() void {
     // zig build openssl
-    var openssl_dir: []const u8 = undefined;
-    const openssl = step_openssl(&openssl_dir);
+    const openssl = step_openssl();
 
     // exe: chinadns-ng
-    const exe = b.addExecutable(option_name(), null);
-    exe.setTarget(_target);
-    exe.setBuildMode(_build_mode);
+    const exe = _b.addExecutable(_chinadns_name, null);
+    setup_libexeobj_step(exe);
 
-    exe.use_stage1 = true; // async/await
-    exe.want_lto = true;
-    exe.single_threaded = true;
-    exe.link_function_sections = true;
-    exe.link_gc_sections = true;
-    exe.pie = false;
-    if (_target.getAbi().isMusl()) exe.force_pic = false;
-    if (_build_mode != .Debug) exe.strip = true;
-
-    // openssl library
+    // openssl dependency lib
     exe.step.dependOn(openssl);
 
-    exe.addIncludePath(b.fmt("{s}/include", .{openssl_dir}));
-    exe.addLibraryPath(b.fmt("{s}/lib", .{openssl_dir}));
+    // this is to allow `zls` to discover the header file paths so that `@cInclude` will work.
+    exe.addIncludePath("src");
+    exe.addIncludePath(_dep_openssl.include_dir);
+    exe.addIncludePath(_dep_mimalloc.include_dir);
 
     // to ensure that the standard malloc interface resolves to the mimalloc library, link it as the first object file
-    add_src_malloc(exe);
+    link_obj_mimalloc(exe);
 
-    add_src_app(exe, &.{ "main.c", "opt.c", "net.c", "dns.c", "dnl.c", "ipset.c", "nl.c" });
+    link_obj_chinadns(exe);
 
+    // link openssl library
+    exe.addLibraryPath(_dep_openssl.lib_dir);
     exe.linkSystemLibrary("ssl");
     exe.linkSystemLibrary("crypto");
 
-    exe.linkLibC();
-
+    // install to dest dir
     exe.install();
 
     const run_exe = exe.run();
-    if (b.args) |args|
+    if (_b.args) |args|
         run_exe.addArgs(args);
 
     // zig build run [-- ARGS...]
-    const run = b.step("run", "run chinadns-ng with args");
-    run.dependOn(b.getInstallStep());
+    const run = _b.step("run", "run chinadns-ng: [-- ARGS...]");
+    run.dependOn(_b.getInstallStep());
     run.dependOn(&run_exe.step);
 
-    const rm_local_cache = add_rm(b.cache_root);
-    const rm_global_cache = add_rm(b.global_cache_root);
-    const rm_openssl = add_rm(openssl_dir); // current target
-    const rm_openssl_all = add_sh_cmd("rm -fr " ++ _dep_openssl.srcdir ++ ":*"); // all targets
+    const rm_cache = add_rm(_b.cache_root);
+    const rm_openssl = add_rm(_dep_openssl.base_dir); // current target
+    const rm_openssl_all = add_sh_cmd(fmt("rm -fr {s}:*", .{_dep_openssl.src_dir})); // all targets
 
-    // zig build clean-local
-    const clean_local = b.step("clean-local", b.fmt("clean local build cache: '{s}'", .{b.cache_root}));
-    clean_local.dependOn(rm_local_cache);
-
-    // zig build clean-global
-    const clean_global = b.step("clean-global", b.fmt("clean global build cache: '{s}'", .{b.global_cache_root}));
-    clean_global.dependOn(rm_global_cache);
+    // zig build clean-cache
+    const clean_cache = _b.step("clean-cache", fmt("clean zig build cache: '{s}'", .{_b.cache_root}));
+    clean_cache.dependOn(rm_cache);
 
     // zig build clean-openssl
-    const clean_openssl = b.step("clean-openssl", b.fmt("clean openssl build cache: '{s}'", .{openssl_dir}));
+    const clean_openssl = _b.step("clean-openssl", fmt("clean openssl build cache: '{s}'", .{_dep_openssl.base_dir}));
     clean_openssl.dependOn(rm_openssl);
 
     // zig build clean-openssl-all
-    const clean_openssl_all = b.step("clean-openssl-all", b.fmt("clean openssl build caches: '{s}:*'", .{_dep_openssl.srcdir}));
+    const clean_openssl_all = _b.step("clean-openssl-all", fmt("clean openssl build caches: '{s}:*'", .{_dep_openssl.src_dir}));
     clean_openssl_all.dependOn(rm_openssl_all);
 
     // zig build clean
-    const clean = b.step("clean", b.fmt("clean all build caches", .{}));
-    clean.dependOn(clean_local);
-    clean.dependOn(clean_global);
+    const clean = _b.step("clean", fmt("clean all build caches", .{}));
+    clean.dependOn(clean_cache);
     clean.dependOn(clean_openssl);
 
     // zig build clean-all
-    const clean_all = b.step("clean-all", b.fmt("clean all build caches (*)", .{}));
-    clean_all.dependOn(clean_local);
-    clean_all.dependOn(clean_global);
+    const clean_all = _b.step("clean-all", fmt("clean all build caches (*)", .{}));
+    clean_all.dependOn(clean_cache);
     clean_all.dependOn(clean_openssl_all);
-
-    // zig build clean-dep
-    const clean_dep = b.step("clean-dep", b.fmt("clean all files in dep dir", .{}));
-    clean_dep.dependOn(add_rm("dep"));
 }
 
+/// build.zig just generates the build steps (and the dependency graph), the real running is done by build_runner.zig.
 pub fn build(b: *Builder) void {
-    _build(b);
+    init(b);
 
-    if (b.invalid_user_input)
+    configure();
+
+    if (_b.invalid_user_input)
         newline();
 }
