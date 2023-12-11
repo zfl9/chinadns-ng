@@ -48,7 +48,7 @@ const _dep_mimalloc: DependLib = b: {
         .tarball = src_dir ++ ".tar.gz",
         .src_dir = src_dir,
         .src_dir_always_clean = true,
-        .base_dir = src_dir,
+        .base_dir = src_dir, // same as src_dir, since mimalloc is linked to the exe as an object
         .include_dir = src_dir ++ "/include",
         .lib_dir = src_dir, // there is actually no lib_dir
     };
@@ -205,13 +205,13 @@ fn add_rm(path: []const u8) *Step {
 /// step: download file
 fn add_download(url: []const u8, path: []const u8) *Step {
     const cmd_ =
-        \\  url={s}; path={s}
-        \\  mkdir -p $(dirname $path)
+        \\  url='{s}'; path='{s}'
+        \\  mkdir -p "$(dirname "$path")"
         \\  echo "[INFO] downloading from $url"
         \\  if type -P wget &>/dev/null; then
-        \\      wget $url -O $path
+        \\      wget "$url" -O "$path"
         \\  elif type -P curl &>/dev/null; then
-        \\      curl -fL $url -o $path
+        \\      curl -fL "$url" -o "$path"
         \\  else
         \\      echo "[ERROR] please install 'wget' or 'curl'" 1>&2
         \\      exit 1
@@ -221,9 +221,9 @@ fn add_download(url: []const u8, path: []const u8) *Step {
     return add_sh_cmd(cmd);
 }
 
-/// step: tar xf $tarball -C $dir
+/// step: tar -xf $tarball -C $dir
 fn add_tar_extract(tarball_path: []const u8, to_dir: []const u8) *Step {
-    const cmd = fmt("mkdir -p {s}; tar -xf {s} -C {s}", .{ to_dir, tarball_path, to_dir });
+    const cmd = fmt("mkdir -p '{s}'; tar -xf '{s}' -C '{s}'", .{ to_dir, tarball_path, to_dir });
     return add_sh_cmd_x(cmd);
 }
 
@@ -302,31 +302,39 @@ fn with_suffix(name: []const u8, in_mode: ?BuildMode) []const u8 {
 
 // =========================================================================
 
-/// return "" if the target is `native`
 fn get_openssl_target() []const u8 {
-    const zig_target = optval_target();
-
-    // {prefix, openssl_target}
-    const prefix_target_map = .{
-        .{ "native", "" },
-        .{ "i386-", "linux-x86-clang" },
-        .{ "x86_64-", "linux-x86_64-clang" },
-        .{ "arm-", "linux-armv4" },
-        .{ "aarch64-", "linux-aarch64" },
+    return switch (_target.getCpuArch()) {
+        .arm => "linux-armv4",
+        .aarch64 => "linux-aarch64",
+        .i386 => "linux-x86-clang",
+        .x86_64 => "linux-x86_64-clang",
+        .mips, .mipsel => b: {
+            // [zig] https://github.com/ziglang/zig/issues/11829
+            // [zig] https://github.com/ziglang/zig/commit/e1cc70ba11735b678430ffde348527a16287a744
+            // [zig] I ported it to version 0.10.1 via a hack: https://www.zfl9.com/zig-mips.html
+            // [openssl] Configure script adds minimally required -march for assembly support, if no -march/-mips* was specified at command line.
+            const target = "linux-mips32";
+            const march = _target.getCpuModel().llvm_name.?;
+            break :b fmt("{s} -{s}", .{ target, march });
+        },
+        // .mips64, .mips64el => b: {
+        //     // [zig] https://github.com/ziglang/zig/issues/8020
+        //     // [openssl] Configure script adds minimally required -march for assembly support, if no -march/-mips* was specified at command line.
+        //     const target = "linux64-mips64";
+        //     const march = _target.getCpuModel().llvm_name.?;
+        //     break :b fmt("{s} -{s}", .{ target, march });
+        // },
+        else => b: {
+            err_invalid(
+                "'{s}' is not supported, currently supports ['arm', 'aarch64', 'i386', 'x86_64', 'mips', 'mipsel']",
+                .{@tagName(_target.getCpuArch())},
+            );
+            break :b "";
+        },
     };
-
-    inline for (prefix_target_map) |prefix_target| {
-        if (std.mem.startsWith(u8, zig_target, prefix_target[0]))
-            return prefix_target[1];
-    }
-
-    err_invalid("TODO: for targets other than [x86, arm], use wolfssl instead of openssl", .{});
-
-    return "";
 }
 
 /// top-level step
-/// TODO: replace to wolfssl
 fn step_openssl() *Step {
     const openssl = _b.step("openssl", "build openssl dependency");
 
@@ -339,42 +347,41 @@ fn step_openssl() *Step {
     const target_mcpu = get_target_mcpu();
 
     const openssl_target = get_openssl_target();
-    const openssl_target_display = if (openssl_target.len > 0) openssl_target else "<native>";
-    openssl.dependOn(add_log("[openssl] ./Configure {s}", .{openssl_target_display}));
+    openssl.dependOn(add_log("[openssl] ./Configure {s}", .{openssl_target}));
 
     const cmd_ =
-        \\  install_dir=$(pwd)/{s}
-        \\  src_dir={s}
-        \\  target_mcpu="{s}"
-        \\  openssl_target={s}
-        \\  zig_cache_dir="$PWD/{s}"
+        \\  install_dir='{s}'
+        \\  src_dir='{s}'
+        \\  target_mcpu='{s}'
+        \\  openssl_target='{s}'
+        \\  zig_cache_dir='{s}'
         \\  is_musl={}
         \\
-        \\  cd $src_dir
+        \\  cd "$src_dir"
         \\
         \\  export ZIG_LOCAL_CACHE_DIR="$zig_cache_dir"
         \\  export ZIG_GLOBAL_CACHE_DIR="$zig_cache_dir"
         \\
-        \\  ((is_musl)) && pic_flags="-fno-pic -fno-PIC" || pic_flags=""
+        \\  ((is_musl)) && pic_flags='-fno-pic -fno-PIC' || pic_flags=''
         \\  export CC="zig cc $target_mcpu -g0 -O3 -Xclang -O3 -flto -fno-pie -fno-PIE $pic_flags -ffunction-sections -fdata-sections"
         \\
         \\  export AR='zig ar'
         \\  export RANLIB='zig ranlib'
         \\
-        \\  ./Configure $openssl_target --prefix=$install_dir --libdir=lib --openssldir=/etc/ssl \
-        \\      enable-ktls no-deprecated no-async no-comp no-dgram no-legacy no-pic \
-        \\      no-psk no-dso no-shared no-srp no-srtp no-ssl-trace no-tests no-apps no-threads
+        \\  ./Configure $openssl_target --prefix="$install_dir" --libdir=lib --openssldir=/etc/ssl \
+        \\      enable-ktls no-deprecated no-async no-comp no-dgram no-legacy no-pic no-psk \
+        \\      no-dso no-dynamic-engine no-shared no-srp no-srtp no-ssl-trace no-tests no-apps no-threads
         \\
         \\  make -j$(nproc) build_sw
         \\  make install_sw
     ;
 
     const cmd = fmt(cmd_, .{
-        _dep_openssl.base_dir,
+        _b.pathFromRoot(_dep_openssl.base_dir),
         _dep_openssl.src_dir,
         target_mcpu,
         openssl_target,
-        _b.cache_root,
+        _b.pathFromRoot(_b.cache_root),
         @as(i32, if (is_musl()) 1 else 0),
     });
 
@@ -536,7 +543,7 @@ fn configure() void {
     // openssl dependency lib
     exe.step.dependOn(openssl);
 
-    // this is to allow `zls` to discover the header file paths so that `@cInclude` will work.
+    // this is to allow `zls` to discover the header file paths so that `@cInclude` will work
     exe.addIncludePath("src");
     exe.addIncludePath(_dep_openssl.include_dir);
     exe.addIncludePath(_dep_mimalloc.include_dir);
@@ -590,7 +597,7 @@ fn configure() void {
     clean_all.dependOn(clean_openssl_all);
 }
 
-/// build.zig just generates the build steps (and the dependency graph), the real running is done by build_runner.zig.
+/// build.zig just generates the build steps (and the dependency graph), the real running is done by build_runner.zig
 pub fn build(b: *Builder) void {
     init(b);
 
