@@ -4,6 +4,7 @@ const CrossTarget = std.zig.CrossTarget;
 const BuildMode = std.builtin.Mode;
 const Step = std.build.Step;
 const LibExeObjStep = std.build.LibExeObjStep;
+const OptionsStep = std.build.OptionsStep;
 
 var _b: *Builder = undefined;
 
@@ -11,7 +12,10 @@ var _b: *Builder = undefined;
 var _target: CrossTarget = undefined;
 var _build_mode: BuildMode = undefined;
 var _chinadns_name: []const u8 = undefined;
-var _use_mimalloc: bool = undefined;
+var _enable_openssl: bool = undefined;
+var _enable_mimalloc: bool = undefined;
+
+var _build_config: *OptionsStep = undefined;
 
 const DependLib = struct {
     url: []const u8,
@@ -70,11 +74,22 @@ fn init(b: *Builder) void {
     option_target();
     option_mode();
     option_name();
+    option_openssl();
     option_mimalloc();
 
     _dep_openssl.base_dir = with_suffix(_dep_openssl.src_dir, .ReleaseFast); // dependency lib always ReleaseFast
     _dep_openssl.include_dir = fmt("{s}/include", .{_dep_openssl.base_dir});
     _dep_openssl.lib_dir = fmt("{s}/lib", .{_dep_openssl.base_dir});
+
+    // conditional compilation for zig source files
+    _build_config = _b.addOptions();
+    _build_config.addOption(bool, "enable_openssl", _enable_openssl);
+    _build_config.addOption(bool, "enable_mimalloc", _enable_mimalloc);
+    _build_config.addOption([]const u8, "openssl_version", _dep_openssl.version);
+    _build_config.addOption([]const u8, "mimalloc_version", _dep_mimalloc.version);
+    _build_config.addOption([]const u8, "cc_target", optval_target());
+    _build_config.addOption([]const u8, "cc_cpu", optval_cpu_or_default());
+    _build_config.addOption([]const u8, "cc_mode", desc_build_mode(null));
 }
 
 fn init_dep(step: *Step, dep: DependLib) void {
@@ -111,8 +126,12 @@ fn option_name() void {
     }
 }
 
+fn option_openssl() void {
+    _enable_openssl = _b.option(bool, "openssl", "enable openssl to support DoH protocol, default: true") orelse true;
+}
+
 fn option_mimalloc() void {
-    _use_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
+    _enable_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
 }
 
 // =========================================================================
@@ -334,9 +353,9 @@ fn get_openssl_target() []const u8 {
     };
 }
 
-/// top-level step
-fn step_openssl() *Step {
-    const openssl = _b.step("openssl", "build openssl dependency");
+/// openssl dependency lib
+fn build_openssl() *Step {
+    const openssl = add_step("openssl");
 
     // already installed ?
     if (path_exists(_dep_openssl.base_dir))
@@ -412,6 +431,9 @@ fn setup_libexeobj_step(step: *LibExeObjStep) void {
     if (_build_mode == .ReleaseFast or _build_mode == .ReleaseSmall)
         step.strip = true;
 
+    // conditional compilation for zig source files
+    step.addOptions("build_config", _build_config);
+
     step.linkLibC();
 }
 
@@ -442,9 +464,6 @@ fn get_cflags(ex_cflags: []const []const u8) []const []const u8 {
 }
 
 fn link_obj_mimalloc(exe: *LibExeObjStep) void {
-    if (!_use_mimalloc)
-        return;
-
     const obj = _b.addObject("mimalloc.c", null);
     setup_libexeobj_step(obj);
 
@@ -486,10 +505,10 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
     });
 
     // openssl version
-    const macro_openssl = fmt("WITH_OPENSSL=\"{s}\"", .{_dep_openssl.version});
+    const macro_openssl = if (_enable_openssl) fmt("WITH_OPENSSL=\"{s}\"", .{_dep_openssl.version}) else null;
 
     // mimalloc version
-    const macro_mimalloc = if (_use_mimalloc) fmt("WITH_MIMALLOC=\"{s}\"", .{_dep_mimalloc.version}) else null;
+    const macro_mimalloc = if (_enable_mimalloc) fmt("WITH_MIMALLOC=\"{s}\"", .{_dep_mimalloc.version}) else null;
 
     // target, cpu, mode
     const macro_target = fmt("CC_TARGET=\"{s}\"", .{optval_target()});
@@ -515,8 +534,7 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
         obj.addIncludePath("src"); // required by .zig (@cInclude)
         obj.addIncludePath(_dep_openssl.include_dir);
 
-        obj.defineCMacroRaw(macro_openssl);
-
+        if (macro_openssl) |macro| obj.defineCMacroRaw(macro);
         if (macro_mimalloc) |macro| obj.defineCMacroRaw(macro);
 
         obj.defineCMacroRaw(macro_target);
@@ -533,30 +551,31 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
 }
 
 fn configure() void {
-    // zig build openssl
-    const openssl = step_openssl();
-
     // exe: chinadns-ng
     const exe = _b.addExecutable(_chinadns_name, null);
     setup_libexeobj_step(exe);
 
-    // openssl dependency lib
-    exe.step.dependOn(openssl);
-
-    // this is to allow `zls` to discover the header file paths so that `@cInclude` will work
+    // `zls` use it to discover header file path information
     exe.addIncludePath("src");
     exe.addIncludePath(_dep_openssl.include_dir);
     exe.addIncludePath(_dep_mimalloc.include_dir);
 
+    // openssl dependency lib
+    if (_enable_openssl)
+        exe.step.dependOn(build_openssl());
+
     // to ensure that the standard malloc interface resolves to the mimalloc library, link it as the first object file
-    link_obj_mimalloc(exe);
+    if (_enable_mimalloc)
+        link_obj_mimalloc(exe);
 
     link_obj_chinadns(exe);
 
     // link openssl library
-    exe.addLibraryPath(_dep_openssl.lib_dir);
-    exe.linkSystemLibrary("ssl");
-    exe.linkSystemLibrary("crypto");
+    if (_enable_openssl) {
+        exe.addLibraryPath(_dep_openssl.lib_dir);
+        exe.linkSystemLibrary("ssl");
+        exe.linkSystemLibrary("crypto");
+    }
 
     // install to dest dir
     exe.install();
