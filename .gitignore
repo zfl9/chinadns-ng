@@ -1,9 +1,6 @@
 *.o
 *.gch
-chinadns
-chinadns-ng
-.vscode/
-zig-cache/
 zig-out/
+zig-cache/
 dep/openssl-*
 dep/mimalloc-*

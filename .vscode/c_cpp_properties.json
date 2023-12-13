@@ -1,0 +1,28 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                // doesn't work, use compilerArgs instead!
+                // "${workspaceFolder}/dep/openssl-3.2.0:native:default/include",
+                // "${workspaceFolder}/dep/mimalloc-2.1.2/include"
+            ],
+            "defines": [
+                "ENABLE_OPENSSL=\"3.2.0\"",
+                "ENABLE_MIMALLOC=\"2.1.2\"",
+                "CC_TARGET=\"native\"",
+                "CC_CPU=\"default\"",
+                "CC_MODE=\"fast\""
+            ],
+            "compilerPath": "/usr/bin/clang",
+            "compilerArgs": [
+                "-I${workspaceFolder}/dep/openssl-3.2.0:native:default/include",
+                "-I${workspaceFolder}/dep/mimalloc-2.1.2/include"
+            ],
+            "cStandard": "c99",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-clang-x64"
+        }
+    ],
+    "version": 4
+}

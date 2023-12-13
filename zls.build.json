@@ -1,0 +1,12 @@
+{
+    "build_options": [
+        {
+            "name": "openssl",
+            "value": "true"
+        },
+        {
+            "name": "mimalloc",
+            "value": "true"
+        }
+    ]
+}

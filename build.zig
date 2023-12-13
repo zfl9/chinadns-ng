@@ -504,23 +504,20 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
         "-Wvla",
     });
 
-    // openssl version
-    const macro_openssl = if (_enable_openssl) fmt("WITH_OPENSSL=\"{s}\"", .{_dep_openssl.version}) else null;
-
-    // mimalloc version
-    const macro_mimalloc = if (_enable_mimalloc) fmt("WITH_MIMALLOC=\"{s}\"", .{_dep_mimalloc.version}) else null;
+    // dependency lib
+    const macro_enable_openssl = fmt("ENABLE_OPENSSL=\"{s}\"", .{_dep_openssl.version});
+    const macro_enable_mimalloc = fmt("ENABLE_MIMALLOC=\"{s}\"", .{_dep_mimalloc.version});
 
     // target, cpu, mode
-    const macro_target = fmt("CC_TARGET=\"{s}\"", .{optval_target()});
-    const macro_cpu = fmt("CC_CPU=\"{s}\"", .{optval_cpu_or_default()});
-    const macro_mode = fmt("CC_MODE=\"{s}\"", .{desc_build_mode(null)});
+    const macro_cc_target = fmt("CC_TARGET=\"{s}\"", .{optval_target()});
+    const macro_cc_cpu = fmt("CC_CPU=\"{s}\"", .{optval_cpu_or_default()});
+    const macro_cc_mode = fmt("CC_MODE=\"{s}\"", .{desc_build_mode(null)});
 
     var dir = std.fs.cwd().openIterableDir("src", .{}) catch unreachable;
     defer dir.close();
 
     var it = dir.iterate();
 
-    // inline for (files) |file| {
     while (it.next() catch unreachable) |file| {
         if (file.kind != .File)
             continue;
@@ -531,17 +528,26 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
         const obj = _b.addObject(file.name, null);
         setup_libexeobj_step(obj);
 
-        obj.addIncludePath("src"); // required by .zig (@cInclude)
-        obj.addIncludePath(_dep_openssl.include_dir);
+        // for .zig file
+        obj.addIncludePath("src");
 
-        if (macro_openssl) |macro| obj.defineCMacroRaw(macro);
-        if (macro_mimalloc) |macro| obj.defineCMacroRaw(macro);
+        // openssl lib
+        if (_enable_openssl) {
+            obj.defineCMacroRaw(macro_enable_openssl);
+            obj.addIncludePath(_dep_openssl.include_dir);
+        }
 
-        obj.defineCMacroRaw(macro_target);
-        obj.defineCMacroRaw(macro_cpu);
-        obj.defineCMacroRaw(macro_mode);
+        // mimalloc lib
+        if (_enable_mimalloc)
+            obj.defineCMacroRaw(macro_enable_mimalloc);
 
-        obj.defineCMacroRaw(fmt("FILENAME=\"{s}\"", .{file.name}));
+        // target, cpu, mode
+        obj.defineCMacroRaw(macro_cc_target);
+        obj.defineCMacroRaw(macro_cc_cpu);
+        obj.defineCMacroRaw(macro_cc_mode);
+
+        // for log.h
+        obj.defineCMacroRaw(fmt("LOG_FILENAME=\"{s}\"", .{file.name}));
 
         obj.addCSourceFile(fmt("src/{s}", .{file.name}), cflags);
 
@@ -555,12 +561,7 @@ fn configure() void {
     const exe = _b.addExecutable(_chinadns_name, null);
     setup_libexeobj_step(exe);
 
-    // `zls` use it to discover header file path information
-    exe.addIncludePath("src");
-    exe.addIncludePath(_dep_openssl.include_dir);
-    exe.addIncludePath(_dep_mimalloc.include_dir);
-
-    // openssl dependency lib
+    // build the dependency library first
     if (_enable_openssl)
         exe.step.dependOn(build_openssl());
 

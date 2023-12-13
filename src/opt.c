@@ -27,14 +27,14 @@
 #define CC_MODE_ " | mode:<unknown>"
 #endif
 
-#ifdef WITH_OPENSSL // version str
-#define DEP_OPENSSL " | openssl-" WITH_OPENSSL
+#ifdef ENABLE_OPENSSL // version
+#define DEP_OPENSSL " | openssl-" ENABLE_OPENSSL
 #else
 #define DEP_OPENSSL ""
 #endif
 
-#ifdef WITH_MIMALLOC // version str
-#define DEP_MIMALLOC " | mimalloc-" WITH_MIMALLOC
+#ifdef ENABLE_MIMALLOC // version
+#define DEP_MIMALLOC " | mimalloc-" ENABLE_MIMALLOC
 #else
 #define DEP_MIMALLOC ""
 #endif
