@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #define VERSION "ChinaDNS-NG 2023.10.28"
 #define GITURL " | <https://github.com/zfl9/chinadns-ng>"
@@ -72,6 +73,7 @@ union skaddr    g_upstream_skaddrs[SERVER_MAXCNT];
 int             g_upstream_timeout_sec = 5;
 u8              g_repeat_times         = 1; /* used by trust-dns only */
 
+#define OPT_CONFIG 'C'
 #define OPT_BIND_ADDR 'b'
 #define OPT_BIND_PORT 'l'
 #define OPT_CHINA_DNS 'c'
@@ -96,6 +98,7 @@ u8              g_repeat_times         = 1; /* used by trust-dns only */
 
 static const char s_shortopts[] = {
     ':', /* return ':' if argument missing */
+    OPT_CONFIG, ':', /* required_argument */
     OPT_BIND_ADDR, ':', /* required_argument */
     OPT_BIND_PORT, ':', /* required_argument */
     OPT_CHINA_DNS, ':', /* required_argument */
@@ -121,6 +124,7 @@ static const char s_shortopts[] = {
 };
 
 static const struct option s_options[] = {
+    {"config",        required_argument, NULL, OPT_CONFIG},
     {"bind-addr",     required_argument, NULL, OPT_BIND_ADDR},
     {"bind-port",     required_argument, NULL, OPT_BIND_PORT},
     {"china-dns",     required_argument, NULL, OPT_CHINA_DNS},
@@ -147,6 +151,7 @@ static const struct option s_options[] = {
 
 static void show_help(void) {
     printf("usage: chinadns-ng <options...>. the existing options are as follows:\n"
+           " -C, --config <path>                  format similar to the long option\n"
            " -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1\n"
            " -l, --bind-port <port-number>        listen port number, default: 65353\n"
            " -c, --china-dns <ip[#port],...>      china dns server, default: <114DNS>\n"
@@ -296,16 +301,31 @@ static void check_optional_arg(int argc, char *argv[]) {
         ++optarg;
 }
 
-void opt_parse(int argc, char *argv[]) {
-    opterr = 0; /* disable default error msg */
-    int shortopt;
-
-    const char *chinadns_optarg = "114.114.114.114";
-    const char *trustdns_optarg = "8.8.8.8";
+struct parse_ctx {
+    const char *chinadns_optarg;
+    const char *trustdns_optarg;
+    const char *cfg_filename;
     char no_arg;
+};
+
+static void parse_cfg(struct parse_ctx *ctx, const char *filename);
+
+static void parse(struct parse_ctx *ctx, int argc, char *argv[]) {
+    opterr = 0; /* disable default error msg */
+
+    int shortopt;
+// 
+    // for (int i = 1; i < argc && argv[i]; ++i) {
+    //     const char *arg = argv[i];
+    //     if (!strcmp(arg, "--config"))
+    // }
 
     while ((shortopt = getopt_long(argc, argv, s_shortopts, s_options, NULL)) != -1) {
         switch (shortopt) {
+            case OPT_CONFIG:
+                parse_cfg(ctx, optarg);
+                break;
+
             case OPT_BIND_ADDR:
                 if (get_ipstr_family(optarg) == -1)
                     err_exit("invalid listen ip address: %s", optarg);
@@ -318,11 +338,11 @@ void opt_parse(int argc, char *argv[]) {
                 break;
 
             case OPT_CHINA_DNS:
-                chinadns_optarg = optarg;
+                ctx->chinadns_optarg = optarg;
                 break;
 
             case OPT_TRUST_DNS:
-                trustdns_optarg = optarg;
+                ctx->trustdns_optarg = optarg;
                 break;
 
             case OPT_CHNLIST_FILE:
@@ -351,7 +371,7 @@ void opt_parse(int argc, char *argv[]) {
             case OPT_ADD_TAGCHN_IP:
                 check_optional_arg(argc, argv);
                 if (!optarg)
-                    g_add_tagchn_ip = &no_arg;
+                    g_add_tagchn_ip = &ctx->no_arg;
                 else
                     g_add_tagchn_ip = optarg;
                 break;
@@ -435,10 +455,75 @@ void opt_parse(int argc, char *argv[]) {
         }
     }
 
-    for (int i = optind; i < argc; ++i)
-        err_exit("non-option argument: %s", argv[i]);
+    for (int i = optind; i < argc; ++i) {
+        if (ctx->cfg_filename)
+            err_exit("%s option does not accept argument: %s", argv[i - 1], argv[i]);
+        else
+            err_exit("non-option argument: %s", argv[i]);
+    }
+}
 
-    if ((uintptr_t)g_add_tagchn_ip == (uintptr_t)&no_arg) {
+static void parse_cfg(struct parse_ctx *ctx, const char *filename) {
+    if (ctx->cfg_filename)
+        err_exit("'config'-opt is not allowed in config-file '%s': %s", ctx->cfg_filename, filename);
+
+    ctx->cfg_filename = optarg;
+
+    FILE *file = fopen(filename, "rb");
+    if (!file)
+        err_exit("failed to open config-file '%s': (%d) %s", filename, errno, strerror(errno));
+
+    const int saved_optind = optind;
+
+    char line[500];
+    while (fgets(line, sizeof(line), file)) {
+        if (!feof(file) && line[strlen(line) - 1] != '\n')
+            err_exit("this line in config-file '%s' is too long: %s", filename, line);
+
+        char exename[] = "chinadns-ng";
+        char *argv[4] = {exename}; // {exename, --opt, value, NULL}
+        int argc = 1;
+
+        char tmpline[sizeof(line)];
+        memcpy(tmpline, line, sizeof(line));
+        const char *sep = " \t\r\n";
+
+        for (char *token = strtok(tmpline, sep); token; token = strtok(NULL, sep)) {
+            if (argc >= 3)
+                err_exit("this line in config-file '%s' is formatted incorrectly: %s", filename, line);
+            argv[argc++] = token;
+        }
+
+        if (argc != 2 && argc != 3)
+            err_exit("this line in config-file '%s' is formatted incorrectly: %s", filename, line);
+
+        // convert to longopt format
+        char longopt[20] = "--";
+        if (strlen(argv[1]) > sizeof(longopt) - 3) 
+            err_exit("this option name in config-file '%s' is too long: %s", filename, argv[1]);
+        argv[1] = strcat(longopt, argv[1]);
+
+        optind = 1;
+        parse(ctx, argc, argv);
+    }
+
+    optind = saved_optind;   
+
+    fclose(file);
+
+    ctx->cfg_filename = NULL;
+}
+
+void opt_parse(int argc, char *argv[]) {
+    struct parse_ctx ctx = {
+        .chinadns_optarg = "114.114.114.114",
+        .trustdns_optarg = "8.8.8.8",
+        .cfg_filename = NULL,
+    };
+
+    parse(&ctx, argc, argv);
+
+    if ((uintptr_t)g_add_tagchn_ip == (uintptr_t)&ctx.no_arg) {
         size_t len4 = strlen(g_ipset_name4) + 1;
         size_t len6 = strlen(g_ipset_name6) + 1;
         char *p = malloc(len4 + len6);
@@ -449,6 +534,7 @@ void opt_parse(int argc, char *argv[]) {
     }
 
     skaddr_build(get_ipstr_family(g_bind_ip), &g_bind_skaddr, g_bind_ip, g_bind_port);
-    parse_upstream_addrs(chinadns_optarg, true);
-    parse_upstream_addrs(trustdns_optarg, false);
+
+    parse_upstream_addrs(ctx.chinadns_optarg, true);
+    parse_upstream_addrs(ctx.trustdns_optarg, false);
 }

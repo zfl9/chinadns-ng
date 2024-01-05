@@ -505,7 +505,12 @@ err:
     exit(1);
 }
 
-void ipset_init(void) {
+void ipset_init(const char *noalias tagnone_setname4,
+                const char *noalias tagnone_setname6,
+                const char *noalias tagchn_setname46,
+                const char *noalias taggfw_setname46,
+                u8 default_tag)
+{
     /*
       for the netfilter module, req_nlmsg is always processed synchronously in the context of the sendmsg system call,
         and the res_nlmsg is placed in the sender's receive queue before sendmsg returns.
@@ -514,8 +519,8 @@ void ipset_init(void) {
 
     __typeof__(&init_req_ipset) init_req;
 
-    if (strchr(g_ipset_name4, '@') || strchr(g_ipset_name6, '@') ||
-        strchr(g_add_tagchn_ip ?: "", '@') || strchr(g_add_taggfw_ip ?: "", '@'))
+    if (strchr(tagnone_setname4, '@') || strchr(tagnone_setname6, '@') ||
+        strchr(tagchn_setname46 ?: "", '@') || strchr(taggfw_setname46 ?: "", '@'))
     {
         log_info("current backend: nft");
         init_req = init_req_nft;
@@ -534,9 +539,9 @@ void ipset_init(void) {
     }
 
     /* tag:chn add */
-    if (g_add_tagchn_ip) {
+    if (tagchn_setname46) {
         char name4[NAME_MAXLEN], name6[NAME_MAXLEN];
-        parse_name46(g_add_tagchn_ip, name4, name6);
+        parse_name46(tagchn_setname46, name4, name6);
         log_info("tag:chn add: %s", name4);
         log_info("tag:chn add: %s", name6);
         struct addctx *noalias ctx = a_ctx(true);
@@ -547,9 +552,9 @@ void ipset_init(void) {
     }
 
     /* tag:gfw add */
-    if (g_add_taggfw_ip) {
+    if (taggfw_setname46) {
         char name4[NAME_MAXLEN], name6[NAME_MAXLEN];
-        parse_name46(g_add_taggfw_ip, name4, name6);
+        parse_name46(taggfw_setname46, name4, name6);
         log_info("tag:gfw add: %s", name4);
         log_info("tag:gfw add: %s", name6);
         struct addctx *noalias ctx = a_ctx(false);
@@ -560,11 +565,11 @@ void ipset_init(void) {
     }
 
     /* tag:none test */
-    if (g_default_tag == NAME_TAG_NONE) {
-        log_info("tag:none test: %s", g_ipset_name4);
-        log_info("tag:none test: %s", g_ipset_name6);
-        init_req(true, g_ipset_name4, NULL);
-        init_req(false, g_ipset_name6, NULL);
+    if (default_tag == NAME_TAG_NONE) {
+        log_info("tag:none test: %s", tagnone_setname4);
+        log_info("tag:none test: %s", tagnone_setname6);
+        init_req(true, tagnone_setname4, NULL);
+        init_req(false, tagnone_setname6, NULL);
     }
 }
 

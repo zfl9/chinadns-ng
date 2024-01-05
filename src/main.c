@@ -140,14 +140,14 @@ static void handle_local_packet(void) {
         return;
     }
 
-    char *name_buf = (g_verbose || g_dnl_nitems) ? s_name_buf : NULL;
+    char *name_buf = (g_verbose || !dnl_is_empty()) ? s_name_buf : NULL;
     int namelen = 0;
     unlikely_if (!dns_check_query(s_packet_buf, packet_len, name_buf, &namelen)) return;
 
     u16 qtype = dns_qtype(s_packet_buf, namelen);
     int ascii_namelen = dns_ascii_namelen(namelen);
-    u8 name_tag = (ascii_namelen > 0 && g_dnl_nitems)
-        ? get_name_tag(s_name_buf, ascii_namelen) : g_default_tag;
+    u8 name_tag = (ascii_namelen > 0 && !dnl_is_empty())
+        ? get_name_tag(s_name_buf, ascii_namelen, g_default_tag) : g_default_tag;
 
     if_verbose {
         u16 port = 0;
@@ -374,7 +374,7 @@ static void handle_timeout_event(struct queryctx *context) {
     free_context(context);
 }
 
-int main(int argc, char *argv[]) {
+int c_main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
     setvbuf(stdout, NULL, _IOLBF, 256);
 
@@ -396,11 +396,11 @@ int main(int argc, char *argv[]) {
     if (g_upstream_addrs[TRUSTDNS2_IDX])
         log_info("trustdns server#2: %s", g_upstream_addrs[TRUSTDNS2_IDX]);
 
-    dnl_init();
-    log_info("default domain name tag: %s", nametag_val2name(g_default_tag));
+    dnl_init(g_gfwlist_fname, g_chnlist_fname, g_gfwlist_first);
+    log_info("default domain name tag: %s", get_tag_desc(g_default_tag));
 
     bool need_ipset = g_add_tagchn_ip || g_add_taggfw_ip || g_default_tag == NAME_TAG_NONE;
-    if (need_ipset) ipset_init();
+    if (need_ipset) ipset_init(g_ipset_name4, g_ipset_name6, g_add_tagchn_ip, g_add_taggfw_ip, g_default_tag);
 
     if (is_filter_all_v6(g_noaaaa_query))
         log_info("filter AAAA for all name");

@@ -57,8 +57,6 @@ struct map {
     u32 shift; // discard hashv low n bits
 };
 
-u32 g_dnl_nitems = 0; /* total (gfw + chn) */
-
 static struct map s_map1; /* L1 map (<= MAX_COLLISION) */
 static struct map s_map2; /* L2 map (> MAX_COLLISION) */
 
@@ -452,8 +450,8 @@ static u32 add_list(u32 addr0, u32 n) {
     return dnl_nitems() - old_nitems;
 }
 
-#ifdef DEBUG
-static void do_debug(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
+#ifdef TEST
+static void do_test(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
     const char *tagname_vec[] = {"gfwlist", "chnlist"};
     u8 tag_vec[] = {NAME_TAG_GFW, NAME_TAG_CHN};
     u32 addr0_vec[] = {gfw_addr0, chn_addr0};
@@ -476,13 +474,13 @@ static void do_debug(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
             if (!exists_in_dnl(name->name, namelen, &tag1))
                 log_fatal("[%s] #raw test failed: %.*s", tagname, namelen, name->name);
             if (tag1 != tag) /* dup with chnlist ? */
-                log_debug("[%s] duplicate: %.*s (tag:%s)", tagname, namelen, name->name, nametag_val2name(tag1));
+                log_info("[%s] duplicate: %.*s (tag:%s)", tagname, namelen, name->name, get_tag_desc(tag1));
 
             u8 tag2;
             if (!exists_in_dnl(tmp, namelen, &tag2))
                 log_fatal("[%s] #copy test failed: %.*s", tagname, namelen, name->name);
             if (tag2 != tag1)
-                log_fatal("[%s] tag1:%s != tag2:%s (%.*s)", tagname, nametag_val2name(tag1), nametag_val2name(tag2), namelen, name->name);
+                log_fatal("[%s] tag1:%s != tag2:%s (%.*s)", tagname, get_tag_desc(tag1), get_tag_desc(tag2), namelen, name->name);
 
             *tmp = '.';
             if (exists_in_dnl(tmp, namelen, &tag2))
@@ -500,25 +498,25 @@ static void do_debug(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
                 foreach_list(bucket, curaddr) ++len;
                 maxlen = max(len, maxlen);
                 if (len >= MAX_COLLISION) {
-                    log_debug("[map2_list] #list:%d >= MAX_COLLISION:%d", len, MAX_COLLISION);
+                    log_info("[map2_list] #list:%d >= MAX_COLLISION:%d", len, MAX_COLLISION);
                     int i = 0;
                     foreach_list(bucket, curaddr)
-                        log_debug("[map2_list] >> [%d] %.*s", ++i, (int)ptr_name(curaddr)->namelen, ptr_name(curaddr)->name);
+                        log_info("[map2_list] >> [%d] %.*s", ++i, (int)ptr_name(curaddr)->namelen, ptr_name(curaddr)->name);
                 }
             }
         }
-        log_debug("[map2_list] max #list: %d", maxlen);
+        log_info("[map2_list] max #list: %d", maxlen);
     }
 }
 #endif
 
-void dnl_init(void) {
+void dnl_init(const char *noalias gfwlist_filenames, const char *noalias chnlist_filenames, bool gfwlist_first) {
     u32 gfw_addr0 = 0, gfw_n = 0, gfw_cost, gfw_nitems = 0;
-    bool has_gfw = g_gfwlist_fname && load_list(NAME_TAG_GFW, g_gfwlist_fname, &gfw_addr0, &gfw_n);
+    bool has_gfw = gfwlist_filenames && load_list(NAME_TAG_GFW, gfwlist_filenames, &gfw_addr0, &gfw_n);
     gfw_cost = has_gfw ? s_end - gfw_addr0 : 0;
 
     u32 chn_addr0 = 0, chn_n = 0, chn_cost, chn_nitems = 0;
-    bool has_chn = g_chnlist_fname && load_list(NAME_TAG_CHN, g_chnlist_fname, &chn_addr0, &chn_n);
+    bool has_chn = chnlist_filenames && load_list(NAME_TAG_CHN, chnlist_filenames, &chn_addr0, &chn_n);
     chn_cost = has_chn ? s_end - chn_addr0 : 0;
 
     if (!has_gfw && !has_chn) return;
@@ -528,7 +526,7 @@ void dnl_init(void) {
     dnl_set_notnull(calc_lcap(gfw_n + chn_n), 0);
 
     if (has_gfw && has_chn) {
-        if (g_gfwlist_first) {
+        if (gfwlist_first) {
             log_info("gfwlist have higher priority");
             gfw_nitems = add_list(gfw_addr0, gfw_n);
             chn_nitems = add_list(chn_addr0, chn_n);
@@ -544,8 +542,7 @@ void dnl_init(void) {
         chn_nitems = add_list(chn_addr0, chn_n);
     }
 
-    g_dnl_nitems = dnl_nitems();
-    assert(g_dnl_nitems == gfw_nitems + chn_nitems);
+    assert(dnl_nitems() == gfw_nitems + chn_nitems);
 
     if (has_chn)
         log_info("chnlist loaded:%lu added:%lu cost:%.3fk", (ulong)chn_n, (ulong)chn_nitems, chn_cost/1024.0);
@@ -562,12 +559,16 @@ void dnl_init(void) {
 
     log_info("total memory cost (page-aligned): %.3fk", s_cap/1024.0);
 
-#ifdef DEBUG
-    do_debug(gfw_addr0, gfw_n, chn_addr0, chn_n);
+#ifdef TEST
+    do_test(gfw_addr0, gfw_n, chn_addr0, chn_n);
 #endif
 }
 
-u8 get_name_tag(const char *noalias name, int namelen) {
+bool dnl_is_empty(void) {
+    return dnl_is_null();
+}
+
+u8 get_name_tag(const char *noalias name, int namelen, u8 default_tag) {
     assert(!dnl_is_null());
 
     const char *noalias sub_names[LABEL_MAXCNT];
@@ -584,5 +585,18 @@ u8 get_name_tag(const char *noalias name, int namelen) {
             return name_tag;
     }
 
-    return g_default_tag;
+    return default_tag;
+}
+
+const char *get_tag_desc(u8 tag) {
+    switch (tag) {
+        case NAME_TAG_GFW:
+            return "gfw";
+        case NAME_TAG_CHN:
+            return "chn";
+        case NAME_TAG_NONE:
+            return "none";
+        default:
+            return "(null)";
+    }
 }
