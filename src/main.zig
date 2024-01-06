@@ -35,7 +35,7 @@ extern fn c_main(argc: c_int, argv: [*:null]?C.Str) c_int;
 
 pub fn main() u8 {
     if (build_opts.is_test)
-        return C.to_u8(tests.main());
+        return tests.main();
 
     // test opt.zig
     opt.parse();

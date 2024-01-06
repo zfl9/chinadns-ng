@@ -41,7 +41,7 @@ fn count(comptime modules: anytype) comptime_int {
 
 /// todo: support --test-filter [pattern]
 /// todo: implement std.testing.allocator
-pub fn main() c_int {
+pub fn main() u8 {
     if (all_test_fns.len <= 0)
         return 0;
 

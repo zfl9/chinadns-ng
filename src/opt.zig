@@ -46,7 +46,6 @@ const help =
     \\ -V, --version                        print `chinadns-ng` version number and exit
     \\ -h, --help                           print `chinadns-ng` help information and exit
     \\bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
-    \\
 ;
 
 const OptDef = struct {
@@ -57,7 +56,7 @@ const OptDef = struct {
 };
 
 // zig fmt: off
-const option_array = [_]OptDef{
+const optdef_array = [_]OptDef{
     .{ .short = "C", .long = "config",        .value = .required, .optfn = opt_config,        },
     .{ .short = "b", .long = "bind-addr",     .value = .required, .optfn = opt_bind_addr,     },
     .{ .short = "l", .long = "bind-port",     .value = .required, .optfn = opt_bind_port,     },
@@ -83,23 +82,13 @@ const option_array = [_]OptDef{
 };
 // zig fmt: on
 
-const KV = struct {
-    @"0": []const u8,
-    @"1": *const OptDef,
-};
-
-fn get_kvlist() [option_array.len * 2]KV {
-    var kvlist: [option_array.len * 2]KV = undefined;
-    inline for (option_array) |*opt, i| {
-        kvlist[i * 2] = .{ .@"0" = opt.short, .@"1" = opt };
-        kvlist[i * 2 + 1] = .{ .@"0" = opt.long, .@"1" = opt };
+fn get_optdef(name: []const u8) ?OptDef {
+    for (optdef_array) |optdef| {
+        if (std.mem.eql(u8, optdef.short, name) or std.mem.eql(u8, optdef.long, name))
+            return optdef;
     }
-    return kvlist;
+    return null;
 }
-
-/// [short-name] => *const OptDef
-/// [long-name] => *const OptDef
-const option_map = std.ComptimeStringMap(*const OptDef, get_kvlist());
 
 const OptFn = fn (in_value: ?[]const u8) void;
 
@@ -137,7 +126,7 @@ fn opt_config(in_value: ?[]const u8) void {
             err_exit(@src(), "'%s': line is too long: %s", .{ filename.ptr, p_line });
 
         // optname [optvalue]
-        var it = std.mem.tokenize(u8, line, " \t\r\n");
+        var it = std.mem.tokenize(u8, line, " \t\r\n\x00");
 
         const optname = it.next() orelse continue;
 
@@ -148,7 +137,7 @@ fn opt_config(in_value: ?[]const u8) void {
         if (it.next() != null)
             err_exit(@src(), "'%s': too many values: %s", .{ filename.ptr, p_line });
 
-        const optdef = option_map.get(optname) orelse
+        const optdef = get_optdef(optname) orelse
             err_exit(@src(), "'%s': unknown option: %s", .{ filename.ptr, p_line });
 
         switch (optdef.value) {
@@ -227,7 +216,7 @@ fn check_addr(value: []const u8) Error!void {
 }
 
 /// "ip[#port],..."
-fn append_addrs(list: *StrList, addrs: []const u8) Error!void {
+fn add_addrs(list: *StrList, addrs: []const u8) Error!void {
     var it = std.mem.split(u8, addrs, ",");
     while (it.next()) |addr| {
         check_addr(addr) catch |err| {
@@ -240,16 +229,16 @@ fn append_addrs(list: *StrList, addrs: []const u8) Error!void {
 
 fn opt_china_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    append_addrs(&g.chinadns_addrs, value) catch catch_exit(@src(), value);
+    add_addrs(&g.chinadns_addrs, value) catch catch_exit(@src(), value);
 }
 
 fn opt_trust_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    append_addrs(&g.trustdns_addrs, value) catch catch_exit(@src(), value);
+    add_addrs(&g.trustdns_addrs, value) catch catch_exit(@src(), value);
 }
 
 /// "foo.txt,..."
-fn append_paths(list: *StrList, paths: []const u8) Error!void {
+fn add_paths(list: *StrList, paths: []const u8) Error!void {
     var it = std.mem.split(u8, paths, ",");
     while (it.next()) |path| {
         if (path.len <= 0) {
@@ -266,16 +255,16 @@ fn append_paths(list: *StrList, paths: []const u8) Error!void {
 
 fn opt_chnlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    append_paths(&g.chnlist_filenames, value) catch catch_exit(@src(), value);
+    add_paths(&g.chnlist_filenames, value) catch catch_exit(@src(), value);
 }
 
 fn opt_gfwlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    append_paths(&g.gfwlist_filenames, value) catch catch_exit(@src(), value);
+    add_paths(&g.gfwlist_filenames, value) catch catch_exit(@src(), value);
 }
 
 fn opt_chnlist_first(_: ?[]const u8) void {
-    g.gfwlist_first = true;
+    g.gfwlist_first = false;
 }
 
 fn opt_default_tag(in_value: ?[]const u8) void {
@@ -368,7 +357,7 @@ fn opt_version(_: ?[]const u8) void {
 }
 
 fn opt_help(_: ?[]const u8) void {
-    C.printf("%s", .{help});
+    C.printf("%s\n", .{help});
     c.exit(0);
 }
 
@@ -382,36 +371,43 @@ fn init() Self {
     return .{ .idx = 1 };
 }
 
-fn parse_cli(self: *Self) void {
-    const arg = self.next_arg() orelse return;
-    self.idx += 1;
+fn parse_opt(self: *Self) void {
+    const arg = self.pop_arg() orelse return;
 
     if (std.mem.startsWith(u8, arg, "--")) {
         if (arg.len < 4)
             err_exit(@src(), "invalid long option: '%s'", .{arg.ptr});
 
+        // --name
+        // --name=value
+        // --name value
         if (std.mem.indexOfScalar(u8, arg, '=')) |sep|
-            self.dispatch(arg[2..sep], arg[sep + 1 ..])
+            self.handle_opt(arg[2..sep], arg[sep + 1 ..])
         else
-            self.dispatch(arg[2..], null);
+            self.handle_opt(arg[2..], null);
         //
     } else if (std.mem.startsWith(u8, arg, "-")) {
         if (arg.len < 2)
             err_exit(@src(), "invalid short option: '%s'", .{arg.ptr});
 
-        if (arg.len > 2)
-            self.dispatch(arg[1..2], arg[2..])
+        // -x
+        // -x=5
+        // -x 5
+        if (arg.len == 2)
+            self.handle_opt(arg[1..], null)
+        else if (arg[2] == '=')
+            self.handle_opt(arg[1..2], arg[3..])
         else
-            self.dispatch(arg[1..], null);
+            self.handle_opt(arg[1..2], arg[2..]);
         //
     } else {
         err_exit(@src(), "expect an option, but got a positional-argument: '%s'", .{arg.ptr});
     }
 
-    return @call(.{ .modifier = .always_tail }, Self.parse_cli, .{self});
+    return @call(.{ .modifier = .always_tail }, Self.parse_opt, .{self});
 }
 
-fn next_arg(self: Self) ?[:0]const u8 {
+fn peek_arg(self: Self) ?[:0]const u8 {
     const argv = std.os.argv;
 
     return if (self.idx < argv.len)
@@ -420,8 +416,16 @@ fn next_arg(self: Self) ?[:0]const u8 {
         null;
 }
 
-fn dispatch(self: *Self, name: []const u8, in_value: ?[:0]const u8) void {
-    const optdef: *const OptDef = option_map.get(name) orelse
+fn pop_arg(self: *Self) ?[:0]const u8 {
+    if (self.peek_arg()) |arg| {
+        self.idx += 1;
+        return arg;
+    }
+    return null;
+}
+
+fn handle_opt(self: *Self, name: []const u8, in_value: ?[:0]const u8) void {
+    const optdef = get_optdef(name) orelse
         err_exit(@src(), "unknown option: '%.*s'", .{ C.to_int(name.len), name.ptr });
 
     const value = switch (optdef.value) {
@@ -439,14 +443,14 @@ fn dispatch(self: *Self, name: []const u8, in_value: ?[:0]const u8) void {
 }
 
 fn take_value(self: *Self, name: []const u8, required: bool) ?[:0]const u8 {
-    const arg = self.next_arg() orelse {
+    const arg = self.peek_arg() orelse {
         if (required)
             err_exit(@src(), "expect a value for option '%.*s'", .{ C.to_int(name.len), name.ptr });
         return null;
     };
 
     if (required or !std.mem.startsWith(u8, arg, "-")) {
-        self.idx += 1;
+        _ = self.pop_arg();
         return arg;
     }
 
@@ -459,25 +463,31 @@ fn err_msg(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8,
 
 fn err_exit(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
     C.printf(log.srcinfo(src, true) ++ " " ++ fmt ++ "\n", args);
-    C.printf("%s", .{help});
+    C.printf("%s\n", .{help});
     c.exit(1);
 }
 
 pub fn parse() void {
-    {
-        var parser = Self.init();
-        parser.parse_cli();
-    }
+    var parser = Self.init();
+    parser.parse_opt();
 
-    // {
-    //     var parser = Self.init();
-    //     parser.parse_cli();
-    // }
+    if (g.chnroute_name.is_null())
+        g.chnroute_name.set("chnroute");
 
-    // {
-    //     var parser = Self.init();
-    //     parser.parse_cli();
-    // }
+    if (g.chnroute6_name.is_null())
+        g.chnroute6_name.set("chnroute6");
+
+    if (!g.chnip_setnames.is_null() and g.chnip_setnames.is_empty())
+        g.chnip_setnames.set_ex(&.{ g.chnroute_name.str, ",", g.chnroute6_name.str });
+
+    if (g.bind_ips.is_null())
+        g.bind_ips.add("127.0.0.1");
+
+    if (g.chinadns_addrs.is_null())
+        g.chinadns_addrs.add("114.114.114.114");
+
+    if (g.trustdns_addrs.is_null())
+        g.trustdns_addrs.add("8.8.8.8");
 }
 
 pub fn @"test: parse option and config"() !void {

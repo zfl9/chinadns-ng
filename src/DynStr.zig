@@ -15,12 +15,28 @@ pub fn deinit(self: *Self) void {
         C.free(self.get_memory());
 }
 
-/// copy string `s` to buffer
+/// copy string to buffer
 pub fn set(self: *Self, str: []const u8) void {
-    self.check_cap(str.len);
-    self.str.len = str.len;
-    @memcpy(self.str.ptr, str.ptr, str.len);
-    self.str[str.len] = 0;
+    return self.set_ex(&.{str});
+}
+
+/// copy strings to buffer
+pub fn set_ex(self: *Self, str_list: []const []const u8) void {
+    var strlen: usize = 0;
+    for (str_list) |str|
+        strlen += str.len;
+
+    self.check_cap(strlen);
+    self.str.len = strlen;
+
+    var offset: usize = 0;
+    for (str_list) |str| {
+        @memcpy(self.str.ptr + offset, str.ptr, str.len);
+        offset += str.len;
+    }
+
+    // end with 0
+    self.str[strlen] = 0;
 }
 
 fn check_cap(self: *Self, strlen: usize) void {
