@@ -16,7 +16,7 @@ int (*g_recvmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int fla
 
 int (*g_sendmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags);
 
-static int my_recvmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout) {
+static int userspace_recvmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout) {
     unlikely_if (vlen <= 0 || timeout) {
         errno = EINVAL;
         return -1;
@@ -41,7 +41,7 @@ static int my_recvmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, in
     return nrecv ?: -1;
 }
 
-static int my_sendmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags) {
+static int userspace_sendmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags) {
     unlikely_if (vlen <= 0) {
         errno = EINVAL;
         return -1;
@@ -69,7 +69,7 @@ void net_init(void) {
         g_recvmmsg = (__typeof__(g_recvmmsg))recvmmsg;
     } else {
         log_info("recvmmsg not implemented, use recvmsg to simulate");
-        g_recvmmsg = my_recvmmsg;
+        g_recvmmsg = userspace_recvmmsg;
     }
 
     res = sendmmsg(-1, NULL, 0, 0);
@@ -80,7 +80,7 @@ void net_init(void) {
         g_sendmmsg = (__typeof__(g_sendmmsg))sendmmsg;
     } else {
         log_info("sendmmsg not implemented, use sendmsg to simulate");
-        g_sendmmsg = my_sendmmsg;
+        g_sendmmsg = userspace_sendmmsg;
     }
 }
 
