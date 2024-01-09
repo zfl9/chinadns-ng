@@ -192,7 +192,7 @@ static void parse_upstream_addrs(const char *arg, bool is_chinadns) {
             err_exit("invalid server ip address: %s", ipstr);
 
         int idx = (is_chinadns ? CHINADNS1_IDX : TRUSTDNS1_IDX) + cnt - 1;
-        skaddr_build(family, &g_upstream_skaddrs[idx], ipstr, port);
+        skaddr_from_text(family, &g_upstream_skaddrs[idx], ipstr, port);
         g_upstream_addrs[idx] = addr;
     } while (has_next);
 }
@@ -408,7 +408,7 @@ void opt_parse(int argc, char *argv[]) {
         g_add_tagchn_ip = p;
     }
 
-    skaddr_build(get_ipstr_family(g_bind_ip), &g_bind_skaddr, g_bind_ip, g_bind_port);
+    skaddr_from_text(get_ipstr_family(g_bind_ip), &g_bind_skaddr, g_bind_ip, g_bind_port);
     parse_upstream_addrs(chinadns_optarg, true);
     parse_upstream_addrs(trustdns_optarg, false);
 }

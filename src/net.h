@@ -41,9 +41,9 @@ int new_udp_socket(int family, bool for_bind);
 
 int get_ipstr_family(const char *noalias ipstr);
 
-void skaddr_build(int family, union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno);
+void skaddr_from_text(int family, union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno);
 
-void skaddr_parse(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno);
+void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno);
 
 /* try to (blocking) send all, retry if interrupted by signal */
 #define sendall(f, fd, base, len, args...) ({ \

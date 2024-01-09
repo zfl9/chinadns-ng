@@ -136,7 +136,7 @@ int get_ipstr_family(const char *noalias ipstr) {
 }
 
 /* build v4/v6 address structure (zero before calling) */
-void skaddr_build(int family, union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno) {
+void skaddr_from_text(int family, union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno) {
     if (family == AF_INET) {
         skaddr->sin.sin_family = AF_INET;
         inet_pton(AF_INET, ipstr, &skaddr->sin.sin_addr);
@@ -149,7 +149,7 @@ void skaddr_build(int family, union skaddr *noalias skaddr, const char *noalias 
 }
 
 /* parse v4/v6 address structure */
-void skaddr_parse(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno) {
+void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno) {
     if (skaddr_is_sin(skaddr)) {
         inet_ntop(AF_INET, &skaddr->sin.sin_addr, ipstr, INET_ADDRSTRLEN);
         *portno = ntohs(skaddr->sin.sin_port);

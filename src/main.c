@@ -83,7 +83,7 @@ static inline void reply_with_no_answer(const union skaddr *noalias addr, sockle
     header->rcode = DNS_RCODE_NOERROR;
     unlikely_if (sendto(s_bind_sockfd, query, querylen, 0, &addr->sa, addrlen) < 0) {
         u16 port = 0;
-        skaddr_parse(addr, s_ipstr_buf, &port);
+        skaddr_to_text(addr, s_ipstr_buf, &port);
         log_error("failed to send reply to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
     }
 }
@@ -151,7 +151,7 @@ static void handle_local_packet(void) {
 
     if_verbose {
         u16 port = 0;
-        skaddr_parse(&source_addr, s_ipstr_buf, &port);
+        skaddr_to_text(&source_addr, s_ipstr_buf, &port);
         log_info("query [%s] from %s#%u (%u)", s_name_buf, s_ipstr_buf, (uint)port, (uint)s_unique_msgid);
     }
 
@@ -363,7 +363,7 @@ static void handle_remote_packet(int index) {
     socklen_t source_addrlen = skaddr_size(&context->source_addr);
     unlikely_if (sendto(s_bind_sockfd, reply_buffer, reply_length, 0, &context->source_addr.sa, source_addrlen) < 0) {
         u16 port = 0;
-        skaddr_parse(&context->source_addr, s_ipstr_buf, &port);
+        skaddr_to_text(&context->source_addr, s_ipstr_buf, &port);
         log_error("failed to send reply to %s#%u: (%d) %s", s_ipstr_buf, (uint)port, errno, strerror(errno));
     }
     free_context(context);
