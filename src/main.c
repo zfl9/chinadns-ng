@@ -202,7 +202,7 @@ static void handle_local_packet(void) {
 
         log_verbose("forward [%s] to %s (%s)", s_name_buf, g_upstream_addrs[i], is_chinadns_idx(i) ? "chinadns" : "trustdns");
 
-        int n_sent = x_sendmmsg(s_upstream_sockfds[i], msgv, msg_n, 0);
+        int n_sent = g_sendmmsg(s_upstream_sockfds[i], msgv, msg_n, 0);
         unlikely_if (n_sent != msg_n) {
             if (n_sent < 0)
                 log_error("failed to send query to %s: (%d) %s", g_upstream_addrs[i], errno, strerror(errno));

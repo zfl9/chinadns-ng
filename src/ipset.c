@@ -579,7 +579,7 @@ void ipset_init(const char *noalias tagnone_setname4,
 static inline int send_req(int n_msg) {
     assert(n_msg > 0);
     assert(n_msg <= MSG_N);
-    int n_sent = sendall(x_sendmmsg, s_sock, s_msgv, n_msg, 0);
+    int n_sent = sendall(g_sendmmsg, s_sock, s_msgv, n_msg, 0);
     assert(n_sent != 0);
     unlikely_if (n_sent != n_msg)
         log_error("failed to send nlmsg: %d != %d, (%d) %s", n_sent, n_msg, errno, strerror(errno));
@@ -590,7 +590,7 @@ static inline int send_req(int n_msg) {
 static inline int recv_res(int n_msg, bool err_if_nomsg) {
     assert(n_msg > 0);
     assert(n_msg <= MSG_N);
-    int n_recv = x_recvmmsg(s_sock, s_msgv, n_msg, MSG_DONTWAIT, NULL);
+    int n_recv = g_recvmmsg(s_sock, s_msgv, n_msg, MSG_DONTWAIT, NULL);
     assert(n_recv != 0);
     if (n_recv < 0) { /* no-msg or error */
         if (errno == EAGAIN || errno == EWOULDBLOCK)

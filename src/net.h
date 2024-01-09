@@ -28,10 +28,10 @@ union skaddr {
 #define skaddr_size(p) (skaddr_is_sin(p) ? sizeof((p)->sin) : sizeof((p)->sin6))
 
 /* compatible with old kernel (runtime) */
-extern int (*x_recvmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout);
+extern int (*g_recvmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout);
 
 /* compatible with old kernel (runtime) */
-extern int (*x_sendmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags);
+extern int (*g_sendmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags);
 
 void net_init(void);
 
