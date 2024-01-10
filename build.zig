@@ -655,6 +655,9 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
         if (_test)
             obj.defineCMacroRaw("TEST");
 
+        if (is_musl())
+            obj.defineCMacroRaw("MUSL");
+
         // openssl lib
         if (_enable_openssl) {
             obj.defineCMacroRaw(macro_enable_openssl);

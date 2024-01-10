@@ -12,11 +12,19 @@
   #define SO_REUSEPORT 15
 #endif
 
-int (*g_recvmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout);
+int (*RECVMMSG)(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags, struct timespec *timeout);
 
-int (*g_sendmmsg)(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags);
+int (*SENDMMSG)(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags);
 
-static int userspace_recvmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags, struct timespec *timeout) {
+#ifdef MUSL
+static int syscall_recvmmsg(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags, struct timespec *timeout) {
+    return syscall(SYS_recvmmsg, sockfd, msgvec, vlen, flags, timeout);
+}
+#else
+#define syscall_recvmmsg recvmmsg
+#endif
+
+static int userspace_recvmmsg(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags, struct timespec *timeout) {
     unlikely_if (vlen <= 0 || timeout) {
         errno = EINVAL;
         return -1;
@@ -28,7 +36,7 @@ static int userspace_recvmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int v
     int nrecv = 0;
 
     for (uint i = 0; i < vlen; ++i) {
-        ssize_t res = recvmsg(sockfd, &msgvec[i].msg_hdr, flags);
+        ssize_t res = RECVMSG(sockfd, &msgvec[i].msg_hdr, flags);
         if (res < 0) break;
 
         msgvec[i].msg_len = res;
@@ -41,7 +49,15 @@ static int userspace_recvmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int v
     return nrecv ?: -1;
 }
 
-static int userspace_sendmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int vlen, int flags) {
+#ifdef MUSL
+static int syscall_sendmmsg(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags) {
+    return syscall(SYS_sendmmsg, sockfd, msgvec, vlen, flags);
+}
+#else
+#define syscall_sendmmsg sendmmsg
+#endif
+
+static int userspace_sendmmsg(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags) {
     unlikely_if (vlen <= 0) {
         errno = EINVAL;
         return -1;
@@ -50,7 +66,7 @@ static int userspace_sendmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int v
     int nsent = 0;
 
     for (uint i = 0; i < vlen; ++i) {
-        ssize_t res = sendmsg(sockfd, &msgvec[i].msg_hdr, flags);
+        ssize_t res = SENDMSG(sockfd, &msgvec[i].msg_hdr, flags);
         if (res < 0) break;
 
         msgvec[i].msg_len = res;
@@ -61,26 +77,26 @@ static int userspace_sendmmsg(int sockfd, struct mmsghdr *msgvec, unsigned int v
 }
 
 void net_init(void) {
-    int res = recvmmsg(-1, NULL, 0, 0, NULL);
+    int res = syscall_recvmmsg(-1, NULL, 0, 0, NULL);
     assert(res == -1);
     (void)res;
 
     if (errno != ENOSYS) {
-        g_recvmmsg = (__typeof__(g_recvmmsg))recvmmsg;
+        RECVMMSG = (__typeof__(RECVMMSG))syscall_recvmmsg;
     } else {
         log_info("recvmmsg not implemented, use recvmsg to simulate");
-        g_recvmmsg = userspace_recvmmsg;
+        RECVMMSG = userspace_recvmmsg;
     }
 
-    res = sendmmsg(-1, NULL, 0, 0);
+    res = syscall_sendmmsg(-1, NULL, 0, 0);
     assert(res == -1);
     (void)res;
 
     if (errno != ENOSYS) {
-        g_sendmmsg = (__typeof__(g_sendmmsg))sendmmsg;
+        SENDMMSG = (__typeof__(SENDMMSG))syscall_sendmmsg;
     } else {
         log_info("sendmmsg not implemented, use sendmsg to simulate");
-        g_sendmmsg = userspace_sendmmsg;
+        SENDMMSG = userspace_sendmmsg;
     }
 }
 

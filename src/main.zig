@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const build_opts = @import("build_opts");
 
 const tests = @import("tests.zig");
+
 const c = @import("c.zig");
 const C = @import("C.zig");
 const g = @import("g.zig");
@@ -18,11 +19,12 @@ const StrList = @import("StrList.zig");
 // - alloc_only allocator
 // - vla/alloca allocator (another stack)
 
-// for tests.zig to discover all test fns
+/// used in tests.zig for discover all test fns
 pub const project_modules = .{
     c, C, g, log, opt, dnl, fmtchk, str2int, DynStr, StrList,
 };
 
+/// the rewrite is to avoid generating unnecessary code in release mode.
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     @setCold(true);
     if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe)
@@ -31,25 +33,31 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
         c.abort();
 }
 
-extern fn c_main(argc: c_int, argv: [*:null]?C.Str) c_int;
-
 pub fn main() u8 {
+    c.ignore_sigpipe();
+
+    _ = C.setvbuf(C.stdout, null, c._IOLBF, 256);
+
+    // setting default values for TZ
+    _ = C.setenv("TZ", ":/etc/localtime", false);
+
     if (build_opts.is_test)
         return tests.main();
 
-    // test opt.zig
     opt.parse();
 
-    // add sentinel `null`
-    const raw_argv = std.os.argv;
-    const argv = std.heap.raw_c_allocator.allocSentinel(?C.Str, raw_argv.len, null) catch unreachable;
-    std.mem.copy(?C.Str, argv, raw_argv);
+    c.net_init();
 
-    // assert
-    const x = argv[0.. :null];
-    const y = argv[0..argv.len :null];
-    _ = x;
-    _ = y;
+    for (g.bind_ips.items) |ip|
+        log.info(@src(), "local listen addr: %s#%u", .{ ip.?, C.to_uint(g.bind_port) });
 
-    return C.to_u8(c_main(C.to_int(argv.len), argv.ptr));
+    for (g.chinadns_addrs.items) |addr, i|
+        log.info(@src(), "chinadns server#%zu: %s", .{ i + 1, addr.? });
+
+    for (g.trustdns_addrs.items) |addr, i|
+        log.info(@src(), "trustdns server#%zu: %s", .{ i + 1, addr.? });
+
+    dnl.init();
+
+    return 0;
 }

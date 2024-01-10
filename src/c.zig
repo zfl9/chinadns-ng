@@ -15,15 +15,15 @@ pub usingnamespace @cImport({
     @cInclude("string.h");
     @cInclude("errno.h");
     @cInclude("unistd.h");
+    @cInclude("signal.h");
+    @cInclude("time.h");
     @cInclude("linux/limits.h");
 
-    @cInclude("src/opt.h");
     @cInclude("src/net.h");
     @cInclude("src/dns.h");
     @cInclude("src/dnl.h");
     @cInclude("src/ipset.h");
     @cInclude("src/misc.h");
-    @cInclude("src/nl.h");
 });
 
 /// assuming CHAR_BIT=8

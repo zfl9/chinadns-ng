@@ -383,29 +383,11 @@ static int split_name(const char *noalias name, int namelen, const char *noalias
     return n;
 }
 
-static bool load_list(u8 tag, const char *noalias filenames, u32 *noalias p_addr0, u32 *noalias p_n) {
+static bool load_list(u8 tag, const char *noalias filenames[noalias], u32 *noalias p_addr0, u32 *noalias p_n) {
     u32 addr0 = 0, n = 0;
-    int has_next = 1;
 
-    do {
-        const char *start = filenames, *end;
-        size_t len;
-        if ((end = strchr(start, ','))) {
-            len = end - start;
-            filenames = end + 1;
-        } else {
-            len = strlen(start);
-            has_next = 0;
-        }
-
-        unlikely_if (len + 1 > PATH_MAX) {
-            log_error("path max length is %d: %.*s", PATH_MAX - 1, (int)len, start);
-            continue;
-        }
-
-        char fname[PATH_MAX];
-        memcpy(fname, start, len);
-        fname[len] = '\0';
+    for (int file_idx = 0; filenames[file_idx]; ++file_idx) {
+        const char *fname = filenames[file_idx];
 
         FILE *fp;
         if (strcmp(fname, "-") == 0) {
@@ -431,7 +413,7 @@ static bool load_list(u8 tag, const char *noalias filenames, u32 *noalias p_addr
             (void)freopen("/dev/null", "rb", stdin);
         else
             fclose(fp);
-    } while (has_next);
+    }
 
     if (n <= 0) return false;
 
@@ -510,13 +492,13 @@ static void do_test(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
 }
 #endif
 
-void dnl_init(const char *noalias gfwlist_filenames, const char *noalias chnlist_filenames, bool gfwlist_first) {
+void dnl_init(const char *noalias gfwlist[noalias], const char *noalias chnlist[noalias], bool gfwlist_first) {
     u32 gfw_addr0 = 0, gfw_n = 0, gfw_cost, gfw_nitems = 0;
-    bool has_gfw = gfwlist_filenames && load_list(NAME_TAG_GFW, gfwlist_filenames, &gfw_addr0, &gfw_n);
+    bool has_gfw = gfwlist && load_list(NAME_TAG_GFW, gfwlist, &gfw_addr0, &gfw_n);
     gfw_cost = has_gfw ? s_end - gfw_addr0 : 0;
 
     u32 chn_addr0 = 0, chn_n = 0, chn_cost, chn_nitems = 0;
-    bool has_chn = chnlist_filenames && load_list(NAME_TAG_CHN, chnlist_filenames, &chn_addr0, &chn_n);
+    bool has_chn = chnlist && load_list(NAME_TAG_CHN, chnlist, &chn_addr0, &chn_n);
     chn_cost = has_chn ? s_end - chn_addr0 : 0;
 
     if (!has_gfw && !has_chn) return;

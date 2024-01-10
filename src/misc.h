@@ -8,6 +8,8 @@
 #define likely_if(x) if (likely(x))
 #define unlikely_if(x) if (unlikely(x))
 
+#define STATIC_ASSERT(expr) _Static_assert(expr, #expr)
+
 /*
   void f(int n, int *noalias p, int *noalias q, const int *noalias a, const int *noalias b) {
     for (int i = 0; i < n; ++i) {

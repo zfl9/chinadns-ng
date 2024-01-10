@@ -1,6 +1,5 @@
 #define _GNU_SOURCE
 #include "ipset.h"
-#include "opt.h"
 #include "net.h"
 #include "log.h"
 #include "dnl.h"
@@ -242,7 +241,7 @@ static inline const char *ipset_strerror(int errcode) {
 static int s_sock   = -1; /* netlink socket fd */
 static u32 s_portid = 0; /* local address (port-id) */
 
-static struct mmsghdr s_msgv[MSG_N];
+static MMSGHDR s_msgv[MSG_N];
 static struct iovec   s_iov[IOV_N];
 
 /* for nft [add] */
@@ -579,7 +578,7 @@ void ipset_init(const char *noalias tagnone_setname4,
 static inline int send_req(int n_msg) {
     assert(n_msg > 0);
     assert(n_msg <= MSG_N);
-    int n_sent = sendall(g_sendmmsg, s_sock, s_msgv, n_msg, 0);
+    int n_sent = sendall(SENDMMSG, s_sock, s_msgv, n_msg, 0);
     assert(n_sent != 0);
     unlikely_if (n_sent != n_msg)
         log_error("failed to send nlmsg: %d != %d, (%d) %s", n_sent, n_msg, errno, strerror(errno));
@@ -590,7 +589,7 @@ static inline int send_req(int n_msg) {
 static inline int recv_res(int n_msg, bool err_if_nomsg) {
     assert(n_msg > 0);
     assert(n_msg <= MSG_N);
-    int n_recv = g_recvmmsg(s_sock, s_msgv, n_msg, MSG_DONTWAIT, NULL);
+    int n_recv = RECVMMSG(s_sock, s_msgv, n_msg, MSG_DONTWAIT, NULL);
     assert(n_recv != 0);
     if (n_recv < 0) { /* no-msg or error */
         if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -628,7 +627,7 @@ bool ipset_test_ip(const void *noalias ip, bool v4) {
 
     /* send request */
     set_iov(&s_iov[0], t_nlmsg(v4), t_nlmsg(v4)->nlmsg_len);
-    set_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], 1, NULL, 0);
+    set_MSGHDR(&s_msgv[0].msg_hdr, &s_iov[0], 1, NULL, 0);
     unlikely_if (send_req(1) < 0) return false; /* send failed */
 
     /* recv response */
@@ -682,7 +681,7 @@ static inline void init_nlerr_msgv(int n) {
     size_t sz = NLMSG_SPACE(sizeof(struct nlmsgerr));
     for (int i = 0; i < n; ++i) {
         set_iov(&s_iov[i], s_buf_res + sz * i, sz);
-        set_msghdr(&s_msgv[i].msg_hdr, &s_iov[i], 1, NULL, 0);
+        set_MSGHDR(&s_msgv[i].msg_hdr, &s_iov[i], 1, NULL, 0);
     }
 }
 
@@ -711,7 +710,7 @@ static void test_ips(const struct addctx *noalias ctx, bitvec_t exists[noalias],
             next_ip(ctx, v4, &base1);
             set_iov(&s_iov[i*2], base0, len0);
             set_iov(&s_iov[i*2+1], base1, len1);
-            set_msghdr(&s_msgv[i].msg_hdr, &s_iov[i*2], 2, NULL, 0);
+            set_MSGHDR(&s_msgv[i].msg_hdr, &s_iov[i*2], 2, NULL, 0);
         }
     }
 
@@ -783,7 +782,7 @@ static int end_add_ip_ipset(const struct addctx *noalias ctx) {
         nlmsg->nlmsg_len += add_n * elemsz;
 
         int i = n_msg++;
-        set_msghdr(&s_msgv[i].msg_hdr, &s_iov[iov_i - 1 - add_n], 1 + add_n, NULL, 0);
+        set_MSGHDR(&s_msgv[i].msg_hdr, &s_iov[iov_i - 1 - add_n], 1 + add_n, NULL, 0);
     }
 
     return n_msg;
@@ -853,7 +852,7 @@ static int end_add_ip_nft(const struct addctx *noalias ctx) {
     set_iov(&s_iov[iov_i], &s_batch_end, sizeof(s_batch_end));
     ++iov_i;
 
-    set_msghdr(&s_msgv[0].msg_hdr, &s_iov[0], iov_i, NULL, 0);
+    set_MSGHDR(&s_msgv[0].msg_hdr, &s_iov[0], iov_i, NULL, 0);
 
     return 1;
 }

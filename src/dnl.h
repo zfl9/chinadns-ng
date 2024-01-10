@@ -9,7 +9,7 @@
 #define NAME_TAG_NONE 2 // did not match any list
 
 /* initialize domain-name-list from file */
-void dnl_init(const char *noalias gfwlist_filenames, const char *noalias chnlist_filenames, bool gfwlist_first);
+void dnl_init(const char *noalias gfwlist[noalias], const char *noalias chnlist[noalias], bool gfwlist_first);
 
 bool dnl_is_empty(void);
 

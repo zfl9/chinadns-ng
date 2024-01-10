@@ -209,10 +209,10 @@ pub inline fn malloc_many(comptime T: type, n: usize) ?[]T {
 }
 
 /// if `old_memory.len` is 0 it is treated as a null pointer
-pub inline fn realloc(comptime T: type, old_memory: []T, new_size: usize) ?[]T {
+pub inline fn realloc(comptime T: type, old_memory: []T, new_n: usize) ?[]T {
     const old_ptr = if (old_memory.len > 0) old_memory.ptr else null;
-    const new_ptr = c.realloc(old_ptr, new_size) orelse return null;
-    return @ptrCast([*]T, @alignCast(@alignOf(T), new_ptr))[0..new_size];
+    const new_ptr = c.realloc(old_ptr, new_n * @sizeOf(T)) orelse return null;
+    return @ptrCast([*]T, @alignCast(@alignOf(T), new_ptr))[0..new_n];
 }
 
 pub inline fn free(memory: anytype) void {
@@ -303,6 +303,10 @@ pub inline fn fflush(file: ?*c.FILE) c_int {
     return c.fflush(file);
 }
 
+pub inline fn setvbuf(file: *c.FILE, buffer: ?[*]u8, mode: c_int, size: usize) c_int {
+    return c.setvbuf(file, buffer, mode, size);
+}
+
 // ==============================================================
 
 pub inline fn time() c.time_t {
@@ -317,6 +321,10 @@ pub inline fn localtime(t: c.time_t) ?*c.struct_tm {
 
 pub inline fn getenv(env_name: ConstStr) ?ConstStr {
     return c.getenv(env_name);
+}
+
+pub inline fn setenv(env_name: ConstStr, value: ConstStr, is_replace: bool) c_int {
+    return c.setenv(env_name, value, if (is_replace) 1 else 0);
 }
 
 // ==============================================================

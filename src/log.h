@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "opt.h"
 
 #ifndef LOG_FILENAME
 #define LOG_FILENAME __FILE__
@@ -16,10 +15,6 @@
         tm_->tm_year + 1900, tm_->tm_mon + 1, tm_->tm_mday, \
         tm_->tm_hour,        tm_->tm_min,     tm_->tm_sec, \
         __func__, ##args); \
-})
-
-#define log_verbose(fmt, args...) ({ \
-    if_verbose log_info(fmt, ##args); \
 })
 
 #define log_info(fmt, args...) \

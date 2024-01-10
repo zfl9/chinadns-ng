@@ -22,9 +22,8 @@ pub const Tag = enum(u8) {
     }
 };
 
-// TODO: change arg format
 pub inline fn init() void {
-    return c.dnl_init(g.gfwlist_filenames, g.chnlist_filenames, g.gfwlist_first);
+    return c.dnl_init(g.gfwlist_filenames.items.ptr, g.chnlist_filenames.items.ptr, g.gfwlist_first);
 }
 
 pub inline fn is_empty() bool {
