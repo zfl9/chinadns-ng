@@ -622,10 +622,6 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
         "-Wvla",
     });
 
-    // dependency lib
-    const macro_enable_openssl = fmt("ENABLE_OPENSSL=\"{s}\"", .{_dep_openssl.version});
-    const macro_enable_mimalloc = fmt("ENABLE_MIMALLOC=\"{s}\"", .{_dep_mimalloc.version});
-
     var dir = std.fs.cwd().openIterableDir("src", .{}) catch unreachable;
     defer dir.close();
 
@@ -659,14 +655,8 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
             obj.defineCMacroRaw("MUSL");
 
         // openssl lib
-        if (_enable_openssl) {
-            obj.defineCMacroRaw(macro_enable_openssl);
+        if (_enable_openssl)
             obj.addIncludePath(_dep_openssl.include_dir);
-        }
-
-        // mimalloc lib
-        if (_enable_mimalloc)
-            obj.defineCMacroRaw(macro_enable_mimalloc);
 
         // for log.h
         obj.defineCMacroRaw(fmt("LOG_FILENAME=\"{s}\"", .{file.name}));

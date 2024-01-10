@@ -5,17 +5,14 @@
             "intelliSenseMode": "linux-clang-x64",
             "compilerPath": "/usr/bin/clang",
             "compilerArgs": [
-                "-I${workspaceFolder}/dep/openssl-3.2.0:native:default/include",
+                "-I${workspaceFolder}/dep/openssl-3.2.0@x86_64-linux-musl@x86_64+native@fast+lto/include",
                 "-I${workspaceFolder}/dep/mimalloc-2.1.2/include"
             ],
             "defines": [
-                "ENABLE_OPENSSL=\"3.2.0\"",
-                "ENABLE_MIMALLOC=\"2.1.2\"",
-                "CC_TARGET=\"native\"",
-                "CC_CPU=\"default\"",
-                "CC_MODE=\"fast\""
+                // "MUSL",
+                // "TEST",
             ],
-            "cStandard": "c99",
+            "cStandard": "c11",
             "cppStandard": "c++17"
         }
     ],

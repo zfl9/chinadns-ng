@@ -75,7 +75,6 @@ union skaddr {
 #define skaddr_size(p) (skaddr_is_sin(p) ? sizeof((p)->sin) : sizeof((p)->sin6))
 
 void skaddr_from_text(int family, union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno);
-
 void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno);
 
 static inline void ignore_sigpipe(void) {
