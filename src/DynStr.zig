@@ -1,7 +1,7 @@
 //! for simple short strings, such as the value of a command line option.
 //! not looking for performance, but it's better to keep the structure compact.
 
-const C = @import("C.zig");
+const cc = @import("cc.zig");
 
 /// string content
 str: [:0]u8 = &[_:0]u8{},
@@ -12,7 +12,7 @@ const Self = @This();
 
 pub fn deinit(self: *Self) void {
     if (!self.is_null())
-        C.free(self.get_memory());
+        cc.free(self.get_memory());
 }
 
 /// copy string to buffer
@@ -41,7 +41,7 @@ pub fn set_ex(self: *Self, str_list: []const []const u8) void {
 
 fn check_cap(self: *Self, strlen: usize) void {
     if (strlen + 1 > self.capacity) {
-        const new_memory = C.realloc(u8, self.get_memory(), strlen + 1).?;
+        const new_memory = cc.realloc(u8, self.get_memory(), strlen + 1).?;
         self.set_memory(new_memory);
     }
 }

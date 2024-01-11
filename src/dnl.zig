@@ -1,5 +1,5 @@
 const c = @import("c.zig");
-const C = @import("C.zig");
+const cc = @import("cc.zig");
 const g = @import("g.zig");
 const std = @import("std");
 const testing = std.testing;
@@ -17,7 +17,7 @@ pub const Tag = enum(u8) {
         return @intToEnum(Tag, v);
     }
 
-    pub inline fn desc(tag: Tag) C.ConstStr {
+    pub inline fn desc(tag: Tag) cc.ConstStr {
         return c.get_tag_desc(tag.to_int());
     }
 };
@@ -31,11 +31,11 @@ pub inline fn is_empty() bool {
 }
 
 pub inline fn get_name_tag(domain_name: [:0]const u8) Tag {
-    return Tag.from_int(c.get_name_tag(domain_name.ptr, C.to_int(domain_name.len), g.default_tag.to_int()));
+    return Tag.from_int(c.get_name_tag(domain_name.ptr, cc.to_int(domain_name.len), g.default_tag.to_int()));
 }
 
 pub fn @"test: get tag desc"() !void {
-    try testing.expectEqualStrings("gfw", C.strslice(Tag.gfw.desc()));
-    try testing.expectEqualStrings("chn", C.strslice(Tag.chn.desc()));
-    try testing.expectEqualStrings("none", C.strslice(Tag.none.desc()));
+    try testing.expectEqualStrings("gfw", cc.strslice(Tag.gfw.desc()));
+    try testing.expectEqualStrings("chn", cc.strslice(Tag.chn.desc()));
+    try testing.expectEqualStrings("none", cc.strslice(Tag.none.desc()));
 }

@@ -1,7 +1,7 @@
 const std = @import("std");
 // const builtin = @import("builtin");
 const c = @import("c.zig");
-const C = @import("C.zig");
+const cc = @import("cc.zig");
 const SourceLocation = std.builtin.SourceLocation;
 
 const Level = enum {
@@ -34,7 +34,7 @@ const Level = enum {
 
 /// year, month, day, hour, min, sec
 fn time() [6]c_int {
-    const tm = C.localtime(C.time()).?;
+    const tm = cc.localtime(cc.time()).?;
     return .{ tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec };
 }
 
@@ -63,7 +63,7 @@ fn log_write(comptime level: Level, comptime src: SourceLocation, comptime in_fm
     const fmt = prefix ++ " " ++ in_fmt ++ "\n";
     const t = time();
     const args = .{ t[0], t[1], t[2], t[3], t[4], t[5] } ++ in_args;
-    @call(.{}, C.printf, .{ fmt, args });
+    @call(.{}, cc.printf, .{ fmt, args });
 }
 
 /// enabled for debug build only
@@ -86,12 +86,12 @@ pub fn err(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: anyty
 
 pub fn fatal(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
     log_write(.Fatal, src, fmt, args);
-    _ = C.fflush(null);
+    _ = cc.fflush(null);
     c.abort();
 }
 
 pub fn @"test: logging"() !void {
-    if (C.getenv("TEST_LOGGING") == null) return;
+    if (cc.getenv("TEST_LOGGING") == null) return;
     test_logging();
 }
 

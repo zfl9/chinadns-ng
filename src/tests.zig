@@ -1,6 +1,6 @@
 const std = @import("std");
 const root = @import("root");
-const C = @import("C.zig");
+const cc = @import("cc.zig");
 
 const TestFn = struct {
     name: [:0]const u8,
@@ -50,29 +50,29 @@ pub fn main() u8 {
     var failed_count: usize = 0;
 
     for (all_test_fns) |test_fn| {
-        C.printf_err("%s\n", .{test_fn.name.ptr});
+        cc.printf_err("%s\n", .{test_fn.name.ptr});
 
         if (nosuspend test_fn.func()) |_| {
             ok_count += 1;
-            C.printf_err("%-35s [\x1b[32;1mOK\x1b[0m]\n", .{test_fn.name.ptr});
+            cc.printf_err("%-35s [\x1b[32;1mOK\x1b[0m]\n", .{test_fn.name.ptr});
         } else |err| switch (err) {
             error.SkipZigTest => {
                 skip_count += 1;
-                C.printf_err("%-35s [\x1b[34;1mSKIP\x1b[0m]\n", .{test_fn.name.ptr});
+                cc.printf_err("%-35s [\x1b[34;1mSKIP\x1b[0m]\n", .{test_fn.name.ptr});
             },
             else => {
                 failed_count += 1;
-                C.printf_err("\x1b[31;1merror: %s\x1b[0m\n", .{@errorName(err).ptr});
+                cc.printf_err("\x1b[31;1merror: %s\x1b[0m\n", .{@errorName(err).ptr});
                 if (@errorReturnTrace()) |trace|
                     std.debug.dumpStackTrace(trace.*);
-                C.printf_err("%-35s [\x1b[31;1mFAILED\x1b[0m]\n", .{test_fn.name.ptr});
+                cc.printf_err("%-35s [\x1b[31;1mFAILED\x1b[0m]\n", .{test_fn.name.ptr});
             },
         }
 
-        C.printf_err("\n", .{});
+        cc.printf_err("\n", .{});
     }
 
-    C.printf_err("summary: %sOK: %zu\x1b[0m | %sSKIP: %zu\x1b[0m | %sFAILED: %zu\x1b[0m\n", .{
+    cc.printf_err("summary: %sOK: %zu\x1b[0m | %sSKIP: %zu\x1b[0m | %sFAILED: %zu\x1b[0m\n", .{
         @as([:0]const u8, if (ok_count > 0) "\x1b[32;1m" else "").ptr,
         ok_count,
         @as([:0]const u8, if (skip_count > 0) "\x1b[34;1m" else "").ptr,

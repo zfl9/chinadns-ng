@@ -5,7 +5,7 @@ const build_opts = @import("build_opts");
 const tests = @import("tests.zig");
 
 const c = @import("c.zig");
-const C = @import("C.zig");
+const cc = @import("cc.zig");
 const g = @import("g.zig");
 const log = @import("log.zig");
 const opt = @import("opt.zig");
@@ -22,7 +22,7 @@ const StrList = @import("StrList.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c, C, g, log, opt, dnl, ipset, fmtchk, str2int, DynStr, StrList,
+    c, cc, g, log, opt, dnl, ipset, fmtchk, str2int, DynStr, StrList,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -37,10 +37,10 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 pub fn main() u8 {
     c.ignore_sigpipe();
 
-    _ = C.setvbuf(C.stdout, null, c._IOLBF, 256);
+    _ = cc.setvbuf(cc.stdout, null, c._IOLBF, 256);
 
     // setting default values for TZ
-    _ = C.setenv("TZ", ":/etc/localtime", false);
+    _ = cc.setenv("TZ", ":/etc/localtime", false);
 
     if (build_opts.is_test)
         return tests.main();
@@ -50,7 +50,7 @@ pub fn main() u8 {
     c.net_init();
 
     for (g.bind_ips.items) |ip|
-        log.info(@src(), "local listen addr: %s#%u", .{ ip.?, C.to_uint(g.bind_port) });
+        log.info(@src(), "local listen addr: %s#%u", .{ ip.?, cc.to_uint(g.bind_port) });
 
     for (g.chinadns_addrs.items) |addr, i|
         log.info(@src(), "chinadns server#%zu: %s", .{ i + 1, addr.? });

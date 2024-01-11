@@ -4,13 +4,13 @@ const std = @import("std");
 const builtin = @import("builtin");
 const build_opts = @import("build_opts");
 
-const C = @import("C.zig");
+const cc = @import("cc.zig");
 const dnl = @import("dnl.zig");
 const NoAAAA = @import("NoAAAA.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 
-pub const VERSION: C.ConstStr = b: {
+pub const VERSION: cc.ConstStr = b: {
     var target: [:0]const u8 = @tagName(builtin.cpu.arch) ++ "-" ++ @tagName(builtin.os.tag) ++ "-" ++ @tagName(builtin.abi);
 
     if (builtin.target.isGnuLibC())

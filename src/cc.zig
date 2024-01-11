@@ -1,6 +1,6 @@
 //! - provide type-safety version of C functions
 //! - fix improperly translated C code/declarations
-const C = @This();
+const cc = @This();
 
 const c = @import("c.zig");
 const fmtchk = @import("fmtchk.zig");
@@ -169,7 +169,7 @@ fn StrSlice(comptime S: type, comptime force_const: bool) type {
     }
 }
 
-/// caller own the returned memory | C.free(ptr)
+/// caller own the returned memory | cc.free(ptr)
 pub fn strdup(str: anytype) [:0]u8 {
     const s = strslice_c(str);
     return strdup_internal(s, malloc_many(u8, s.len + 1).?);
@@ -248,12 +248,12 @@ pub inline fn fprintf(file: *c.FILE, comptime fmt: [:0]const u8, args: anytype) 
 
 /// print to stdout
 pub inline fn printf(comptime fmt: [:0]const u8, args: anytype) void {
-    return fprintf(C.stdout, fmt, args);
+    return fprintf(cc.stdout, fmt, args);
 }
 
 /// print to stderr
 pub inline fn printf_err(comptime fmt: [:0]const u8, args: anytype) void {
-    return fprintf(C.stderr, fmt, args);
+    return fprintf(cc.stderr, fmt, args);
 }
 
 /// print to string-buffer

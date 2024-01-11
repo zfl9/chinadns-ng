@@ -1,6 +1,6 @@
 const std = @import("std");
 const c = @import("c.zig");
-const C = @import("C.zig");
+const cc = @import("cc.zig");
 
 const Type = std.builtin.Type;
 const StructField = Type.StructField;
@@ -432,7 +432,7 @@ pub fn @"test: printf format checker"() !void {
     check("hello, %s %tn %s\n", .{ "world", &ptrdiff, string_p_many });
 
     // strerror(errno) %m
-    check("failed to do something: (%d) %m\n", .{C.errno()}); // supported by glibc and musl
+    check("failed to do something: (%d) %m\n", .{cc.errno()}); // supported by glibc and musl
     check("failed to do something: (%#m) %m\n", .{}); // supported by glibc only. in musl, %#m equals %m
 
     // flags

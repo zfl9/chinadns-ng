@@ -4,7 +4,7 @@
 
 // import into the current namespace (c.zig)
 // mainly used to access C constants, C typedefs
-// please give priority to using functions in the C namespace
+// please give priority to using functions in the `cc` namespace
 pub usingnamespace @cImport({
     @cDefine("_GNU_SOURCE", {});
 

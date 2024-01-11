@@ -1,6 +1,6 @@
 const std = @import("std");
 const c = @import("c.zig");
-const C = @import("C.zig");
+const cc = @import("cc.zig");
 const g = @import("g.zig");
 const log = @import("log.zig");
 const str2int = @import("str2int.zig");
@@ -106,23 +106,23 @@ fn opt_config(in_value: ?[]const u8) void {
 
     const value = in_value.?;
     if (value.len > c.PATH_MAX)
-        err_exit(@src(), "filename is too long: '%.*s'", .{ C.to_int(value.len), value.ptr });
+        err_exit(@src(), "filename is too long: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 
     // TODO: vla/alloca allocator
-    const filename = C.strdup(value);
-    defer C.free(filename);
+    const filename = cc.strdup(value);
+    defer cc.free(filename);
 
-    const file = C.fopen(filename, "r") orelse
+    const file = cc.fopen(filename, "r") orelse
         err_exit(@src(), "failed to open the config file: '%s' (%m)", .{filename.ptr});
-    defer C.fclose(file);
+    defer cc.fclose(file);
 
     var buf: [512]u8 = undefined;
-    while (C.fgets(file, &buf)) |p_line| {
-        const line = C.strslice_c(p_line);
+    while (cc.fgets(file, &buf)) |p_line| {
+        const line = cc.strslice_c(p_line);
 
         if (line[line.len - 1] == '\n')
             p_line[line.len - 1] = 0 // remove \n
-        else if (!C.feof(file)) // last line may not have \n
+        else if (!cc.feof(file)) // last line may not have \n
             err_exit(@src(), "'%s': line is too long: %s", .{ filename.ptr, p_line });
 
         // optname [optvalue]
@@ -164,22 +164,22 @@ const Error = error{
 };
 
 fn catch_msg(comptime src: std.builtin.SourceLocation, comptime msg: [:0]const u8, value: []const u8) void {
-    err_msg(src, msg ++ ": '%.*s'", .{ C.to_int(value.len), value.ptr });
+    err_msg(src, msg ++ ": '%.*s'", .{ cc.to_int(value.len), value.ptr });
 }
 
 fn catch_exit(comptime src: std.builtin.SourceLocation, value: []const u8) noreturn {
-    err_exit(src, "invalid opt-value: '%.*s'", .{ C.to_int(value.len), value.ptr });
+    err_exit(src, "invalid opt-value: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 }
 
 fn check_ip(value: []const u8) Error!void {
     var buf: [64]u8 = undefined;
 
-    const ip = C.strdup_r(value, &buf) catch {
+    const ip = cc.strdup_r(value, &buf) catch {
         catch_msg(@src(), "ip is too long", value);
         return Error.invalid;
     };
 
-    if (C.get_ipstr_family(ip.ptr) == -1) {
+    if (cc.get_ipstr_family(ip.ptr) == -1) {
         catch_msg(@src(), "invalid ip", value);
         return Error.invalid;
     }
@@ -280,7 +280,7 @@ fn opt_default_tag(in_value: ?[]const u8) void {
             return;
         }
     }
-    err_exit(@src(), "invalid domain tag: '%.*s'", .{ C.to_int(value.len), value.ptr });
+    err_exit(@src(), "invalid domain tag: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 }
 
 fn opt_add_tagchn_ip(in_value: ?[]const u8) void {
@@ -324,14 +324,14 @@ fn opt_timeout_sec(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.upstream_timeout = str2int.parse(@TypeOf(g.upstream_timeout), value, 10) catch 0;
     if (g.upstream_timeout == 0)
-        err_exit(@src(), "invalid upstream timeout: '%.*s'", .{ C.to_int(value.len), value.ptr });
+        err_exit(@src(), "invalid upstream timeout: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 }
 
 fn opt_repeat_times(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.trustdns_repeat_n = str2int.parse(@TypeOf(g.trustdns_repeat_n), value, 10) catch 0;
     if (g.trustdns_repeat_n == 0)
-        err_exit(@src(), "invalid trust-dns repeat times: '%.*s'", .{ C.to_int(value.len), value.ptr });
+        err_exit(@src(), "invalid trust-dns repeat times: '%.*s'", .{ cc.to_int(value.len), value.ptr });
     g.trustdns_repeat_n = std.math.min(g.trustdns_repeat_n, g.TRUSTDNS_REPEAT_MAX);
 }
 
@@ -352,12 +352,12 @@ fn opt_verbose(_: ?[]const u8) void {
 }
 
 fn opt_version(_: ?[]const u8) void {
-    C.printf("%s\n", .{g.VERSION});
+    cc.printf("%s\n", .{g.VERSION});
     c.exit(0);
 }
 
 fn opt_help(_: ?[]const u8) void {
-    C.printf("%s\n", .{help});
+    cc.printf("%s\n", .{help});
     c.exit(0);
 }
 
@@ -426,18 +426,18 @@ fn pop_arg(self: *Self) ?[:0]const u8 {
 
 fn handle_opt(self: *Self, name: []const u8, in_value: ?[:0]const u8) void {
     const optdef = get_optdef(name) orelse
-        err_exit(@src(), "unknown option: '%.*s'", .{ C.to_int(name.len), name.ptr });
+        err_exit(@src(), "unknown option: '%.*s'", .{ cc.to_int(name.len), name.ptr });
 
     const value = switch (optdef.value) {
         .required => if (in_value) |v| v else self.take_value(name, true),
         .optional => if (in_value) |v| v else self.take_value(name, false),
         .no_value => if (in_value == null) null else {
-            err_exit(@src(), "option '%.*s' does not accept any values: '%s'", .{ C.to_int(name.len), name.ptr, in_value.?.ptr });
+            err_exit(@src(), "option '%.*s' does not accept any values: '%s'", .{ cc.to_int(name.len), name.ptr, in_value.?.ptr });
         },
     };
 
     if (value != null and value.?.len <= 0)
-        err_exit(@src(), "option '%.*s' does not accept empty string", .{ C.to_int(name.len), name.ptr });
+        err_exit(@src(), "option '%.*s' does not accept empty string", .{ cc.to_int(name.len), name.ptr });
 
     optdef.optfn(value);
 }
@@ -445,7 +445,7 @@ fn handle_opt(self: *Self, name: []const u8, in_value: ?[:0]const u8) void {
 fn take_value(self: *Self, name: []const u8, required: bool) ?[:0]const u8 {
     const arg = self.peek_arg() orelse {
         if (required)
-            err_exit(@src(), "expect a value for option '%.*s'", .{ C.to_int(name.len), name.ptr });
+            err_exit(@src(), "expect a value for option '%.*s'", .{ cc.to_int(name.len), name.ptr });
         return null;
     };
 
@@ -458,12 +458,12 @@ fn take_value(self: *Self, name: []const u8, required: bool) ?[:0]const u8 {
 }
 
 fn err_msg(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) void {
-    C.printf(log.srcinfo(src, true) ++ " " ++ fmt ++ "\n", args);
+    cc.printf(log.srcinfo(src, true) ++ " " ++ fmt ++ "\n", args);
 }
 
 fn err_exit(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
-    C.printf(log.srcinfo(src, true) ++ " " ++ fmt ++ "\n", args);
-    C.printf("%s\n", .{help});
+    cc.printf(log.srcinfo(src, true) ++ " " ++ fmt ++ "\n", args);
+    cc.printf("%s\n", .{help});
     c.exit(1);
 }
 
