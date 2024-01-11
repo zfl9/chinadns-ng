@@ -10,6 +10,7 @@ const g = @import("g.zig");
 const log = @import("log.zig");
 const opt = @import("opt.zig");
 const dnl = @import("dnl.zig");
+const ipset = @import("ipset.zig");
 const fmtchk = @import("fmtchk.zig");
 const str2int = @import("str2int.zig");
 const DynStr = @import("DynStr.zig");
@@ -21,7 +22,7 @@ const StrList = @import("StrList.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c, C, g, log, opt, dnl, fmtchk, str2int, DynStr, StrList,
+    c, C, g, log, opt, dnl, ipset, fmtchk, str2int, DynStr, StrList,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -58,6 +59,10 @@ pub fn main() u8 {
         log.info(@src(), "trustdns server#%zu: %s", .{ i + 1, addr.? });
 
     dnl.init();
+
+    log.info(@src(), "default domain name tag: %s", .{g.default_tag.desc()});
+
+    ipset.init();
 
     return 0;
 }

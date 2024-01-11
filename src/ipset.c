@@ -519,7 +519,7 @@ void ipset_init(const char *noalias tagnone_setname4,
     __typeof__(&init_req_ipset) init_req;
 
     if (strchr(tagnone_setname4, '@') || strchr(tagnone_setname6, '@') ||
-        strchr(tagchn_setname46 ?: "", '@') || strchr(taggfw_setname46 ?: "", '@'))
+        strchr(tagchn_setname46, '@') || strchr(taggfw_setname46, '@'))
     {
         log_info("current backend: nft");
         init_req = init_req_nft;
@@ -538,7 +538,7 @@ void ipset_init(const char *noalias tagnone_setname4,
     }
 
     /* tag:chn add */
-    if (tagchn_setname46) {
+    if (strlen(tagchn_setname46) > 0) {
         char name4[NAME_MAXLEN], name6[NAME_MAXLEN];
         parse_name46(tagchn_setname46, name4, name6);
         log_info("tag:chn add: %s", name4);
@@ -551,7 +551,7 @@ void ipset_init(const char *noalias tagnone_setname4,
     }
 
     /* tag:gfw add */
-    if (taggfw_setname46) {
+    if (strlen(taggfw_setname46) > 0) {
         char name4[NAME_MAXLEN], name6[NAME_MAXLEN];
         parse_name46(taggfw_setname46, name4, name6);
         log_info("tag:gfw add: %s", name4);
