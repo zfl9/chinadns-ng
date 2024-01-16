@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -o errexit
 set -o pipefail
 
@@ -6,4 +6,4 @@ set -o pipefail
 data="$(curl -4fsSkL https://ftp.apnic.net/stats/apnic/delegated-apnic-latest | grep CN | grep ipv6)"
 
 echo "create chnroute6 hash:net family inet6" >chnroute6.ipset
-awk -F'|' '{printf("add chnroute6 %s/%d\n", $4, $5)}' <<<"$data" >>chnroute6.ipset
+echo "$data" | awk -F'|' '{printf("add chnroute6 %s/%d\n", $4, $5)}' >>chnroute6.ipset
