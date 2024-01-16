@@ -15,6 +15,20 @@ const isConstPtr = trait.isConstPtr;
 
 // ==============================================================
 
+/// in stage1, `if (b) expr1 else expr2` expressions do not compile correctly \
+/// if they are present in the argument tuple, so use this function to wrap it
+pub inline fn b2v(b: bool, true_v: anytype, false_v: anytype) @TypeOf(true_v, false_v) {
+    return if (b) true_v else false_v;
+}
+
+/// in stage1, `if (b) expr1 else expr2` expressions do not compile correctly \
+/// if they are present in the argument tuple, so use this function to wrap it
+pub inline fn b2s(b: bool, true_v: ConstStr, false_v: ConstStr) ConstStr {
+    return if (b) true_v else false_v;
+}
+
+// ==============================================================
+
 pub const Str = [*:0]u8;
 pub const ConstStr = [*:0]const u8;
 

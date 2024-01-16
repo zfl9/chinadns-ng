@@ -89,9 +89,10 @@ pub var chinadns_addrs: StrList = .{};
 pub var trustdns_addrs: StrList = .{};
 
 /// too large may cause stack overflow
-pub const TRUSTDNS_REPEAT_MAX: u8 = 5;
+pub const TRUSTDNS_PACKET_MAX: u8 = 5;
 
-pub var trustdns_repeat_n: u8 = 1;
+/// number of packets to send
+pub var trustdns_packet_n: u8 = 1;
 
 /// in seconds
 pub var upstream_timeout: u8 = 5;

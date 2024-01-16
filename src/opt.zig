@@ -12,16 +12,16 @@ const testing = std.testing;
 const help =
     \\usage: chinadns-ng <options...>. the existing options are as follows:
     \\ -C, --config <path>                  format similar to the long option
-    \\ -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1
-    \\ -l, --bind-port <port-number>        listen port number, default: 65353
-    \\ -c, --china-dns <ip[#port],...>      china dns server, default: <114DNS>
-    \\ -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>
+    \\ -b, --bind-addr <ip>                 listen address, default: 127.0.0.1
+    \\ -l, --bind-port <port>               listen port number, default: 65353
+    \\ -c, --china-dns <ip[#port],...>      china dns server, default: <114 DNS>
+    \\ -t, --trust-dns <ip[#port],...>      trust dns server, default: <Google DNS>
     \\ -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin
     \\ -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin
     \\ -M, --chnlist-first                  match chnlist first, default gfwlist first
-    \\ -d, --default-tag <name-tag>         domain default tag: chn,gfw,none(default)
+    \\ -d, --default-tag <tag>              domain default tag: chn,gfw,none(default)
     \\ -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nft
-    \\                                      use '--ipset-name4/6' set-name if no arg
+    \\                                      use '--ipset-name4/6' setname if no value
     \\ -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft
     \\ -4, --ipset-name4 <set4>             ip test for tag:none, default: chnroute
     \\ -6, --ipset-name6 <set6>             ip test for tag:none, default: chnroute6
@@ -29,16 +29,16 @@ const help =
     \\                                      format: family_name@table_name@set_name
     \\ -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:
     \\                                      rule a: filter all domain name (default)
-    \\                                      rule m: filter the name with tag chn
-    \\                                      rule g: filter the name with tag gfw
-    \\                                      rule n: filter the name with tag none
+    \\                                      rule m: filter the domain with tag chn
+    \\                                      rule g: filter the domain with tag gfw
+    \\                                      rule n: filter the domain with tag none
     \\                                      rule c: do not forward to china upstream
     \\                                      rule t: do not forward to trust upstream
     \\                                      rule C: check answer ip of china upstream
     \\                                      rule T: check answer ip of trust upstream
     \\                                      if no rules is given, it defaults to 'a'
-    \\ -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
-    \\ -p, --repeat-times <repeat-times>    only used for trustdns, default:1, max:5
+    \\ -o, --timeout-sec <sec>              response timeout of upstream, default: 5
+    \\ -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
     \\ -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
     \\ -f, --fair-mode                      enable fair mode (nop, only fair mode now)
     \\ -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
@@ -329,10 +329,10 @@ fn opt_timeout_sec(in_value: ?[]const u8) void {
 
 fn opt_repeat_times(in_value: ?[]const u8) void {
     const value = in_value.?;
-    g.trustdns_repeat_n = str2int.parse(@TypeOf(g.trustdns_repeat_n), value, 10) catch 0;
-    if (g.trustdns_repeat_n == 0)
-        err_exit(@src(), "invalid trust-dns repeat times: '%.*s'", .{ cc.to_int(value.len), value.ptr });
-    g.trustdns_repeat_n = std.math.min(g.trustdns_repeat_n, g.TRUSTDNS_REPEAT_MAX);
+    g.trustdns_packet_n = str2int.parse(@TypeOf(g.trustdns_packet_n), value, 10) catch 0;
+    if (g.trustdns_packet_n == 0)
+        err_exit(@src(), "invalid trust-dns packets num: '%.*s'", .{ cc.to_int(value.len), value.ptr });
+    g.trustdns_packet_n = std.math.min(g.trustdns_packet_n, g.TRUSTDNS_PACKET_MAX);
 }
 
 fn opt_noip_as_chnip(_: ?[]const u8) void {
@@ -391,6 +391,7 @@ fn parse_opt(self: *Self) void {
             err_exit(@src(), "invalid short option: '%s'", .{arg.ptr});
 
         // -x
+        // -x5
         // -x=5
         // -x 5
         if (arg.len == 2)

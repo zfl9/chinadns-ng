@@ -64,5 +64,14 @@ pub fn main() u8 {
 
     ipset.init();
 
+    g.noaaaa_query.display();
+
+    log.info(@src(), "response timeout of upstream: %u", .{cc.to_uint(g.upstream_timeout)});
+
+    if (g.trustdns_packet_n > 1)
+        log.info(@src(), "num of packets to trustdns: %u", .{cc.to_uint(g.trustdns_packet_n)});
+
+    log.info(@src(), "%s no-ip reply from chinadns", .{cc.b2s(g.noip_as_chnip, "accept", "filter")});
+
     return 0;
 }
