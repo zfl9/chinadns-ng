@@ -105,7 +105,6 @@
 6parknews.com
 7capture.com
 7cow.com
-7-zip.org
 85cc.net
 85cc.us
 85st.com
@@ -284,6 +283,7 @@ animecrazy.net
 aniscartujo.com
 annatam.com
 anobii.com
+anonfiles.com
 anontext.com
 anonymitynetwork.com
 anonymizer.com
@@ -434,6 +434,7 @@ backpackers.com.tw
 backtotiananmen.com
 badiucao.com
 badjojo.com
+bad.news
 badoo.com
 bahamut.com.tw
 baidu.jp
@@ -832,6 +833,7 @@ cahr.org.tw
 caijinglengyan.com
 calameo.com
 calebelston.com
+calendarz.com
 calgarychinese.ca
 calgarychinese.com
 calgarychinese.net
@@ -906,6 +908,7 @@ cdninstagram.com
 cdn.printfriendly.com
 cdn.seatguru.com
 cdn.softlayer.net
+cdn-telegram.org
 cdp1989.org
 cdp1998.org
 cdp2006.org
@@ -1069,6 +1072,7 @@ civildisobediencemovement.org
 civilhrfront.org
 civiliangunner.com
 civilmedia.tw
+civitai.com
 ck101.com
 clarionproject.org
 classicalguitarblog.net
@@ -1087,6 +1091,7 @@ clinica-tibet.ru
 clipfish.de
 cloakpoint.com
 cloudflare-ipfs.com
+cloudfunctions.net
 cloud.mail.ru
 club1069.com
 clubhouseapi.com
@@ -1147,6 +1152,7 @@ comefromchina.com
 com.google
 comic-mega.me
 commandarms.com
+comments.app
 commentshk.com
 communistcrimes.org
 communitychoicecu.com
@@ -1161,6 +1167,7 @@ contactmagazine.net
 contests.twilio.com
 convio.net
 coobay.com
+cool18.com
 coolaler.com
 coolder.com
 coolloud.org.tw
@@ -1360,6 +1367,7 @@ discuss4u.com
 discuss.com.hk
 dish.com
 disk.yandex.com
+disk.yandex.ru
 disp.cc
 disqus.com
 dit-inc.us
@@ -1420,7 +1428,6 @@ doujincafe.com
 dowei.org
 download.aircrack-ng.org
 download.cnet.com
-download.ithome.com.tw
 dphk.org
 dpp.org.tw
 dpr.info
@@ -2005,6 +2012,7 @@ geekerhome.com
 geekheart.info
 gekikame.com
 gelbooru.com
+generated.photos
 genius.com
 geocities.co.jp
 geocities.com
@@ -2086,6 +2094,7 @@ goagent.biz
 goagent.codeplex.com
 goagentplus.com
 gobet.cc
+godaddy.com
 godfootsteps.org
 godns.work
 godoc.org
@@ -2381,9 +2390,9 @@ grammaly.com
 grandtrial.org
 grangorz.org
 graphis.ne.jp
+graph.org
 graphql.org
 gravatar.com
-greasespot.net
 greatfire.org
 greatfire.us7.list-manage.com
 greatfirewall.biz
@@ -2401,6 +2410,7 @@ greenpeace.org
 greenreadings.com
 greenvpn.net
 greenvpn.org
+grindr.com
 grotty-monday.com
 grow.google
 gs-discuss.com
@@ -2682,9 +2692,12 @@ huaxia-news.com
 huaxin.ph
 hua-yue.net
 huayuworld.org
+hub.docker.com
 hudatoriq.web.id
 hudson.org
 huffingtonpost.com
+huffpost.com
+huggingface.co
 hugoroy.eu
 huhaitai.com
 huhamhire.com
@@ -2789,6 +2802,7 @@ imagevenue.com
 imagezilla.net
 imb.org
 imdb.com
+imgasd.com
 imgchili.net
 img.dlsite.jp
 img.ly
@@ -2813,6 +2827,7 @@ indiemerch.com
 in-disguise.com
 info-graf.fr
 initiativesforchina.org
+inkbunny.net
 inkui.com
 inmediahk.net
 innermongolia.org
@@ -2888,6 +2903,7 @@ itaiwan.gov.tw
 italiatibet.org
 itasoftware.com
 itemdb.com
+itemfix.com
 ithelp.ithome.com.tw
 itsaol.com
 its.caltech.edu
@@ -3131,6 +3147,7 @@ lbank.info
 ld.hao123img.com
 leafyvpn.net
 lecloud.net
+ledger.com
 lefora.com
 left21.hk
 legalporno.com
@@ -3191,6 +3208,7 @@ listennotes.com
 listentoyoutube.com
 listorious.com
 lists.w3.org
+li.taipei
 liudejun.com
 liuhanyu.com
 liujianshu.com
@@ -3312,6 +3330,7 @@ matome-plus.net
 matrix.org
 matsushimakaede.com
 matters.news
+matters.town
 matthewdgreen.wordpress.com
 mattwilcox.net
 maturejp.com
@@ -3463,6 +3482,7 @@ molihua.org
 mondex.org
 moneyhome.biz
 money-link.com.tw
+monica.im
 mo.nightlife141.com
 monitorchina.org
 monocloud.me
@@ -3812,6 +3832,7 @@ oanda.com
 oann.com
 observechina.net
 obutu.com
+obyte.org
 ocaspro.com
 occupytiananmen.com
 oclp.hk
@@ -3840,6 +3861,7 @@ okx.com
 old-cat.net
 old.honeynet.org
 old.nabble.com
+olehdtv.com
 olevod.com
 olumpo.com
 olympicwatch.org
@@ -3933,7 +3955,7 @@ pacopacomama.com
 padmanet.com
 page2rss.com
 page.bid.yahoo.com
-pages.dev
+page.link
 pagodabox.com
 palacemoon.com
 paldengyal.com
@@ -4075,6 +4097,7 @@ pobieramy.top
 podbean.com
 podcast.co
 podictionary.com
+poe.com
 pokerstars.com
 pokerstars.net
 politicalchina.org
@@ -4167,6 +4190,7 @@ psiphon3.com
 psiphon.ca
 psiphon.civisec.org
 psiphontoday.com
+pstatic.net
 pt.im
 pts.org.tw
 ptt.cc
@@ -4221,6 +4245,7 @@ quantumbooter.net
 questvisual.com
 quitccp.net
 quitccp.org
+quiz.directory
 quoracdn.net
 quora.com
 quran.com
@@ -4813,6 +4838,7 @@ swissvpn.net
 switch1.jp
 switchvpn.net
 sydneytoday.com
+s.yimg.com
 sylfoundation.org
 syncback.com
 synergyse.com
@@ -4912,10 +4938,12 @@ teeniefuck.net
 teensinasia.com
 tehrantimes.com
 telecomspace.com
+telegram-cdn.org
 telegram.dog
 telegramdownload.com
 telegram.me
 telegram.org
+telegram.space
 telegra.ph
 telegraph.co.uk
 telesco.pe
@@ -4985,6 +5013,7 @@ thlib.org
 thomasbernhard.org
 thongdreams.com
 threadreaderapp.com
+threads.net
 threatchaos.com
 throughnightsfire.com
 thumbzilla.com
@@ -5164,7 +5193,6 @@ tpi.org.tw
 tracfone.com
 tradingview.com
 translate.goog
-translate.google
 transparency.org
 trans.wenweipo.com
 treemall.com.tw
@@ -5566,7 +5594,6 @@ vpn.ac
 vpnaccount.org
 vpnaccounts.com
 vpnbook.com
-vpn.cjb.net
 vpn.cmu.edu
 vpncomparison.org
 vpncoupons.com
@@ -5649,6 +5676,7 @@ waveprotocol.org
 wav.tv
 waymo.com
 wda.gov.tw
+wd.bible
 wdf5.com
 wealth.com.tw
 wearehairy.com
@@ -5767,12 +5795,12 @@ wizcrafts.net
 wjbk.org
 wlcnew.jigsy.com
 wlx.sowiki.net
+wmflabs.org
 wnacg.com
 wnacg.org
 wn.com
 wo3ttt.wordpress.com
 woeser.com
-woesermiddle-way.net
 wokar.org
 wolfax.com
 wombo.ai
@@ -5831,7 +5859,6 @@ www.antd.org
 www.aolnews.com
 www.businessinsider.com.au
 www.cmoinc.org
-www.cool18.com
 www.dmm.com
 www.dwheeler.com
 www.eastturkistan.net
@@ -5898,6 +5925,7 @@ xiaod.in
 xiaohexie.com
 xiaolan.me
 xiaoma.org
+xiaomi.eu
 xiaxiaoqiang.net
 xiezhua.com
 xihua.es
