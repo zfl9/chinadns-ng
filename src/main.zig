@@ -15,6 +15,7 @@ const fmtchk = @import("fmtchk.zig");
 const str2int = @import("str2int.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
+const Upstream = @import("Upstream.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -22,7 +23,7 @@ const StrList = @import("StrList.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c, cc, g, log, opt, dnl, ipset, fmtchk, str2int, DynStr, StrList,
+    c, cc, g, log, opt, dnl, ipset, fmtchk, str2int, DynStr, StrList, Upstream,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -52,11 +53,11 @@ pub fn main() u8 {
     for (g.bind_ips.items) |ip|
         log.info(@src(), "local listen addr: %s#%u", .{ ip.?, cc.to_uint(g.bind_port) });
 
-    for (g.chinadns_addrs.items) |addr, i|
-        log.info(@src(), "chinadns server#%zu: %s", .{ i + 1, addr.? });
+    for (g.chinadns_list.items()) |v, i|
+        log.info(@src(), "chinadns server#%zu: %s", .{ i + 1, v.url.ptr });
 
-    for (g.trustdns_addrs.items) |addr, i|
-        log.info(@src(), "trustdns server#%zu: %s", .{ i + 1, addr.? });
+    for (g.trustdns_list.items()) |v, i|
+        log.info(@src(), "trustdns server#%zu: %s", .{ i + 1, v.url.ptr });
 
     dnl.init();
 
@@ -72,6 +73,14 @@ pub fn main() u8 {
         log.info(@src(), "num of packets to trustdns: %u", .{cc.to_uint(g.trustdns_packet_n)});
 
     log.info(@src(), "%s no-ip reply from chinadns", .{cc.b2s(g.noip_as_chnip, "accept", "filter")});
+
+    if (g.reuse_port)
+        log.info(@src(), "SO_REUSEPORT for listening socket", .{});
+
+    if (g.verbose)
+        log.info(@src(), "printing the verbose runtime log", .{});
+
+    // ============================================================================
 
     return 0;
 }

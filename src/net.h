@@ -9,9 +9,6 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 
-/* "ip#port" (include \0) */
-#define IP_PORT_STRLEN (INET6_ADDRSTRLEN + PORT_STRLEN)
-
 /* ipv4/ipv6 address length (binary) */
 #define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
 #define IPV6_BINADDR_LEN 16 /* 16byte, 128bit */

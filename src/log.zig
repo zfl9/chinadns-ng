@@ -38,7 +38,7 @@ fn time() [6]c_int {
     return .{ tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec };
 }
 
-pub fn srcinfo(comptime src: SourceLocation, fn_name_only: bool) [:0]const u8 {
+pub fn srcinfo(comptime src: SourceLocation) [:0]const u8 {
     const filename = b: {
         // remove directories from path
         // can't use std.mem.lastIndexOfScalar because of compiler bugs
@@ -52,14 +52,12 @@ pub fn srcinfo(comptime src: SourceLocation, fn_name_only: bool) [:0]const u8 {
         const i = std.mem.indexOfScalar(u8, src.fn_name, '.') orelse -1;
         break :b src.fn_name[i + 1 ..];
     };
-    if (fn_name_only)
-        return "[" ++ fn_name ++ "]";
     return std.fmt.comptimePrint("[{s}:{d} {s}]", .{ filename, src.line, fn_name });
 }
 
 fn log_write(comptime level: Level, comptime src: SourceLocation, comptime in_fmt: [:0]const u8, in_args: anytype) void {
     const timefmt = "%d-%02d-%02d %02d:%02d:%02d";
-    const prefix = "\x1b[" ++ level.color() ++ ";1m" ++ timefmt ++ " " ++ level.desc() ++ "\x1b[0m \x1b[1m" ++ srcinfo(src, false) ++ "\x1b[0m";
+    const prefix = "\x1b[" ++ level.color() ++ ";1m" ++ timefmt ++ " " ++ level.desc() ++ "\x1b[0m \x1b[1m" ++ srcinfo(src) ++ "\x1b[0m";
     const fmt = prefix ++ " " ++ in_fmt ++ "\n";
     const t = time();
     const args = .{ t[0], t[1], t[2], t[3], t[4], t[5] } ++ in_args;

@@ -9,6 +9,7 @@ const dnl = @import("dnl.zig");
 const NoAAAA = @import("NoAAAA.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
+const Upstream = @import("Upstream.zig");
 
 pub const VERSION: cc.ConstStr = b: {
     var target: [:0]const u8 = @tagName(builtin.cpu.arch) ++ "-" ++ @tagName(builtin.os.tag) ++ "-" ++ @tagName(builtin.abi);
@@ -53,10 +54,10 @@ pub var noip_as_chnip: bool = false;
 /// how to filter AAAA query
 pub var noaaaa_query: NoAAAA = .{};
 
-/// "file1,file2,..."
+/// ["file1", "file2", ...]
 pub var gfwlist_filenames: StrList = .{};
 
-/// "file1,file2,..."
+/// ["file1", "file2", ...]
 pub var chnlist_filenames: StrList = .{};
 
 /// only effect the same domains
@@ -82,11 +83,9 @@ pub var bind_ips: StrList = .{};
 
 pub var bind_port: u16 = 65353;
 
-/// ["ip[#port]", "ip[#port]", ...]
-pub var chinadns_addrs: StrList = .{};
+pub var chinadns_list: Upstream.List = .{};
 
-/// ["ip[#port]", "ip[#port]", ...]
-pub var trustdns_addrs: StrList = .{};
+pub var trustdns_list: Upstream.List = .{};
 
 /// too large may cause stack overflow
 pub const TRUSTDNS_PACKET_MAX: u8 = 5;
