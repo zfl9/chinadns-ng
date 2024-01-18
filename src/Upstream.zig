@@ -1,6 +1,7 @@
 const std = @import("std");
 const cc = @import("cc.zig");
 const opt = @import("opt.zig");
+const log = @import("log.zig");
 const DynStr = @import("DynStr.zig");
 
 const Upstream = @This();
@@ -84,7 +85,7 @@ pub const List = struct {
 
         // proto
         const proto = b: {
-            if (std.mem.indexOfPosLinear(u8, value, 0, "://")) |i| {
+            if (std.mem.indexOf(u8, value, "://")) |i| {
                 const proto = value[0 .. i + 3];
                 value = value[i + 3 ..];
                 break :b Proto.from_str(proto) orelse {
@@ -97,7 +98,7 @@ pub const List = struct {
 
         // host, only DoH needs it
         const host = b: {
-            if (std.mem.indexOfPosLinear(u8, value, 0, "@")) |i| {
+            if (std.mem.indexOf(u8, value, "@")) |i| {
                 const host = value[0..i];
                 value = value[i + 1 ..];
                 if (host.len == 0) {
