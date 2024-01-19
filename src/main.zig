@@ -9,6 +9,7 @@ const cc = @import("cc.zig");
 const g = @import("g.zig");
 const log = @import("log.zig");
 const opt = @import("opt.zig");
+const net = @import("net.zig");
 const dnl = @import("dnl.zig");
 const ipset = @import("ipset.zig");
 const fmtchk = @import("fmtchk.zig");
@@ -23,7 +24,7 @@ const Upstream = @import("Upstream.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c, cc, g, log, opt, dnl, ipset, fmtchk, str2int, DynStr, StrList, Upstream,
+    c, cc, g, log, opt, net, dnl, ipset, fmtchk, str2int, DynStr, StrList, Upstream,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -36,7 +37,7 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 }
 
 pub fn main() u8 {
-    c.ignore_sigpipe();
+    net.ignore_sigpipe();
 
     _ = cc.setvbuf(cc.stdout, null, c._IOLBF, 256);
 
@@ -48,7 +49,7 @@ pub fn main() u8 {
 
     opt.parse();
 
-    c.net_init();
+    net.init();
 
     for (g.bind_ips.items) |ip|
         log.info(@src(), "local listen addr: %s#%u", .{ ip.?, cc.to_uint(g.bind_port) });
@@ -81,6 +82,12 @@ pub fn main() u8 {
         log.info(@src(), "printing the verbose runtime log", .{});
 
     // ============================================================================
+
+    // create listening sockets
+    for (g.bind_ips.items) |ip| {
+        const sockaddr = net.SockAddr.from_text(ip.?, g.bind_port);
+        _ = sockaddr;
+    }
 
     return 0;
 }

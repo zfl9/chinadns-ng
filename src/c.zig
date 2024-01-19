@@ -18,6 +18,9 @@ pub usingnamespace @cImport({
     @cInclude("signal.h");
     @cInclude("time.h");
     @cInclude("linux/limits.h");
+    @cInclude("sys/types.h");
+    @cInclude("sys/socket.h");
+    @cInclude("sys/epoll.h");
 
     @cInclude("src/net.h");
     @cInclude("src/dns.h");

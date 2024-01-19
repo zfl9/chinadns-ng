@@ -199,6 +199,6 @@ pub const List = struct {
     }
 };
 
-pub fn @"test: upstream"() void {
+pub fn @"test: upstream"() !void {
     // _ =
 }

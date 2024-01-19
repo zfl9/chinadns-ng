@@ -343,13 +343,6 @@ pub inline fn setenv(env_name: ConstStr, value: ConstStr, is_replace: bool) c_in
 
 // ==============================================================
 
-/// TODO: rewrite with net.zig
-pub inline fn get_ipstr_family(ip: ConstStr) c_int {
-    return c.get_ipstr_family(ip);
-}
-
-// ==============================================================
-
 pub fn @"test: strdup"() !void {
     const org_str = "helloworld";
 

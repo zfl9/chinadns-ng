@@ -3,6 +3,7 @@ const c = @import("c.zig");
 const cc = @import("cc.zig");
 const g = @import("g.zig");
 const log = @import("log.zig");
+const net = @import("net.zig");
 const str2int = @import("str2int.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
@@ -192,7 +193,7 @@ pub fn check_ip(value: []const u8) Err!void {
         return Err.optval_bad_format;
     };
 
-    if (cc.get_ipstr_family(ip.ptr) == -1) {
+    if (net.get_ipstr_family(ip.ptr) == null) {
         catch_print(@src(), "invalid ip", value);
         return Err.optval_bad_format;
     }
