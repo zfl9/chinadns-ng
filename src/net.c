@@ -102,40 +102,55 @@ void net_init(void) {
 
 /* setsockopt(IPV6_V6ONLY) */
 static inline void set_ipv6_only(int sockfd, int value) {
-    unlikely_if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &value, sizeof(value))) {
+    unlikely_if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &value, sizeof(value)))
         log_error("setsockopt(%d, IPV6_V6ONLY, %d): (%d) %s", sockfd, value, errno, strerror(errno));
-        exit(errno);
-    }
 }
 
 /* setsockopt(SO_REUSEADDR) */
 static inline void set_reuse_addr(int sockfd) {
-    unlikely_if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int))) {
+    unlikely_if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)))
         log_error("setsockopt(%d, SO_REUSEADDR): (%d) %s", sockfd, errno, strerror(errno));
-        exit(errno);
-    }
 }
 
 /* setsockopt(SO_REUSEPORT) */
-void set_reuse_port(int sockfd) {
-    unlikely_if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int))) {
+static inline void set_reuse_port(int sockfd) {
+    unlikely_if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)))
         log_error("setsockopt(%d, SO_REUSEPORT): (%d) %s", sockfd, errno, strerror(errno));
-        exit(errno);
+}
+
+static void setup_listen_socket(int family, int sockfd, bool reuse_port) {
+    if (family == AF_INET6)
+        set_ipv6_only(sockfd, 0); /* allow msg from ipv4 when binding `::` */
+
+    set_reuse_addr(sockfd);
+
+    if (reuse_port)
+        set_reuse_port(sockfd);
+}
+
+/* create non-blocking socket */
+static int new_socket(int family, int socktype, bool for_listen, bool reuse_port) {
+    int sockfd = socket(family, socktype | SOCK_NONBLOCK, 0); /* since Linux 2.6.27 */
+    unlikely_if (sockfd < 0) {
+        log_error("failed to create %s%c socket: (%d) %s", 
+            socktype == SOCK_STREAM ? "tcp" : "udp",
+            family == AF_INET ? '4' : '6',
+            errno, strerror(errno));
+        return sockfd;
     }
+    if (for_listen)
+        setup_listen_socket(family, sockfd, reuse_port);
+    return sockfd;
+}
+
+/* create a tcp socket (v4/v6) */
+int new_tcp_socket(int family, bool for_listen, bool reuse_port) {
+    return new_socket(family, SOCK_STREAM, for_listen, reuse_port);
 }
 
 /* create a udp socket (v4/v6) */
-int new_udp_socket(int family, bool for_bind) {
-    int sockfd = socket(family, SOCK_DGRAM | SOCK_NONBLOCK, 0); /* since Linux 2.6.27 */
-    unlikely_if (sockfd < 0) {
-        log_error("failed to create udp%c socket: (%d) %s", family == AF_INET ? '4' : '6', errno, strerror(errno));
-        exit(errno);
-    }
-    if (for_bind) {
-        if (family == AF_INET6) set_ipv6_only(sockfd, 0); /* allow msg from ipv4 when binding `::` addresses */
-        set_reuse_addr(sockfd);
-    }
-    return sockfd;
+int new_udp_socket(int family, bool for_listen, bool reuse_port) {
+    return new_socket(family, SOCK_DGRAM, for_listen, reuse_port);
 }
 
 /* AF_INET or AF_INET6 or -1(invalid) */
@@ -176,4 +191,20 @@ void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16
         inet_ntop(AF_INET6, &skaddr->sin6.sin6_addr, ipstr, INET6_ADDRSTRLEN);
         *portno = ntohs(skaddr->sin6.sin6_port);
     }
+}
+
+u32 epev_get_events(const void *noalias ev) {
+    return cast(const struct epoll_event *, ev)->events;
+}
+
+void *epev_get_ptrdata(const void *noalias ev) {
+    return cast(const struct epoll_event *, ev)->data.ptr;
+}
+
+void epev_set_events(void *noalias ev, u32 events) {
+    cast(struct epoll_event *, ev)->events = events;
+}
+
+void epev_set_ptrdata(void *noalias ev, const void *ptrdata) {
+    cast(struct epoll_event *, ev)->data.ptr = (void *)ptrdata;
 }

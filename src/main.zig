@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_opts = @import("build_opts");
+const heap = std.heap;
 
 const tests = @import("tests.zig");
 
@@ -17,6 +18,7 @@ const str2int = @import("str2int.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
+const Epoll = @import("Epoll.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -24,7 +26,7 @@ const Upstream = @import("Upstream.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c, cc, g, log, opt, net, dnl, ipset, fmtchk, str2int, DynStr, StrList, Upstream,
+    c, cc, g, log, opt, net, dnl, ipset, fmtchk, str2int, DynStr, StrList, Upstream, Epoll,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -34,6 +36,30 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
         std.builtin.default_panic(msg, error_return_trace, ret_addr)
     else
         c.abort();
+}
+
+// =======================================================================================================
+
+var _epoll: Epoll = undefined;
+
+/// called by Epoll.check_timeout
+pub fn check_timeout() c_int {
+    // TODO
+    return -1;
+}
+
+pub fn on_tcp_accept(ctx: *Epoll.Event.Ctx, fd: c_int, events: u32) void {
+    _ = events;
+    _ = fd;
+    _ = ctx;
+    // TODO
+}
+
+pub fn on_udp_request(ctx: *Epoll.Event.Ctx, fd: c_int, events: u32) void {
+    _ = events;
+    _ = fd;
+    _ = ctx;
+    // TODO
 }
 
 pub fn main() u8 {
@@ -46,6 +72,8 @@ pub fn main() u8 {
 
     if (build_opts.is_test)
         return tests.main();
+
+    // ============================================================================
 
     opt.parse();
 
@@ -83,11 +111,28 @@ pub fn main() u8 {
 
     // ============================================================================
 
+    _epoll = Epoll.create();
+
     // create listening sockets
     for (g.bind_ips.items) |ip| {
-        const sockaddr = net.SockAddr.from_text(ip.?, g.bind_port);
-        _ = sockaddr;
+        const fds = net.new_dns_server(ip.?, g.bind_port);
+        const ctxs = cc.malloc_many(Epoll.Event.Ctx, 2).?;
+        ctxs[0] = .{ .callback = on_tcp_accept, .fd = fds[0] };
+        ctxs[1] = .{ .callback = on_udp_request, .fd = fds[1] };
+        const err: [:0]const u8 = b: {
+            if (!_epoll.add(fds[0], c.EPOLLIN, &ctxs[0]))
+                break :b "tcp";
+            if (!_epoll.add(fds[1], c.EPOLLIN, &ctxs[1]))
+                break :b "udp";
+            break :b "";
+        };
+        if (err.len > 0) {
+            log.err(@src(), "failed to register %s server listen event", .{err.ptr});
+            c.exit(1);
+        }
     }
+
+    _epoll.loop();
 
     return 0;
 }

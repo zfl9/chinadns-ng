@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <sys/epoll.h>
 
 /* ipv4/ipv6 address length (binary) */
 #define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
@@ -54,11 +55,14 @@ extern int (*SENDMMSG)(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags
 
 void net_init(void);
 
-void set_reuse_port(int sockfd);
-
-int new_udp_socket(int family, bool for_bind);
+static inline void ignore_sigpipe(void) {
+    signal(SIGPIPE, SIG_IGN);
+}
 
 int get_ipstr_family(const char *noalias ipstr);
+
+int new_tcp_socket(int family, bool for_listen, bool reuse_port);
+int new_udp_socket(int family, bool for_listen, bool reuse_port);
 
 union skaddr {
     struct sockaddr sa;
@@ -74,9 +78,11 @@ union skaddr {
 void skaddr_from_text(union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno);
 void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno);
 
-static inline void ignore_sigpipe(void) {
-    signal(SIGPIPE, SIG_IGN);
-}
+u32 epev_get_events(const void *noalias ev);
+void *epev_get_ptrdata(const void *noalias ev);
+
+void epev_set_events(void *noalias ev, u32 events);
+void epev_set_ptrdata(void *noalias ev, const void *ptrdata);
 
 /* try to (blocking) send all, retry if interrupted by signal */
 #define sendall(f, fd, base, len, args...) ({ \

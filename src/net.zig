@@ -1,5 +1,7 @@
 const c = @import("c.zig");
+const g = @import("g.zig");
 const cc = @import("cc.zig");
+const log = @import("log.zig");
 const std = @import("std");
 const trait = std.meta.trait;
 
@@ -30,7 +32,7 @@ pub const SockAddr = extern union {
         return self.family() == c.AF_INET6;
     }
 
-    pub inline fn size(self: *const SockAddr) usize {
+    pub inline fn len(self: *const SockAddr) c.socklen_t {
         return if (self.is_sin())
             @sizeOf(c.struct_sockaddr_in)
         else
@@ -65,12 +67,41 @@ pub inline fn get_ipstr_family(ip: cc.ConstStr) ?c.sa_family_t {
     return if (res == -1) null else @intCast(c.sa_family_t, res);
 }
 
-pub inline fn set_reuse_port(sockfd: c_int) void {
-    return c.set_reuse_port(sockfd);
+pub inline fn new_tcp_socket(family: c.sa_family_t, for_listen: bool) c_int {
+    return c.new_tcp_socket(family, for_listen, g.reuse_port);
 }
 
-pub inline fn new_udp_socket(family: c.sa_family_t, for_bind: bool) c_int {
-    return c.new_udp_socket(family, for_bind);
+pub inline fn new_udp_socket(family: c.sa_family_t, for_listen: bool) c_int {
+    return c.new_udp_socket(family, for_listen, g.reuse_port);
+}
+
+pub inline fn set_reuse_port(sock: c_int) void {
+    return c.set_reuse_port(sock);
+}
+
+/// create dns listen socket (tcp + udp)
+pub fn new_dns_server(ip: cc.ConstStr, port: u16) [2]c_int {
+    const sockaddr = SockAddr.from_text(ip, port);
+
+    const tcpsock = new_tcp_socket(sockaddr.family(), true);
+    const udpsock = new_udp_socket(sockaddr.family(), true);
+
+    if (c.bind(tcpsock, &sockaddr.sa, sockaddr.len()) < 0) {
+        log.err(@src(), "failed to bind tcpsock %d: (%d) %m", .{ tcpsock, cc.errno() });
+        c.exit(1);
+    }
+    if (c.bind(udpsock, &sockaddr.sa, sockaddr.len()) < 0) {
+        log.err(@src(), "failed to bind udpsock %d: (%d) %m", .{ udpsock, cc.errno() });
+        c.exit(1);
+    }
+
+    // mark the socket as a listener
+    if (c.listen(tcpsock, 256) < 0) {
+        log.err(@src(), "failed to listen tcpsock %d: (%d) %m", .{ tcpsock, cc.errno() });
+        c.exit(1);
+    }
+
+    return .{ tcpsock, udpsock };
 }
 
 // ===============================================================
@@ -97,29 +128,29 @@ pub const mmsghdr_t = extern struct {
 
 // ===============================================================
 
-pub inline fn recvmsg(sockfd: c_int, msg: *msghdr_t, flags: c_int) isize {
-    return c.RECVMSG(sockfd, @ptrCast(*c.MSGHDR, msg), flags);
+pub inline fn recvmsg(sock: c_int, msg: *msghdr_t, flags: c_int) isize {
+    return c.RECVMSG(sock, @ptrCast(*c.MSGHDR, msg), flags);
 }
 
-pub inline fn sendmsg(sockfd: c_int, msg: *const msghdr_t, flags: c_int) isize {
-    return c.SENDMSG(sockfd, @ptrCast(*const c.MSGHDR, msg), flags);
+pub inline fn sendmsg(sock: c_int, msg: *const msghdr_t, flags: c_int) isize {
+    return c.SENDMSG(sock, @ptrCast(*const c.MSGHDR, msg), flags);
 }
 
 /// return empty slice if failed
-pub inline fn recvmmsg(sockfd: c_int, msgs: []mmsghdr_t, flags: c_int) []mmsghdr_t {
+pub inline fn recvmmsg(sock: c_int, msgs: []mmsghdr_t, flags: c_int) []mmsghdr_t {
     std.debug.assert(msgs.len > 0);
     const vec = @ptrCast([*]c.MMSGHDR, msgs.ptr);
     const vlen = cc.to_uint(msgs.len);
-    const n = c.RECVMMSG.?(sockfd, vec, vlen, flags, null);
+    const n = c.RECVMMSG.?(sock, vec, vlen, flags, null);
     return if (n > 0) msgs[0..cc.to_usize(n)] else msgs[0..0];
 }
 
 /// return empty slice if failed
-pub inline fn sendmmsg(sockfd: c_int, msgs: []mmsghdr_t, flags: c_int) []mmsghdr_t {
+pub inline fn sendmmsg(sock: c_int, msgs: []mmsghdr_t, flags: c_int) []mmsghdr_t {
     std.debug.assert(msgs.len > 0);
     const vec = @ptrCast([*]c.MMSGHDR, msgs.ptr);
     const vlen = cc.to_uint(msgs.len);
-    const n = c.SENDMMSG.?(sockfd, vec, vlen, flags);
+    const n = c.SENDMMSG.?(sock, vec, vlen, flags);
     return if (n > 0) msgs[0..cc.to_usize(n)] else msgs[0..0];
 }
 
@@ -135,7 +166,7 @@ pub fn @"test: net api"() !void {
     _ = SockAddr.family;
     _ = SockAddr.is_sin;
     _ = SockAddr.is_sin6;
-    _ = SockAddr.size;
+    _ = SockAddr.len;
     _ = SockAddr.from_text;
     _ = SockAddr.to_text;
 }
