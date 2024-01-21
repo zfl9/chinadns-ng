@@ -110,7 +110,7 @@ pub fn create() Epoll {
 }
 
 /// return true if ok
-fn ctl(self: Epoll, op: c_int, fd: c_int, ev: ?*Event) bool {
+fn ctl(self: Epoll, op: c_int, fd: c_int, ev: ?*const Event) bool {
     if (epoll_ctl(self.epfd, op, fd, ev) < 0) {
         const op_name = switch (op) {
             c.EPOLL_CTL_ADD => "ADD",
