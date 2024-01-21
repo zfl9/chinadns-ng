@@ -95,7 +95,7 @@ pub const Event = opaque {
 // =============================================================
 
 extern fn epoll_create1(flags: c_int) c_int;
-extern fn epoll_ctl(epfd: c_int, op: c_int, fd: c_int, ?*const anyopaque) c_int;
+extern fn epoll_ctl(epfd: c_int, op: c_int, fd: c_int, event: ?*const anyopaque) c_int;
 extern fn epoll_wait(epfd: c_int, events: *anyopaque, max_events: c_int, timeout: c_int) c_int;
 
 // =============================================================
