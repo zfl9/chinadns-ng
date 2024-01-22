@@ -40,26 +40,66 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 
 // =======================================================================================================
 
+/// create and start coroutine
+inline fn coro_create(comptime func: anytype, args: anytype) void {
+    const buf = cc.align_malloc_many(u8, @frameSize(func), std.Target.stack_align).?;
+    _ = @asyncCall(buf, {}, func, args);
+    // @call(.{ .modifier = .async_kw, .stack = buf }, func, args);
+}
+
+/// free memory of coroutine
+/// https://github.com/ziglang/zig/issues/10622
+inline fn coro_destroy(top_frame: anyframe) void {
+    const ptr = @intToPtr(*anyopaque, @ptrToInt(top_frame));
+    return @call(.{ .modifier = .always_tail }, cc.free, .{ptr});
+}
+
+// =======================================================================================================
+
 var _epoll: Epoll = undefined;
+
+fn do_tcp_listen(server_sock: c_int) void {
+    defer coro_destroy(@frame());
+
+    _epoll.do_accept(server_sock, struct {
+        fn callback(sock: c_int) void {
+            coro_create(do_tcp_service, .{sock});
+        }
+    }.callback);
+}
+
+fn do_tcp_service(sock: c_int) void {
+    defer coro_destroy(@frame());
+
+    defer _ = c.close(sock);
+
+    // TODO: tcp nodelay
+
+    var addr: net.SockAddr = undefined;
+    var addrlen: c.socklen_t = @sizeOf(net.SockAddr);
+    _ = c.getpeername(sock, &addr.sa, &addrlen);
+
+    var ip: [c.INET6_ADDRSTRLEN - 1:0]u8 = undefined;
+    var port: u16 = undefined;
+    addr.to_text(&ip, &port);
+
+    log.info(@src(), "new connection from %s#%u", .{ &ip, cc.to_uint(port) });
+
+    // TODO
+}
+
+fn do_udp_service(server_sock: c_int) void {
+    defer coro_destroy(@frame());
+
+    _ = server_sock;
+    // TODO
+
+}
 
 /// called by Epoll.check_timeout
 pub fn check_timeout() c_int {
     // TODO
     return -1;
-}
-
-pub fn on_tcp_accept(ctx: *Epoll.Event.Ctx, fd: c_int, events: u32) void {
-    _ = events;
-    _ = fd;
-    _ = ctx;
-    // TODO
-}
-
-pub fn on_udp_request(ctx: *Epoll.Event.Ctx, fd: c_int, events: u32) void {
-    _ = events;
-    _ = fd;
-    _ = ctx;
-    // TODO
 }
 
 pub fn main() u8 {
@@ -116,20 +156,8 @@ pub fn main() u8 {
     // create listening sockets
     for (g.bind_ips.items) |ip| {
         const fds = net.new_dns_server(ip.?, g.bind_port);
-        const ctxs = cc.malloc_many(Epoll.Event.Ctx, 2).?;
-        ctxs[0] = .{ .callback = on_tcp_accept, .fd = fds[0] };
-        ctxs[1] = .{ .callback = on_udp_request, .fd = fds[1] };
-        const err: [:0]const u8 = b: {
-            if (!_epoll.add(fds[0], c.EPOLLIN, &ctxs[0]))
-                break :b "tcp";
-            if (!_epoll.add(fds[1], c.EPOLLIN, &ctxs[1]))
-                break :b "udp";
-            break :b "";
-        };
-        if (err.len > 0) {
-            log.err(@src(), "failed to register %s server listen event", .{err.ptr});
-            c.exit(1);
-        }
+        coro_create(do_tcp_listen, .{fds[0]});
+        coro_create(do_udp_service, .{fds[1]});
     }
 
     _epoll.loop();

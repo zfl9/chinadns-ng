@@ -278,7 +278,7 @@ fn parse_specifier(comptime format: *FormatIterator, comptime args: *ArgsIterato
 }
 
 fn has_sentinel_0(comptime T: type) bool {
-    const end = std.meta.sentinel(T) orelse false;
+    const end = std.meta.sentinel(T) orelse return false;
     return end == 0;
 }
 

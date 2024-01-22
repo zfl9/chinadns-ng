@@ -212,18 +212,32 @@ fn strdup_internal(s: anytype, buf: []u8) [:0]u8 {
 // ==============================================================
 
 pub inline fn malloc_one(comptime T: type) ?*T {
+    comptime assert(@alignOf(T) <= @alignOf(c.max_align_t));
     return @ptrCast(?*T, @alignCast(@alignOf(T), c.malloc(@sizeOf(T))));
 }
 
 pub inline fn malloc_many(comptime T: type, n: usize) ?[]T {
+    comptime assert(@alignOf(T) <= @alignOf(c.max_align_t));
     return if (c.malloc(@sizeOf(T) * n)) |ptr|
         @ptrCast([*]T, @alignCast(@alignOf(T), ptr))[0..n]
     else
         null;
 }
 
+pub inline fn align_malloc_many(comptime T: type, n: usize, comptime alignment: u32) ?[]align(alignment) T {
+    comptime assert(std.math.isPowerOfTwo(alignment));
+    comptime assert(alignment >= @sizeOf(*anyopaque));
+    comptime assert(alignment % @sizeOf(*anyopaque) == 0);
+    var ptr: [*]align(alignment) T = undefined;
+    return if (c.posix_memalign(@ptrCast(*?*anyopaque, &ptr), alignment, @sizeOf(T) * n) == 0)
+        ptr[0..n]
+    else
+        null;
+}
+
 /// if `old_memory.len` is 0 it is treated as a null pointer
 pub inline fn realloc(comptime T: type, old_memory: []T, new_n: usize) ?[]T {
+    comptime assert(@alignOf(T) <= @alignOf(c.max_align_t));
     const old_ptr = if (old_memory.len > 0) old_memory.ptr else null;
     const new_ptr = c.realloc(old_ptr, new_n * @sizeOf(T)) orelse return null;
     return @ptrCast([*]T, @alignCast(@alignOf(T), new_ptr))[0..new_n];

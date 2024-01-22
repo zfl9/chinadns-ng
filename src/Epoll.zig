@@ -19,17 +19,6 @@ pub const Event = opaque {
     pub const SIZE = @sizeOf(Raw);
     pub const ALIGN = @alignOf(Raw);
 
-    /// epoll_event.data.ptr
-    pub const Ctx = struct {
-        callback: fn (ctx: *Ctx, fd: c_int, events: u32) void,
-        fd: c_int,
-        // TODO: userdata (union) or as struct member (offsetof)
-
-        pub inline fn from(ptr: ?*anyopaque) *Ctx {
-            return @ptrCast(*Ctx, @alignCast(@alignOf(Ctx), ptr));
-        }
-    };
-
     /// value type
     pub const V = Array(1);
 
@@ -48,17 +37,17 @@ pub const Event = opaque {
                 return from(&self.buf[i * SIZE]);
             }
 
-            /// n_events
+            /// return N
             pub inline fn len(_: *const Self) usize {
                 return N;
             }
 
             // ======================= for Value =======================
 
-            pub inline fn init(events: u32, ctx: *const Ctx) V {
+            pub inline fn init(events: u32, frame: anyframe) V {
                 var v: V = undefined;
                 v.ptr().set_events(events);
-                v.ptr().set_ctx(ctx);
+                v.ptr().set_frame(frame);
                 return v;
             }
 
@@ -79,24 +68,24 @@ pub const Event = opaque {
         return c.epev_get_events(self);
     }
 
-    pub inline fn get_ctx(self: *const Event) *Ctx {
-        return Ctx.from(c.epev_get_ptrdata(self));
+    pub inline fn get_frame(self: *const Event) anyframe {
+        return @ptrCast(anyframe, @alignCast(std.Target.stack_align, c.epev_get_ptrdata(self)));
     }
 
     pub inline fn set_events(self: *Event, events: u32) void {
         return c.epev_set_events(self, events);
     }
 
-    pub inline fn set_ctx(self: *Event, ctx: *const Ctx) void {
-        return c.epev_set_ptrdata(self, ctx);
+    pub inline fn set_frame(self: *Event, frame: anyframe) void {
+        return c.epev_set_ptrdata(self, @ptrCast(*const anyopaque, frame));
     }
 };
 
 // =============================================================
 
 extern fn epoll_create1(flags: c_int) c_int;
-extern fn epoll_ctl(epfd: c_int, op: c_int, fd: c_int, event: ?*const anyopaque) c_int;
-extern fn epoll_wait(epfd: c_int, events: *anyopaque, max_events: c_int, timeout: c_int) c_int;
+extern fn epoll_ctl(epfd: c_int, op: c_int, fd: c_int, ev: ?*const anyopaque) c_int;
+extern fn epoll_wait(epfd: c_int, evs: *anyopaque, n_evs: c_int, timeout: c_int) c_int;
 
 // =============================================================
 
@@ -126,13 +115,13 @@ fn ctl(self: Epoll, op: c_int, fd: c_int, ev: ?*const Event) bool {
 }
 
 /// return true if ok
-pub fn add(self: Epoll, fd: c_int, events: u32, ctx: *const Event.Ctx) bool {
-    return ctl(self, c.EPOLL_CTL_ADD, fd, Event.V.init(events, ctx).ptr());
+pub fn add(self: Epoll, fd: c_int, events: u32, frame: anyframe) bool {
+    return ctl(self, c.EPOLL_CTL_ADD, fd, Event.V.init(events, frame).ptr());
 }
 
 /// return true if ok
-pub fn mod(self: Epoll, fd: c_int, events: u32, ctx: *const Event.Ctx) bool {
-    return ctl(self, c.EPOLL_CTL_MOD, fd, Event.V.init(events, ctx).ptr());
+pub fn mod(self: Epoll, fd: c_int, events: u32, frame: anyframe) bool {
+    return ctl(self, c.EPOLL_CTL_MOD, fd, Event.V.init(events, frame).ptr());
 }
 
 /// return true if ok
@@ -148,12 +137,11 @@ fn check_timeout() c_int {
     return root.check_timeout();
 }
 
-/// TODO: making timeouts more versatile
 pub fn loop(self: Epoll) void {
-    var events: Event.Array(64) = undefined;
+    var evs: Event.Array(64) = undefined;
 
     while (true) {
-        const n = epoll_wait(self.epfd, events.at(0), cc.to_int(events.len()), check_timeout());
+        const n = epoll_wait(self.epfd, evs.at(0), cc.to_int(evs.len()), check_timeout());
         if (n < 0 and cc.errno() != c.EINTR) {
             log.err(@src(), "epoll_wait(%d) failed: (%d) %m", .{ self.epfd, cc.errno() });
             c.exit(1);
@@ -162,10 +150,33 @@ pub fn loop(self: Epoll) void {
         // I/O events
         var i: c_int = 0;
         while (i < n) : (i += 1) {
-            // the callback may free other ctx in events !!!
-            const ev = events.at(cc.to_usize(i));
-            const ctx = ev.get_ctx();
-            ctx.callback(ctx, ctx.fd, ev.get_events());
+            // suspend and resume only occurs in Epoll.zig
+            const ev = evs.at(cc.to_usize(i));
+            _events = ev.get_events();
+            resume ev.get_frame();
+        }
+    }
+}
+
+// =====================================================================
+
+/// arg: epoll_event.events (epoll_wait)
+var _events: u32 = 0;
+
+pub fn do_accept(self: Epoll, listen_sock: c_int, callback: fn (sock: c_int) void) void {
+    if (!self.add(listen_sock, c.EPOLLIN, @frame())) {
+        log.err(@src(), "failed to register event for listen_sock: %d", .{listen_sock});
+        c.exit(1);
+    }
+    while (true) {
+        suspend {}
+        const sock = c.accept4(listen_sock, null, null, c.SOCK_NONBLOCK);
+        if (sock >= 0) {
+            nosuspend callback(sock);
+        } else {
+            const err = cc.errno();
+            if (err != c.EAGAIN and err != c.EWOULDBLOCK)
+                log.err(@src(), "accept4(%d) failed: (%d) %m", .{ listen_sock, err });
         }
     }
 }
@@ -178,9 +189,8 @@ pub fn @"test: epoll api"() !void {
     _ = mod;
     _ = del;
     _ = loop;
-    _ = Event.Ctx;
-    _ = Event.get_ctx;
     _ = Event.get_events;
-    _ = Event.set_ctx;
+    _ = Event.get_frame;
     _ = Event.set_events;
+    _ = Event.set_frame;
 }
