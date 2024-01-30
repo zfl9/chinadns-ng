@@ -18,7 +18,7 @@ const str2int = @import("str2int.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
-const Epoll = @import("Epoll.zig");
+const EvLoop = @import("EvLoop.zig");
 const coro = @import("coro.zig");
 
 // TODO:
@@ -27,7 +27,7 @@ const coro = @import("coro.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c, cc, g, log, opt, net, dnl, ipset, fmtchk, str2int, DynStr, StrList, Upstream, Epoll,
+    c, cc, g, log, opt, net, dnl, ipset, fmtchk, str2int, DynStr, StrList, Upstream, EvLoop,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -41,16 +41,16 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 
 // =======================================================================================================
 
-var _epoll: Epoll = undefined;
+var _evloop: EvLoop = undefined;
 
 fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
     defer coro.on_terminate(@frame());
 
-    const fd_obj = Epoll.FdObj.new(fd);
-    defer fd_obj.free(&_epoll);
+    const fd_obj = EvLoop.FdObj.new(fd);
+    defer fd_obj.free(&_evloop);
 
     while (true) {
-        const conn_fd = _epoll.accept(fd_obj, null, null) orelse {
+        const conn_fd = _evloop.accept(fd_obj, null, null) orelse {
             log.err(@src(), "failed to accept on %s#%u: (%d) %m", .{ ip, cc.to_uint(g.bind_port), cc.errno() });
             // TODO: if it is a recoverable error then continue
             return;
@@ -62,8 +62,8 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
 fn service_tcp(fd: c_int) void {
     defer coro.on_terminate(@frame());
 
-    const fd_obj = Epoll.FdObj.new(fd);
-    defer fd_obj.free(&_epoll);
+    const fd_obj = EvLoop.FdObj.new(fd);
+    defer fd_obj.free(&_evloop);
 
     // var query_ids = std.AutoHashMapUnmanaged(u16, void).init();
     // _ = query_ids;
@@ -81,7 +81,7 @@ fn service_tcp(fd: c_int) void {
     while (true) {
         // read the msg length (be16)
         var len: u16 = undefined;
-        _epoll.recv_exactly(fd_obj, std.mem.asBytes(&len), 0) orelse {
+        _evloop.recv_exactly(fd_obj, std.mem.asBytes(&len), 0) orelse {
             const err = cc.errno();
             if (err == 0)
                 log.info(@src(), "connection:%d closed", .{fd})
@@ -103,7 +103,7 @@ fn service_tcp(fd: c_int) void {
 
         // read the msg body
         var buf: [c.DNS_PACKET_MAXSIZE]u8 = undefined;
-        _epoll.recv_exactly(fd_obj, buf[0..len], 0) orelse {
+        _evloop.recv_exactly(fd_obj, buf[0..len], 0) orelse {
             const err = cc.errno();
             if (err == 0)
                 log.info(@src(), "connection:%d closed", .{fd})
@@ -122,8 +122,8 @@ fn service_tcp(fd: c_int) void {
 fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
     defer coro.on_terminate(@frame());
 
-    const fd_obj = Epoll.FdObj.new(fd);
-    defer fd_obj.free(&_epoll);
+    const fd_obj = EvLoop.FdObj.new(fd);
+    defer fd_obj.free(&_evloop);
 
     while (true) {
         var buf: [c.DNS_PACKET_MAXSIZE]u8 = undefined;
@@ -131,7 +131,7 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
         var addr: net.Addr = undefined;
         var addrlen: c.socklen_t = @sizeOf(net.Addr);
 
-        const len = _epoll.recvfrom(fd_obj, &buf, 0, &addr.sa, &addrlen) orelse {
+        const len = _evloop.recvfrom(fd_obj, &buf, 0, &addr.sa, &addrlen) orelse {
             log.err(@src(), "recvfrom(%d) on %s#%u failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
             return;
         };
@@ -151,7 +151,7 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
     }
 }
 
-/// called by Epoll.check_timeout
+/// called by EvLoop.check_timeout
 pub fn check_timeout() c_int {
     // TODO
     return -1;
@@ -206,7 +206,7 @@ pub fn main() u8 {
 
     // ============================================================================
 
-    _epoll = Epoll.init();
+    _evloop = EvLoop.init();
 
     // create listening sockets
     for (g.bind_ips.items) |ip| {
@@ -215,7 +215,7 @@ pub fn main() u8 {
         coro.create(listen_udp, .{ fds[1], ip.? });
     }
 
-    _epoll.loop();
+    _evloop.run();
 
     return 0;
 }

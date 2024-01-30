@@ -9,12 +9,12 @@ const trait = std.meta.trait;
 const assert = std.debug.assert;
 const heap = std.heap;
 
-const Epoll = @This();
+const EvLoop = @This();
 
 /// epoll instance (fd)
 epfd: c_int,
 
-/// avoid touching freed ptr, see epoll.loop()
+/// avoid touching freed ptr, see evloop.run()
 destroyed: std.AutoHashMapUnmanaged(*const FdObj, void) = .{},
 
 /// cache fd's add/del operation (reducing epoll_ctl calls)
@@ -65,7 +65,7 @@ const Change = opaque {
 
 // =============================================================
 
-/// wrap the raw fd to work with epoll
+/// wrap the raw fd to work with evloop
 pub const FdObj = struct {
     read_frame: ?anyframe = null, // waiting for readable event
     write_frame: ?anyframe = null, // waiting for writable event
@@ -86,7 +86,7 @@ pub const FdObj = struct {
 
     pub const unref = free;
 
-    pub fn free(self: *FdObj, epoll: *Epoll) void {
+    pub fn free(self: *FdObj, evloop: *EvLoop) void {
         assert(self.ref_count > 0);
         self.ref_count -= 1;
 
@@ -94,13 +94,13 @@ pub const FdObj = struct {
             assert(self.read_frame == null);
             assert(self.write_frame == null);
 
-            epoll.on_close_fd(self);
+            evloop.on_close_fd(self);
             _ = c.close(self.fd);
 
             cc.free(self);
 
-            // record to the destroyed list, see `epoll.loop()`
-            epoll.destroyed.put(heap.raw_c_allocator, self, {}) catch unreachable;
+            // record to the destroyed list, see `evloop.run()`
+            evloop.destroyed.put(heap.raw_c_allocator, self, {}) catch unreachable;
         }
     }
 };
@@ -185,7 +185,7 @@ extern fn epoll_wait(epfd: c_int, evs: *anyopaque, n_evs: c_int, timeout: c_int)
 
 // =============================================================
 
-pub fn init() Epoll {
+pub fn init() EvLoop {
     const epfd = epoll_create1(c.EPOLL_CLOEXEC);
     if (epfd < 0) {
         log.err(@src(), "failed to create epoll: (%d) %m", .{cc.errno()});
@@ -195,7 +195,7 @@ pub fn init() Epoll {
 }
 
 /// return true if ok (internal api)
-fn ctl(self: *Epoll, op: c_int, fd: c_int, ev: ?*const Ev) bool {
+fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*const Ev) bool {
     if (epoll_ctl(self.epfd, op, fd, ev) < 0) {
         const op_name = switch (op) {
             c.EPOLL_CTL_ADD => "ADD",
@@ -211,17 +211,17 @@ fn ctl(self: *Epoll, op: c_int, fd: c_int, ev: ?*const Ev) bool {
 }
 
 /// return true if ok
-fn add(self: *Epoll, fd_obj: *const FdObj, events: u32) bool {
+fn add(self: *EvLoop, fd_obj: *const FdObj, events: u32) bool {
     return self.ctl(c.EPOLL_CTL_ADD, fd_obj.fd, Ev.V.init(events, fd_obj).ptr());
 }
 
 /// return true if ok
-fn mod(self: *Epoll, fd_obj: *const FdObj, events: u32) bool {
+fn mod(self: *EvLoop, fd_obj: *const FdObj, events: u32) bool {
     return self.ctl(c.EPOLL_CTL_MOD, fd_obj.fd, Ev.V.init(events, fd_obj).ptr());
 }
 
 /// return true if ok
-fn del(self: *Epoll, fd_obj: *const FdObj) bool {
+fn del(self: *EvLoop, fd_obj: *const FdObj) bool {
     return self.ctl(c.EPOLL_CTL_DEL, fd_obj.fd, null);
 }
 
@@ -239,30 +239,30 @@ fn unset_frame(fd_obj: *FdObj, comptime field_name: []const u8, frame: anyframe)
 }
 
 /// before suspend {}
-fn add_readable(self: *Epoll, fd_obj: *FdObj, frame: anyframe) void {
+fn add_readable(self: *EvLoop, fd_obj: *FdObj, frame: anyframe) void {
     set_frame(fd_obj, "read_frame", frame);
     return self.cache_change(fd_obj, Change.ADD_READ);
 }
 
 /// after suspend {}
-fn del_readable(self: *Epoll, fd_obj: *FdObj, frame: anyframe) void {
+fn del_readable(self: *EvLoop, fd_obj: *FdObj, frame: anyframe) void {
     unset_frame(fd_obj, "read_frame", frame);
     return self.cache_change(fd_obj, Change.DEL_READ);
 }
 
 /// before suspend {}
-fn add_writable(self: *Epoll, fd_obj: *FdObj, frame: anyframe) void {
+fn add_writable(self: *EvLoop, fd_obj: *FdObj, frame: anyframe) void {
     set_frame(fd_obj, "write_frame", frame);
     return self.cache_change(fd_obj, Change.ADD_WRITE);
 }
 
 /// after suspend {}
-fn del_writable(self: *Epoll, fd_obj: *FdObj, frame: anyframe) void {
+fn del_writable(self: *EvLoop, fd_obj: *FdObj, frame: anyframe) void {
     unset_frame(fd_obj, "write_frame", frame);
     return self.cache_change(fd_obj, Change.DEL_WRITE);
 }
 
-fn cache_change(self: *Epoll, fd_obj: *const FdObj, change: Change.T) void {
+fn cache_change(self: *EvLoop, fd_obj: *const FdObj, change: Change.T) void {
     const v = self.change_list.getOrPut(heap.raw_c_allocator, fd_obj) catch unreachable;
     const change_set = v.value_ptr;
     if (v.found_existing) {
@@ -276,7 +276,7 @@ fn cache_change(self: *Epoll, fd_obj: *const FdObj, change: Change.T) void {
     }
 }
 
-fn apply_change(self: *Epoll) void {
+fn apply_change(self: *EvLoop) void {
     var it = self.change_list.iterator();
     while (it.next()) |v| {
         const fd_obj = v.key_ptr.*;
@@ -306,7 +306,7 @@ fn apply_change(self: *Epoll) void {
     self.change_list.clearRetainingCapacity();
 }
 
-fn on_close_fd(self: *Epoll, fd_obj: *const FdObj) void {
+fn on_close_fd(self: *EvLoop, fd_obj: *const FdObj) void {
     if (self.change_list.fetchRemove(fd_obj)) |v| {
         if (v.value.has_any(Change.DEL_READ | Change.DEL_WRITE))
             assert(self.del(fd_obj));
@@ -329,7 +329,7 @@ fn check_timeout() c_int {
     return root.check_timeout();
 }
 
-pub fn loop(self: *Epoll) void {
+pub fn run(self: *EvLoop) void {
     var evs: Ev.Array(64) = undefined;
 
     while (true) {
@@ -382,7 +382,7 @@ comptime {
     assert(c.EAGAIN == c.EWOULDBLOCK);
 }
 
-pub fn accept(self: *Epoll, fd_obj: *FdObj, addr: ?*c.struct_sockaddr, addrlen: ?*c.socklen_t) ?c_int {
+pub fn accept(self: *EvLoop, fd_obj: *FdObj, addr: ?*c.struct_sockaddr, addrlen: ?*c.socklen_t) ?c_int {
     while (true) {
         const res = c.accept4(fd_obj.fd, addr, addrlen, c.SOCK_NONBLOCK | c.SOCK_CLOEXEC);
         if (res >= 0)
@@ -397,7 +397,7 @@ pub fn accept(self: *Epoll, fd_obj: *FdObj, addr: ?*c.struct_sockaddr, addrlen: 
     }
 }
 
-pub fn recvfrom(self: *Epoll, fd_obj: *FdObj, buf: []u8, flags: c_int, addr: ?*c.struct_sockaddr, addrlen: ?*c.socklen_t) ?usize {
+pub fn recvfrom(self: *EvLoop, fd_obj: *FdObj, buf: []u8, flags: c_int, addr: ?*c.struct_sockaddr, addrlen: ?*c.socklen_t) ?usize {
     while (true) {
         const res = c.recvfrom(fd_obj.fd, buf.ptr, buf.len, flags, addr, addrlen);
         if (res >= 0)
@@ -413,7 +413,7 @@ pub fn recvfrom(self: *Epoll, fd_obj: *FdObj, buf: []u8, flags: c_int, addr: ?*c
 }
 
 /// length 0 means EOF
-pub fn recv(self: *Epoll, fd_obj: *FdObj, buf: []u8, flags: c_int) ?usize {
+pub fn recv(self: *EvLoop, fd_obj: *FdObj, buf: []u8, flags: c_int) ?usize {
     while (true) {
         const res = c.recv(fd_obj.fd, buf.ptr, buf.len, flags);
         if (res >= 0)
@@ -429,7 +429,7 @@ pub fn recv(self: *Epoll, fd_obj: *FdObj, buf: []u8, flags: c_int) ?usize {
 }
 
 /// read exactly `buf.len` bytes (res:null and errno:0 means EOF)
-pub fn recv_exactly(self: *Epoll, fd_obj: *FdObj, buf: []u8, flags: c_int) ?void {
+pub fn recv_exactly(self: *EvLoop, fd_obj: *FdObj, buf: []u8, flags: c_int) ?void {
     var nread: usize = 0;
     while (nread < buf.len) {
         const n = self.recv(fd_obj, buf[nread..], flags) orelse return null;
@@ -443,11 +443,10 @@ pub fn recv_exactly(self: *Epoll, fd_obj: *FdObj, buf: []u8, flags: c_int) ?void
 
 // =====================================================================
 
-pub fn @"test: epoll api"() !void {
+pub fn @"test: evloop api"() !void {
     _ = add;
     _ = mod;
     _ = del;
-    _ = loop;
     _ = Ev.get_events;
     _ = Ev.get_fd_obj;
     _ = Ev.set_events;
