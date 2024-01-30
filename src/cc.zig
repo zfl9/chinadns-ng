@@ -195,10 +195,9 @@ pub fn strdup(str: anytype) [:0]u8 {
 
 /// note: `str` and `buf` cannot overlap
 /// similar to strdup, but copy to the given buffer
-pub fn strdup_r(str: anytype, buf: []u8) error{NotEnoughSpace}![:0]u8 {
+pub fn strdup_r(str: anytype, buf: []u8) ?[:0]u8 {
     const s = strslice_c(str);
-    if (s.len > buf.len - 1)
-        return error.NotEnoughSpace;
+    if (s.len > buf.len - 1) return null;
     return strdup_internal(s, buf);
 }
 

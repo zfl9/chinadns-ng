@@ -78,7 +78,7 @@ pub const List = struct {
     }
 
     /// "[proto://][host@]ip[#port][path]"
-    pub noinline fn add(self: *List, in_value: []const u8) opt.Err!void {
+    pub noinline fn add(self: *List, in_value: []const u8) ?void {
         @setCold(true);
 
         var value = in_value;
@@ -90,7 +90,7 @@ pub const List = struct {
                 value = value[i + 3 ..];
                 break :b Proto.from_str(proto) orelse {
                     opt.catch_print(@src(), "invalid proto", proto);
-                    return opt.Err.optval_bad_format;
+                    return null;
                 };
             }
             break :b Proto.tcp_or_udp;
@@ -103,11 +103,11 @@ pub const List = struct {
                 value = value[i + 1 ..];
                 if (host.len == 0) {
                     opt.catch_print(@src(), "invalid host", host);
-                    return opt.Err.optval_bad_format;
+                    return null;
                 }
                 if (!proto.require_host()) {
                     opt.catch_print(@src(), "no host required", host);
-                    return opt.Err.optval_bad_format;
+                    return null;
                 }
                 break :b host;
             }
@@ -121,7 +121,7 @@ pub const List = struct {
                 value = value[0..i];
                 if (!proto.require_path()) {
                     opt.catch_print(@src(), "no path required", path);
-                    return opt.Err.optval_bad_format;
+                    return null;
                 }
                 break :b path;
             }
@@ -133,14 +133,14 @@ pub const List = struct {
             if (std.mem.indexOfScalar(u8, value, '#')) |i| {
                 const port = value[i + 1 ..];
                 value = value[0..i];
-                break :b try opt.check_port(port);
+                break :b opt.check_port(port) orelse return null;
             }
             break :b proto.std_port();
         };
 
         // ip
         const ip = value;
-        try opt.check_ip(ip);
+        opt.check_ip(ip) orelse return null;
 
         self.add_to_list(proto, host, ip, port, path);
     }

@@ -11,10 +11,6 @@ const NoAAAA = @import("NoAAAA.zig");
 const Upstream = @import("Upstream.zig");
 const testing = std.testing;
 
-pub const Err = error{
-    optval_bad_format,
-};
-
 const help =
     \\usage: chinadns-ng <options...>. the existing options are as follows:
     \\ -C, --config <path>                  format similar to the long option
@@ -185,72 +181,72 @@ fn opt_config(in_value: ?[]const u8) void {
     }
 }
 
-pub fn check_ip(value: []const u8) Err!void {
+pub fn check_ip(value: []const u8) ?void {
     var buf: [64]u8 = undefined;
 
-    const ip = cc.strdup_r(value, &buf) catch {
+    const ip = cc.strdup_r(value, &buf) orelse {
         catch_print(@src(), "ip is too long", value);
-        return Err.optval_bad_format;
+        return null;
     };
 
     if (net.get_ipstr_family(ip.ptr) == null) {
         catch_print(@src(), "invalid ip", value);
-        return Err.optval_bad_format;
+        return null;
     }
 }
 
-pub fn check_port(value: []const u8) Err!u16 {
-    const port = str2int.parse(u16, value, 10) catch 0;
+pub fn check_port(value: []const u8) ?u16 {
+    const port = str2int.parse(u16, value, 10) orelse 0;
     if (port == 0) {
         catch_print(@src(), "invalid port", value);
-        return Err.optval_bad_format;
+        return null;
     }
     return port;
 }
 
 fn opt_bind_addr(in_value: ?[]const u8) void {
     const value = in_value.?;
-    check_ip(value) catch catch_exit(@src(), value);
+    check_ip(value) orelse catch_exit(@src(), value);
     g.bind_ips.add(value);
 }
 
 fn opt_bind_port(in_value: ?[]const u8) void {
     const value = in_value.?;
-    g.bind_port = check_port(value) catch catch_exit(@src(), value);
+    g.bind_port = check_port(value) orelse catch_exit(@src(), value);
 }
 
 /// "upstream,..."
-fn add_upstreams(list: *Upstream.List, upstreams: []const u8) Err!void {
+fn add_upstreams(list: *Upstream.List, upstreams: []const u8) ?void {
     var it = std.mem.split(u8, upstreams, ",");
     while (it.next()) |upstream| {
-        list.add(upstream) catch |err| {
+        list.add(upstream) orelse {
             catch_print(@src(), "invalid address", upstream);
-            return err;
+            return null;
         };
     }
 }
 
 fn opt_china_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.chinadns_list, value) catch catch_exit(@src(), value);
+    add_upstreams(&g.chinadns_list, value) orelse catch_exit(@src(), value);
 }
 
 fn opt_trust_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.trustdns_list, value) catch catch_exit(@src(), value);
+    add_upstreams(&g.trustdns_list, value) orelse catch_exit(@src(), value);
 }
 
 /// "foo.txt,..."
-fn add_paths(list: *StrList, paths: []const u8) Err!void {
+fn add_paths(list: *StrList, paths: []const u8) ?void {
     var it = std.mem.split(u8, paths, ",");
     while (it.next()) |path| {
         if (path.len <= 0) {
             catch_print(@src(), "invalid paths format", paths);
-            return Err.optval_bad_format;
+            return null;
         }
         if (path.len > c.PATH_MAX) {
             catch_print(@src(), "path is too long", path);
-            return Err.optval_bad_format;
+            return null;
         }
         list.add(path);
     }
@@ -258,12 +254,12 @@ fn add_paths(list: *StrList, paths: []const u8) Err!void {
 
 fn opt_chnlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_paths(&g.chnlist_filenames, value) catch catch_exit(@src(), value);
+    add_paths(&g.chnlist_filenames, value) orelse catch_exit(@src(), value);
 }
 
 fn opt_gfwlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_paths(&g.gfwlist_filenames, value) catch catch_exit(@src(), value);
+    add_paths(&g.gfwlist_filenames, value) orelse catch_exit(@src(), value);
 }
 
 fn opt_chnlist_first(_: ?[]const u8) void {
@@ -325,14 +321,14 @@ fn opt_no_ipv6(in_value: ?[]const u8) void {
 
 fn opt_timeout_sec(in_value: ?[]const u8) void {
     const value = in_value.?;
-    g.upstream_timeout = str2int.parse(@TypeOf(g.upstream_timeout), value, 10) catch 0;
+    g.upstream_timeout = str2int.parse(@TypeOf(g.upstream_timeout), value, 10) orelse 0;
     if (g.upstream_timeout == 0)
         exit(@src(), "invalid upstream timeout: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 }
 
 fn opt_repeat_times(in_value: ?[]const u8) void {
     const value = in_value.?;
-    g.trustdns_packet_n = str2int.parse(@TypeOf(g.trustdns_packet_n), value, 10) catch 0;
+    g.trustdns_packet_n = str2int.parse(@TypeOf(g.trustdns_packet_n), value, 10) orelse 0;
     if (g.trustdns_packet_n == 0)
         exit(@src(), "invalid trust-dns packets num: '%.*s'", .{ cc.to_int(value.len), value.ptr });
     g.trustdns_packet_n = std.math.min(g.trustdns_packet_n, g.TRUSTDNS_PACKET_MAX);
@@ -482,10 +478,10 @@ pub fn parse() void {
         g.bind_ips.add("127.0.0.1");
 
     if (g.chinadns_list.is_empty())
-        g.chinadns_list.add("114.114.114.114") catch unreachable;
+        g.chinadns_list.add("114.114.114.114") orelse unreachable;
 
     if (g.trustdns_list.is_empty())
-        g.trustdns_list.add("8.8.8.8") catch unreachable;
+        g.trustdns_list.add("8.8.8.8") orelse unreachable;
 }
 
 pub fn @"test: parse option and config"() !void {
