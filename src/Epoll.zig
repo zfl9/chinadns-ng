@@ -197,14 +197,14 @@ pub fn init() Epoll {
 /// return true if ok (internal api)
 fn ctl(self: *Epoll, op: c_int, fd: c_int, ev: ?*const Ev) bool {
     if (epoll_ctl(self.epfd, op, fd, ev) < 0) {
-        // const op_name = switch (op) {
-        //     c.EPOLL_CTL_ADD => "ADD",
-        //     c.EPOLL_CTL_MOD => "MOD",
-        //     c.EPOLL_CTL_DEL => "DEL",
-        //     else => unreachable,
-        // };
-        // const events = if (ev) |e| cc.to_ulong(e.get_events()) else 0;
-        // log.err(@src(), "epoll_ctl(%d, %s, %d, events=%lu) failed: (%d) %m", .{ self.epfd, op_name, fd, events, cc.errno() });
+        const op_name = switch (op) {
+            c.EPOLL_CTL_ADD => "ADD",
+            c.EPOLL_CTL_MOD => "MOD",
+            c.EPOLL_CTL_DEL => "DEL",
+            else => unreachable,
+        };
+        const events = if (ev) |e| cc.to_ulong(e.get_events()) else 0;
+        log.err(@src(), "epoll_ctl(%d, %s, %d, events=%lu) failed: (%d) %m", .{ self.epfd, op_name, fd, events, cc.errno() });
         return false;
     }
     return true;
@@ -292,12 +292,15 @@ fn apply_change(self: *Epoll) void {
             assert(change_set.has_any(Change.DEL_READ | Change.DEL_WRITE));
             assert(self.del(fd_obj));
         } else {
-            // add or mod
-            // TODO: based on the frame state of `fd_obj` and the state of `change_set`, we can determine whether it is `add` or `mod`
-            if (!self.add(fd_obj, new_events | c.EPOLLET)) {
-                assert(cc.errno() == c.EEXIST);
+            // add or mod(r+w <=> r/w)
+            var chg_events: u32 = 0;
+            if (change_set.has(Change.ADD_READ)) chg_events |= EVENTS.read;
+            if (change_set.has(Change.ADD_WRITE)) chg_events |= EVENTS.write;
+
+            if (chg_events == new_events)
+                assert(self.add(fd_obj, new_events | c.EPOLLET))
+            else
                 assert(self.mod(fd_obj, new_events | c.EPOLLET));
-            }
         }
     }
     self.change_list.clearRetainingCapacity();

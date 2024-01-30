@@ -130,7 +130,7 @@ static void setup_listen_socket(int family, int sockfd, bool reuse_port) {
 
 /* create non-blocking socket */
 static int new_socket(int family, int socktype, bool for_listen, bool reuse_port) {
-    int sockfd = socket(family, socktype | SOCK_NONBLOCK, 0); /* since Linux 2.6.27 */
+    int sockfd = socket(family, socktype | SOCK_NONBLOCK | SOCK_CLOEXEC, 0); /* since Linux 2.6.27 */
     unlikely_if (sockfd < 0) {
         log_error("failed to create %s%c socket: (%d) %s", 
             socktype == SOCK_STREAM ? "tcp" : "udp",
