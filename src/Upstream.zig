@@ -89,7 +89,7 @@ pub const List = struct {
                 const proto = value[0 .. i + 3];
                 value = value[i + 3 ..];
                 break :b Proto.from_str(proto) orelse {
-                    opt.catch_print(@src(), "invalid proto", proto);
+                    opt.err_print(@src(), "invalid proto", proto);
                     return null;
                 };
             }
@@ -102,11 +102,11 @@ pub const List = struct {
                 const host = value[0..i];
                 value = value[i + 1 ..];
                 if (host.len == 0) {
-                    opt.catch_print(@src(), "invalid host", host);
+                    opt.err_print(@src(), "invalid host", host);
                     return null;
                 }
                 if (!proto.require_host()) {
-                    opt.catch_print(@src(), "no host required", host);
+                    opt.err_print(@src(), "no host required", host);
                     return null;
                 }
                 break :b host;
@@ -120,7 +120,7 @@ pub const List = struct {
                 const path = value[i..];
                 value = value[0..i];
                 if (!proto.require_path()) {
-                    opt.catch_print(@src(), "no path required", path);
+                    opt.err_print(@src(), "no path required", path);
                     return null;
                 }
                 break :b path;

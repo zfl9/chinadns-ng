@@ -94,21 +94,27 @@ fn get_optdef(name: []const u8) ?OptDef {
     return null;
 }
 
+// ================================================================
+
+/// print msg
 fn print(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) void {
     cc.printf(log.srcinfo(src) ++ " " ++ fmt ++ "\n", args);
 }
 
+/// print msg + print help + exit(1)
 fn exit(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
     cc.printf(log.srcinfo(src) ++ " " ++ fmt ++ "\n", args);
     cc.printf("%s\n", .{help});
     c.exit(1);
 }
 
-pub fn catch_print(comptime src: std.builtin.SourceLocation, comptime msg: [:0]const u8, value: []const u8) void {
+/// simple version of `print`
+pub fn err_print(comptime src: std.builtin.SourceLocation, comptime msg: [:0]const u8, value: []const u8) void {
     print(src, msg ++ ": '%.*s'", .{ cc.to_int(value.len), value.ptr });
 }
 
-fn catch_exit(comptime src: std.builtin.SourceLocation, value: []const u8) noreturn {
+/// simple version of `exit`
+fn err_exit(comptime src: std.builtin.SourceLocation, value: []const u8) noreturn {
     exit(src, "invalid opt-value: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 }
 
@@ -185,12 +191,12 @@ pub fn check_ip(value: []const u8) ?void {
     var buf: [64]u8 = undefined;
 
     const ip = cc.strdup_r(value, &buf) orelse {
-        catch_print(@src(), "ip is too long", value);
+        err_print(@src(), "ip is too long", value);
         return null;
     };
 
     if (net.get_ipstr_family(ip.ptr) == null) {
-        catch_print(@src(), "invalid ip", value);
+        err_print(@src(), "invalid ip", value);
         return null;
     }
 }
@@ -198,7 +204,7 @@ pub fn check_ip(value: []const u8) ?void {
 pub fn check_port(value: []const u8) ?u16 {
     const port = str2int.parse(u16, value, 10) orelse 0;
     if (port == 0) {
-        catch_print(@src(), "invalid port", value);
+        err_print(@src(), "invalid port", value);
         return null;
     }
     return port;
@@ -206,13 +212,13 @@ pub fn check_port(value: []const u8) ?u16 {
 
 fn opt_bind_addr(in_value: ?[]const u8) void {
     const value = in_value.?;
-    check_ip(value) orelse catch_exit(@src(), value);
+    check_ip(value) orelse err_exit(@src(), value);
     g.bind_ips.add(value);
 }
 
 fn opt_bind_port(in_value: ?[]const u8) void {
     const value = in_value.?;
-    g.bind_port = check_port(value) orelse catch_exit(@src(), value);
+    g.bind_port = check_port(value) orelse err_exit(@src(), value);
 }
 
 /// "upstream,..."
@@ -220,7 +226,7 @@ fn add_upstreams(list: *Upstream.List, upstreams: []const u8) ?void {
     var it = std.mem.split(u8, upstreams, ",");
     while (it.next()) |upstream| {
         list.add(upstream) orelse {
-            catch_print(@src(), "invalid address", upstream);
+            err_print(@src(), "invalid address", upstream);
             return null;
         };
     }
@@ -228,12 +234,12 @@ fn add_upstreams(list: *Upstream.List, upstreams: []const u8) ?void {
 
 fn opt_china_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.chinadns_list, value) orelse catch_exit(@src(), value);
+    add_upstreams(&g.chinadns_list, value) orelse err_exit(@src(), value);
 }
 
 fn opt_trust_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.trustdns_list, value) orelse catch_exit(@src(), value);
+    add_upstreams(&g.trustdns_list, value) orelse err_exit(@src(), value);
 }
 
 /// "foo.txt,..."
@@ -241,11 +247,11 @@ fn add_paths(list: *StrList, paths: []const u8) ?void {
     var it = std.mem.split(u8, paths, ",");
     while (it.next()) |path| {
         if (path.len <= 0) {
-            catch_print(@src(), "invalid paths format", paths);
+            err_print(@src(), "invalid paths format", paths);
             return null;
         }
         if (path.len > c.PATH_MAX) {
-            catch_print(@src(), "path is too long", path);
+            err_print(@src(), "path is too long", path);
             return null;
         }
         list.add(path);
@@ -254,12 +260,12 @@ fn add_paths(list: *StrList, paths: []const u8) ?void {
 
 fn opt_chnlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_paths(&g.chnlist_filenames, value) orelse catch_exit(@src(), value);
+    add_paths(&g.chnlist_filenames, value) orelse err_exit(@src(), value);
 }
 
 fn opt_gfwlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_paths(&g.gfwlist_filenames, value) orelse catch_exit(@src(), value);
+    add_paths(&g.gfwlist_filenames, value) orelse err_exit(@src(), value);
 }
 
 fn opt_chnlist_first(_: ?[]const u8) void {
