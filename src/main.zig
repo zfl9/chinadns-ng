@@ -19,6 +19,7 @@ const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
 const Epoll = @import("Epoll.zig");
+const coro = @import("coro.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -40,60 +41,114 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 
 // =======================================================================================================
 
-/// create and start coroutine
-inline fn coro_create(comptime func: anytype, args: anytype) void {
-    const buf = cc.align_malloc_many(u8, @frameSize(func), std.Target.stack_align).?;
-    _ = @asyncCall(buf, {}, func, args);
-    // @call(.{ .modifier = .async_kw, .stack = buf }, func, args);
-}
-
-/// free memory of coroutine
-/// https://github.com/ziglang/zig/issues/10622
-inline fn coro_destroy(top_frame: anyframe) void {
-    const ptr = @intToPtr(*anyopaque, @ptrToInt(top_frame));
-    return @call(.{ .modifier = .always_tail }, cc.free, .{ptr});
-}
-
-// =======================================================================================================
-
 var _epoll: Epoll = undefined;
 
-fn do_tcp_listen(server_sock: c_int) void {
-    defer coro_destroy(@frame());
+fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
+    defer coro.on_terminate(@frame());
 
-    _epoll.do_accept(server_sock, struct {
-        fn callback(sock: c_int) void {
-            coro_create(do_tcp_service, .{sock});
-        }
-    }.callback);
+    const fd_obj = Epoll.FdObj.new(fd);
+    defer fd_obj.free(&_epoll);
+
+    while (true) {
+        const conn_fd = _epoll.accept(fd_obj, null, null) orelse {
+            log.err(@src(), "failed to accept on %s#%u: (%d) %m", .{ ip, cc.to_uint(g.bind_port), cc.errno() });
+            // TODO: if it is a recoverable error then continue
+            return;
+        };
+        coro.create(service_tcp, .{conn_fd});
+    }
 }
 
-fn do_tcp_service(sock: c_int) void {
-    defer coro_destroy(@frame());
+fn service_tcp(fd: c_int) void {
+    defer coro.on_terminate(@frame());
 
-    defer _ = c.close(sock);
+    const fd_obj = Epoll.FdObj.new(fd);
+    defer fd_obj.free(&_epoll);
 
-    // TODO: tcp nodelay
+    // var query_ids = std.AutoHashMapUnmanaged(u16, void).init();
+    // _ = query_ids;
 
-    var addr: net.SockAddr = undefined;
-    var addrlen: c.socklen_t = @sizeOf(net.SockAddr);
-    _ = c.getpeername(sock, &addr.sa, &addrlen);
+    var addr: net.Addr = undefined;
+    var addrlen: c.socklen_t = @sizeOf(net.Addr);
+    _ = c.getpeername(fd, &addr.sa, &addrlen);
 
-    var ip: [c.INET6_ADDRSTRLEN - 1:0]u8 = undefined;
+    var ip: net.IpStrBuf = undefined;
     var port: u16 = undefined;
     addr.to_text(&ip, &port);
 
-    log.info(@src(), "new connection from %s#%u", .{ &ip, cc.to_uint(port) });
+    log.info(@src(), "new connection:%d from %s#%u", .{ fd, &ip, cc.to_uint(port) });
 
-    // TODO
+    while (true) {
+        // read the msg length (be16)
+        var len: u16 = undefined;
+        _epoll.recv_exactly(fd_obj, std.mem.asBytes(&len), 0) orelse {
+            const err = cc.errno();
+            if (err == 0)
+                log.info(@src(), "connection:%d closed", .{fd})
+            else
+                log.err(@src(), "recv(%d, %s#%u, @len) failed: (%d) %m", .{ fd, &ip, cc.to_uint(port), cc.errno() });
+            return;
+        };
+        len = std.mem.bigToNative(u16, len);
+
+        // if (len < c.DNS_PACKET_MINSIZE)
+        if (len < 17) {
+            log.err(@src(), "query msg is too small: %u < %d", .{ cc.to_uint(len), cc.to_int(17) });
+            return;
+        }
+        if (len > c.DNS_PACKET_MAXSIZE) {
+            log.err(@src(), "query msg is too large: %u > %d", .{ cc.to_uint(len), c.DNS_PACKET_MAXSIZE });
+            return;
+        }
+
+        // read the msg body
+        var buf: [c.DNS_PACKET_MAXSIZE]u8 = undefined;
+        _epoll.recv_exactly(fd_obj, buf[0..len], 0) orelse {
+            const err = cc.errno();
+            if (err == 0)
+                log.info(@src(), "connection:%d closed", .{fd})
+            else
+                log.err(@src(), "recv(%d, %s#%u, @len) failed: (%d) %m", .{ fd, &ip, cc.to_uint(port), cc.errno() });
+            return;
+        };
+
+        const id = std.mem.bigToNative(u16, std.mem.bytesAsValue(u16, buf[0..2]).*);
+        log.info(@src(), "recv query(id=%u, sz=%u) from %s#%u", .{ cc.to_uint(id), cc.to_uint(len), &ip, cc.to_uint(port) });
+
+        // TODO: forward to upstreams
+    }
 }
 
-fn do_udp_service(server_sock: c_int) void {
-    defer coro_destroy(@frame());
+fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
+    defer coro.on_terminate(@frame());
 
-    _ = server_sock;
-    // TODO
+    const fd_obj = Epoll.FdObj.new(fd);
+    defer fd_obj.free(&_epoll);
 
+    while (true) {
+        var buf: [c.DNS_PACKET_MAXSIZE]u8 = undefined;
+
+        var addr: net.Addr = undefined;
+        var addrlen: c.socklen_t = @sizeOf(net.Addr);
+
+        const len = _epoll.recvfrom(fd_obj, &buf, 0, &addr.sa, &addrlen) orelse {
+            log.err(@src(), "recvfrom(%d) on %s#%u failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
+            return;
+        };
+
+        const msg = buf[0..len];
+        // std.debug.assert(len >= c.DNS_PACKET_MINSIZE);
+        std.debug.assert(len >= 17);
+
+        var ip: net.IpStrBuf = undefined;
+        var port: u16 = undefined;
+        addr.to_text(&ip, &port);
+
+        const id = std.mem.bigToNative(u16, std.mem.bytesAsValue(u16, msg[0..2]).*);
+        log.info(@src(), "recv query(id=%u, sz=%zu) from %s#%u", .{ cc.to_uint(id), len, &ip, cc.to_uint(port) });
+
+        // TODO: forward to upstreams
+    }
 }
 
 /// called by Epoll.check_timeout
@@ -151,13 +206,13 @@ pub fn main() u8 {
 
     // ============================================================================
 
-    _epoll = Epoll.create();
+    _epoll = Epoll.init();
 
     // create listening sockets
     for (g.bind_ips.items) |ip| {
         const fds = net.new_dns_server(ip.?, g.bind_port);
-        coro_create(do_tcp_listen, .{fds[0]});
-        coro_create(do_udp_service, .{fds[1]});
+        coro.create(listen_tcp, .{ fds[0], ip.? });
+        coro.create(listen_udp, .{ fds[1], ip.? });
     }
 
     _epoll.loop();

@@ -7,6 +7,7 @@
 #include <asm/byteorder.h>
 
 /* dns packet max size (in bytes) */
+// TODO: change to 4096 (EDNS0, udp maxsz)
 #define DNS_PACKET_MAXSIZE 1472 /* compatible with edns */
 #define DNS_PACKET_MINSIZE (sizeof(struct dns_header) + DNS_NAME_ENC_MINLEN + sizeof(struct dns_query))
 

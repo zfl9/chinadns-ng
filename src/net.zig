@@ -15,24 +15,27 @@ pub inline fn ignore_sigpipe() void {
 
 // ===============================================================
 
-pub const SockAddr = extern union {
+/// ipv4/ipv6 address strbuf (char_array with sentinel 0)
+pub const IpStrBuf = [c.INET6_ADDRSTRLEN - 1:0]u8;
+
+pub const Addr = extern union {
     sa: c.struct_sockaddr,
     sin: c.struct_sockaddr_in,
     sin6: c.struct_sockaddr_in6,
 
-    pub inline fn family(self: *const SockAddr) c.sa_family_t {
+    pub inline fn family(self: *const Addr) c.sa_family_t {
         return self.sa.sa_family;
     }
 
-    pub inline fn is_sin(self: *const SockAddr) bool {
+    pub inline fn is_sin(self: *const Addr) bool {
         return self.family() == c.AF_INET;
     }
 
-    pub inline fn is_sin6(self: *const SockAddr) bool {
+    pub inline fn is_sin6(self: *const Addr) bool {
         return self.family() == c.AF_INET6;
     }
 
-    pub inline fn len(self: *const SockAddr) c.socklen_t {
+    pub inline fn len(self: *const Addr) c.socklen_t {
         return if (self.is_sin())
             @sizeOf(c.struct_sockaddr_in)
         else
@@ -47,14 +50,14 @@ pub const SockAddr = extern union {
             @ptrCast(*c.skaddr, self);
     }
 
-    pub inline fn from_text(ip: cc.ConstStr, port: u16) SockAddr {
-        var self: SockAddr = undefined;
+    pub inline fn from_text(ip: cc.ConstStr, port: u16) Addr {
+        var self: Addr = undefined;
         std.mem.set(u8, std.mem.asBytes(&self), 0);
         c.skaddr_from_text((&self).skaddr(), ip, port);
         return self;
     }
 
-    pub inline fn to_text(self: *const SockAddr, ip: cc.Str, port: *u16) void {
+    pub inline fn to_text(self: *const Addr, ip: cc.Str, port: *u16) void {
         return c.skaddr_to_text(self.skaddr(), ip, port);
     }
 };
@@ -81,7 +84,7 @@ pub inline fn set_reuse_port(sock: c_int) void {
 
 /// create dns listen socket (tcp + udp)
 pub fn new_dns_server(ip: cc.ConstStr, port: u16) [2]c_int {
-    const sockaddr = SockAddr.from_text(ip, port);
+    const sockaddr = Addr.from_text(ip, port);
 
     const tcpsock = new_tcp_socket(sockaddr.family(), true);
     const udpsock = new_udp_socket(sockaddr.family(), true);
@@ -162,11 +165,11 @@ pub fn @"test: net api"() !void {
     _ = recvmmsg;
     _ = sendmmsg;
     _ = new_udp_socket;
-    _ = SockAddr;
-    _ = SockAddr.family;
-    _ = SockAddr.is_sin;
-    _ = SockAddr.is_sin6;
-    _ = SockAddr.len;
-    _ = SockAddr.from_text;
-    _ = SockAddr.to_text;
+    _ = Addr;
+    _ = Addr.family;
+    _ = Addr.is_sin;
+    _ = Addr.is_sin6;
+    _ = Addr.len;
+    _ = Addr.from_text;
+    _ = Addr.to_text;
 }

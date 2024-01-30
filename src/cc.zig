@@ -52,6 +52,10 @@ pub fn RemoveConst(comptime T: type) type {
 
 // ==============================================================
 
+pub inline fn ptrcast(comptime P: type, ptr: anytype) P {
+    return @ptrCast(P, @alignCast(@alignOf(meta.Child(P)), ptr));
+}
+
 fn IntCast(comptime DestType: type) type {
     return struct {
         pub inline fn cast(integer: anytype) DestType {
