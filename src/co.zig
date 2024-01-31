@@ -15,7 +15,7 @@ pub fn do_resume(frame: anyframe) void {
     check_terminated();
 }
 
-/// called when the coroutine is about to terminate: `defer coro.on_terminate(@frame())`
+/// called when the coroutine is about to terminate: `defer co.on_terminate(@frame())`
 pub fn on_terminate(top_frame: anyframe) void {
     std.debug.assert(_terminated == null);
     _terminated = top_frame;

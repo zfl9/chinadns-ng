@@ -12,6 +12,7 @@ const log = @import("log.zig");
 const opt = @import("opt.zig");
 const net = @import("net.zig");
 const dnl = @import("dnl.zig");
+const dns = @import("dns.zig");
 const ipset = @import("ipset.zig");
 const fmtchk = @import("fmtchk.zig");
 const str2int = @import("str2int.zig");
@@ -19,7 +20,7 @@ const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
-const coro = @import("coro.zig");
+const co = @import("co.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -27,7 +28,7 @@ const coro = @import("coro.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c, cc, g, log, opt, net, dnl, ipset, fmtchk, str2int, DynStr, StrList, Upstream, EvLoop,
+    c, cc, g, log, opt, net, dnl, dns, ipset, fmtchk, str2int, DynStr, StrList, Upstream, EvLoop,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -44,7 +45,7 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 var _evloop: EvLoop = undefined;
 
 fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
-    defer coro.on_terminate(@frame());
+    defer co.on_terminate(@frame());
 
     const fd_obj = EvLoop.FdObj.new(fd);
     defer fd_obj.free(&_evloop);
@@ -55,12 +56,12 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
             // TODO: if it is a recoverable error then continue
             return;
         };
-        coro.create(service_tcp, .{conn_fd});
+        co.create(service_tcp, .{conn_fd});
     }
 }
 
 fn service_tcp(fd: c_int) void {
-    defer coro.on_terminate(@frame());
+    defer co.on_terminate(@frame());
 
     const fd_obj = EvLoop.FdObj.new(fd);
     defer fd_obj.free(&_evloop);
@@ -91,19 +92,19 @@ fn service_tcp(fd: c_int) void {
         };
         len = std.mem.bigToNative(u16, len);
 
-        // if (len < c.DNS_PACKET_MINSIZE)
-        if (len < 17) {
-            log.err(@src(), "query msg is too small: %u < %d", .{ cc.to_uint(len), cc.to_int(17) });
+        if (len < c.DNS_MSG_MINSIZE) {
+            log.err(@src(), "query msg is too small: %u < %d", .{ cc.to_uint(len), c.DNS_MSG_MINSIZE });
             return;
         }
-        if (len > c.DNS_PACKET_MAXSIZE) {
-            log.err(@src(), "query msg is too large: %u > %d", .{ cc.to_uint(len), c.DNS_PACKET_MAXSIZE });
+        if (len > c.DNS_MSG_MAXSIZE) {
+            log.err(@src(), "query msg is too large: %u > %d", .{ cc.to_uint(len), c.DNS_MSG_MAXSIZE });
             return;
         }
 
         // read the msg body
-        var buf: [c.DNS_PACKET_MAXSIZE]u8 = undefined;
-        _evloop.recv_exactly(fd_obj, buf[0..len], 0) orelse {
+        var buf: [c.DNS_MSG_MAXSIZE]u8 = undefined;
+        var msg = buf[0..len];
+        _evloop.recv_exactly(fd_obj, msg, 0) orelse {
             const err = cc.errno();
             if (err == 0)
                 log.info(@src(), "connection:%d closed", .{fd})
@@ -112,21 +113,26 @@ fn service_tcp(fd: c_int) void {
             return;
         };
 
-        const id = std.mem.bigToNative(u16, std.mem.bytesAsValue(u16, buf[0..2]).*);
-        log.info(@src(), "recv query(id=%u, sz=%u) from %s#%u", .{ cc.to_uint(id), cc.to_uint(len), &ip, cc.to_uint(port) });
+        // check msg format
+        var ascii_name: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
+        var wire_namelen: c_int = undefined;
+        if (!dns.check_query(msg, &ascii_name, &wire_namelen)) return;
+
+        const id = dns.get_id(msg.ptr);
+        log.info(@src(), "recv query(id=%u, sz=%u, '%s') from %s#%u", .{ cc.to_uint(id), cc.to_uint(len), &ascii_name, &ip, cc.to_uint(port) });
 
         // TODO: forward to upstreams
     }
 }
 
 fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
-    defer coro.on_terminate(@frame());
+    defer co.on_terminate(@frame());
 
     const fd_obj = EvLoop.FdObj.new(fd);
     defer fd_obj.free(&_evloop);
 
     while (true) {
-        var buf: [c.DNS_PACKET_MAXSIZE]u8 = undefined;
+        var buf: [c.DNS_MSG_MAXSIZE]u8 = undefined;
 
         var addr: net.Addr = undefined;
         var addrlen: c.socklen_t = @sizeOf(net.Addr);
@@ -137,15 +143,16 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
         };
 
         const msg = buf[0..len];
-        // std.debug.assert(len >= c.DNS_PACKET_MINSIZE);
-        std.debug.assert(len >= 17);
+        var ascii_name: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
+        var wire_namelen: c_int = undefined;
+        if (!dns.check_query(msg, &ascii_name, &wire_namelen)) return;
 
         var ip: net.IpStrBuf = undefined;
         var port: u16 = undefined;
         addr.to_text(&ip, &port);
 
-        const id = std.mem.bigToNative(u16, std.mem.bytesAsValue(u16, msg[0..2]).*);
-        log.info(@src(), "recv query(id=%u, sz=%zu) from %s#%u", .{ cc.to_uint(id), len, &ip, cc.to_uint(port) });
+        const id = dns.get_id(msg.ptr);
+        log.info(@src(), "recv query(id=%u, sz=%zu, '%s') from %s#%u", .{ cc.to_uint(id), len, &ascii_name, &ip, cc.to_uint(port) });
 
         // TODO: forward to upstreams
     }
@@ -211,8 +218,8 @@ pub fn main() u8 {
     // create listening sockets
     for (g.bind_ips.items) |ip| {
         const fds = net.new_dns_server(ip.?, g.bind_port);
-        coro.create(listen_tcp, .{ fds[0], ip.? });
-        coro.create(listen_udp, .{ fds[1], ip.? });
+        co.create(listen_tcp, .{ fds[0], ip.? });
+        co.create(listen_udp, .{ fds[1], ip.? });
     }
 
     _evloop.run();

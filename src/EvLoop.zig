@@ -2,7 +2,7 @@ const c = @import("c.zig");
 const cc = @import("cc.zig");
 const log = @import("log.zig");
 const net = @import("net.zig");
-const coro = @import("coro.zig");
+const co = @import("co.zig");
 const root = @import("root");
 const std = @import("std");
 const trait = std.meta.trait;
@@ -366,10 +366,10 @@ pub fn run(self: *EvLoop) void {
             defer fd_obj.unref(self);
 
             if (fd_obj.read_frame != null and revents & (EVENTS.read | EVENTS.err) != 0)
-                coro.do_resume(fd_obj.read_frame.?);
+                co.do_resume(fd_obj.read_frame.?);
 
             if (fd_obj.write_frame != null and revents & (EVENTS.write | EVENTS.err) != 0)
-                coro.do_resume(fd_obj.write_frame.?);
+                co.do_resume(fd_obj.write_frame.?);
         }
     }
 }

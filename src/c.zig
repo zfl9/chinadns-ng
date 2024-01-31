@@ -51,3 +51,12 @@ pub const float = f32;
 /// assuming IEEE-754 binary64 format
 /// double precision floating-point type
 pub const double = f64;
+
+/// u16 big-endian (used to label the byte order)
+pub const be16 = u16;
+
+/// u32 big-endian (used to label the byte order)
+pub const be32 = u32;
+
+/// u64 big-endian (used to label the byte order)
+pub const be64 = u64;

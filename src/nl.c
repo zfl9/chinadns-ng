@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 
 int nl_sock_create(int protocol, u32 *noalias src_portid) {
-    int sock = socket(AF_NETLINK, SOCK_DGRAM, protocol);
+    int sock = socket(AF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC, protocol);
     unlikely_if (sock < 0) {
         log_error("failed to create socket. protocol:%d errno:%d %s", protocol, errno, strerror(errno));
         exit(errno);
