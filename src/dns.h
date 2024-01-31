@@ -34,8 +34,10 @@ void dns_set_id(void *noalias msg, u16 id);
 
 u16 dns_get_qtype(const void *noalias msg, int wire_namelen);
 
+/* keep only the HEADER and QUESTION section */
 size_t dns_remove_answer(void *noalias msg, int wire_namelen);
 
+/* convert a query msg to a reply msg (rcode: NOERROR) */
 void dns_to_reply_msg(void *noalias msg);
 
 /* "\0" => 0 */
@@ -46,10 +48,10 @@ static inline int dns_ascii_namelen(int wire_namelen) {
     return n > 0 ? n : 0;
 }
 
-/* check dns query, `ascii_name` used to get domain name, return true if valid */
+/* check query msg, `ascii_name` used to get domain name */
 bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_wire_namelen);
 
-/* check dns reply, `ascii_name` used to get domain name, return true if valid */
+/* check reply msg, `ascii_name` used to get domain name */
 bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_wire_namelen);
 
 /* result of dns_test_ip() */
@@ -58,8 +60,8 @@ bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_n
 #define DNS_TEST_IP_NOT_FOUND 2
 #define DNS_TEST_IP_BAD_MSG 3
 
-/* check if the answer ip is in the chnroute ipset (check qtype before call) */
+/* check if the answer ip is chnip (check qtype before call) */
 int dns_test_ip(const void *noalias msg, ssize_t len, int wire_namelen);
 
-/* add the answer ip to ipset (chnroute/chnroute6) */
+/* add the answer ip to ipset/nftset (tag:chn, tag:gfw) */
 void dns_add_ip(const void *noalias msg, ssize_t len, int wire_namelen, bool chn);
