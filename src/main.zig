@@ -103,7 +103,7 @@ fn service_tcp(fd: c_int) void {
 
         // read the msg body
         var buf: [c.DNS_MSG_MAXSIZE]u8 = undefined;
-        var msg = buf[0..len];
+        const msg = buf[0..len];
         _evloop.recv_exactly(fd_obj, msg, 0) orelse {
             const err = cc.errno();
             if (err == 0)

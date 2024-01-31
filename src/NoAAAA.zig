@@ -25,7 +25,7 @@ pub inline fn has_any(self: Self, flags: Flags) bool {
     return self.flags & flags != 0;
 }
 
-pub inline fn add(self: *Self, flags: Flags) void {
+pub fn add(self: *Self, flags: Flags) void {
     self.flags |= flags;
 
     // try simplify to flags ALL

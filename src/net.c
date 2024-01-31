@@ -101,19 +101,19 @@ void net_init(void) {
 }
 
 /* setsockopt(IPV6_V6ONLY) */
-static inline void set_ipv6_only(int sockfd, int value) {
+static void set_ipv6_only(int sockfd, int value) {
     unlikely_if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &value, sizeof(value)))
         log_error("setsockopt(%d, IPV6_V6ONLY, %d): (%d) %s", sockfd, value, errno, strerror(errno));
 }
 
 /* setsockopt(SO_REUSEADDR) */
-static inline void set_reuse_addr(int sockfd) {
+static void set_reuse_addr(int sockfd) {
     unlikely_if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)))
         log_error("setsockopt(%d, SO_REUSEADDR): (%d) %s", sockfd, errno, strerror(errno));
 }
 
 /* setsockopt(SO_REUSEPORT) */
-static inline void set_reuse_port(int sockfd) {
+static void set_reuse_port(int sockfd) {
     unlikely_if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)))
         log_error("setsockopt(%d, SO_REUSEPORT): (%d) %s", sockfd, errno, strerror(errno));
 }

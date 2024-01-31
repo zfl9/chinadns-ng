@@ -50,7 +50,7 @@ pub const Addr = extern union {
             @ptrCast(*c.skaddr, self);
     }
 
-    pub inline fn from_text(ip: cc.ConstStr, port: u16) Addr {
+    pub fn from_text(ip: cc.ConstStr, port: u16) Addr {
         var self: Addr = undefined;
         std.mem.set(u8, std.mem.asBytes(&self), 0);
         c.skaddr_from_text((&self).skaddr(), ip, port);

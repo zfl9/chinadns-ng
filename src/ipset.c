@@ -114,7 +114,7 @@ struct nlnfhdr {
 #define CASE_RET_NAME(MACRO) \
     case MACRO: return #MACRO
 
-static inline const char *ipset_strerror(int errcode) {
+static const char *ipset_strerror(int errcode) {
     switch (errcode) {
         CASE_RET_NAME(IPSET_ERR_PROTOCOL);
         CASE_RET_NAME(IPSET_ERR_FIND_TYPE);
@@ -575,7 +575,7 @@ void ipset_init(const char *noalias tagnone_setname4,
 /* ======================== test-ip ======================== */
 
 /* res<0: error || res>0: n_sent */
-static inline int send_req(int n_msg) {
+static int send_req(int n_msg) {
     assert(n_msg > 0);
     assert(n_msg <= MSG_N);
     int n_sent = sendall(SENDMMSG, s_sock, s_msgv, n_msg, 0);
@@ -586,7 +586,7 @@ static inline int send_req(int n_msg) {
 }
 
 /* res<0: error || res=0: no-msg || res>0: n_recv */
-static inline int recv_res(int n_msg, bool err_if_nomsg) {
+static int recv_res(int n_msg, bool err_if_nomsg) {
     assert(n_msg > 0);
     assert(n_msg <= MSG_N);
     int n_recv = RECVMMSG(s_sock, s_msgv, n_msg, MSG_DONTWAIT, NULL);
@@ -675,7 +675,7 @@ void ipset_add_ip(const void *noalias ip, bool v4, bool chn) {
 
 /* ======================== end-add-ip ======================== */
 
-static inline void init_nlerr_msgv(int n) {
+static void init_nlerr_msgv(int n) {
     assert(n > 0);
     assert(n <= MSG_N);
     size_t sz = NLMSG_SPACE(sizeof(struct nlmsgerr));

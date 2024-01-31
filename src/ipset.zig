@@ -1,7 +1,7 @@
 const c = @import("c.zig");
 const g = @import("g.zig");
 
-pub inline fn init() void {
+pub fn init() void {
     const need_ipset = !g.chnip_setnames.is_empty() or !g.gfwip_setnames.is_empty() or g.default_tag == .none;
     if (!need_ipset) return;
 

@@ -106,7 +106,7 @@ static u32 alloc(u32 sz, u32 align) {
 
 /* ======================== name ======================== */
 
-static inline uint calc_hashv(const char *noalias name, u8 namelen) {
+static uint calc_hashv(const char *noalias name, u8 namelen) {
     uint hashv = 0;
     HASH_FUNCTION(name, namelen, hashv); /* uthash.h */
     return hashv;
@@ -118,7 +118,7 @@ static inline uint calc_hashv(const char *noalias name, u8 namelen) {
 #define get_namesz(nameaddr) \
     (sizeof(struct name) + ptr_name(nameaddr)->namelen)
 
-static inline u32 add_name(const char *noalias name, u8 tag) {
+static u32 add_name(const char *noalias name, u8 tag) {
     u8 namelen = strlen(name);
     uint hashv = calc_hashv(name, namelen);
     u32 nameaddr = alloc_name(namelen);
@@ -144,7 +144,7 @@ static inline bool name_eq(u32 addr1, u32 addr2) {
 /* ======================== bucket ======================== */
 
 /* for L1 map */
-static inline u32 calc_lcap(u32 n) {
+static u32 calc_lcap(u32 n) {
     u32 cap = 1; /* 2^n */
     u32 lcap = 0; /* log2(cap), n */
     while (cap < n) { cap <<= 1; lcap++; }
