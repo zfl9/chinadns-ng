@@ -167,29 +167,29 @@ int get_ipstr_family(const char *noalias ipstr) {
 }
 
 /* build v4/v6 address structure */
-void skaddr_from_text(union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno) {
+void skaddr_from_text(union skaddr *noalias skaddr, const char *noalias ipstr, u16 port) {
     memset(skaddr, 0, sizeof(*skaddr));
     int family = get_ipstr_family(ipstr);
     assert(family != -1);
     if (family == AF_INET) {
         skaddr->sin.sin_family = AF_INET;
         inet_pton(AF_INET, ipstr, &skaddr->sin.sin_addr);
-        skaddr->sin.sin_port = htons(portno);
+        skaddr->sin.sin_port = htons(port);
     } else {
         skaddr->sin6.sin6_family = AF_INET6;
         inet_pton(AF_INET6, ipstr, &skaddr->sin6.sin6_addr);
-        skaddr->sin6.sin6_port = htons(portno);
+        skaddr->sin6.sin6_port = htons(port);
     }
 }
 
 /* parse v4/v6 address structure */
-void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno) {
+void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias port) {
     if (skaddr_is_sin(skaddr)) {
         inet_ntop(AF_INET, &skaddr->sin.sin_addr, ipstr, INET_ADDRSTRLEN);
-        *portno = ntohs(skaddr->sin.sin_port);
+        *port = ntohs(skaddr->sin.sin_port);
     } else {
         inet_ntop(AF_INET6, &skaddr->sin6.sin6_addr, ipstr, INET6_ADDRSTRLEN);
-        *portno = ntohs(skaddr->sin6.sin6_port);
+        *port = ntohs(skaddr->sin6.sin6_port);
     }
 }
 

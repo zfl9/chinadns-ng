@@ -73,10 +73,10 @@ union skaddr {
 #define skaddr_family(p) ((p)->sa.sa_family)
 #define skaddr_is_sin(p) (skaddr_family(p) == AF_INET)
 #define skaddr_is_sin6(p) (skaddr_family(p) == AF_INET6)
-#define skaddr_size(p) (skaddr_is_sin(p) ? sizeof((p)->sin) : sizeof((p)->sin6))
+#define skaddr_len(p) (skaddr_is_sin(p) ? sizeof((p)->sin) : sizeof((p)->sin6))
 
-void skaddr_from_text(union skaddr *noalias skaddr, const char *noalias ipstr, u16 portno);
-void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias portno);
+void skaddr_from_text(union skaddr *noalias skaddr, const char *noalias ipstr, u16 port);
+void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias port);
 
 u32 epev_get_events(const void *noalias ev);
 void *epev_get_ptrdata(const void *noalias ev);
