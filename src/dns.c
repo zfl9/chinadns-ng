@@ -7,7 +7,6 @@
 #include <arpa/inet.h>
 #include <asm/byteorder.h>
 
-/* dns header structure (fixed length) */
 struct dns_header {
     u16 id; // id of message
 #if defined(__BIG_ENDIAN_BITFIELD)
@@ -37,14 +36,12 @@ struct dns_header {
     u16 additional_count; // additional record count
 } __attribute__((packed));
 
-/* fixed length of query structure */
-struct dns_query {
+struct dns_question {
     // field qname; variable length
     u16 qtype; // query type: A/AAAA/CNAME/MX, etc.
     u16 qclass; // query class: internet=0x0001
 } __attribute__((packed));
 
-/* fixed length of record structure */
 struct dns_record {
     // field rname; variable length
     u16 rtype; // record type: A/AAAA/CNAME/MX, etc.
@@ -126,7 +123,7 @@ static bool check_msg(bool is_query,
         return false;
     }
 
-    /* move to question section (name + struct dns_query) */
+    /* move to question section (name + struct dns_question) */
     msg += sizeof(struct dns_header);
     len -= sizeof(struct dns_header);
 
@@ -157,20 +154,20 @@ static bool check_msg(bool is_query,
     if (p_wire_namelen)
         *p_wire_namelen = wire_namelen;
 
-    /* move to struct dns_query pos */
+    /* move to `struct dns_question` */
     msg += wire_namelen;
     len -= wire_namelen;
 
     /* check remaining length */
-    unlikely_if (len < (ssize_t)sizeof(struct dns_query)) {
-        log_error("remaining length is less than sizeof(dns_query): %zd < %zu", len, sizeof(struct dns_query));
+    unlikely_if (len < (ssize_t)sizeof(struct dns_question)) {
+        log_error("remaining length is less than sizeof(dns_question): %zd < %zu", len, sizeof(struct dns_question));
         return false;
     }
 
     /* check query class */
-    const struct dns_query *query = msg;
-    unlikely_if (ntohs(query->qclass) != DNS_CLASS_INTERNET) {
-        log_error("only supports standard internet query class: %u", (uint)ntohs(query->qclass));
+    const struct dns_question *question = msg;
+    unlikely_if (ntohs(question->qclass) != DNS_CLASS_INTERNET) {
+        log_error("only supports standard internet query class: %u", (uint)ntohs(question->qclass));
         return false;
     }
 
@@ -222,8 +219,8 @@ static bool foreach_ip(const void *noalias msg, ssize_t len, int wire_namelen,
     u16 answer_count = ntohs(h->answer_count);
 
     /* move to answer section */
-    msg += sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_query);
-    len -= sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_query);
+    msg += sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_question);
+    len -= sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_question);
 
     /* foreach `A/AAAA` record */
     for (u16 i = 0; i < answer_count; ++i) {
@@ -276,7 +273,7 @@ void dns_set_id(void *noalias msg, u16 id) {
 }
 
 u16 dns_get_qtype(const void *noalias msg, int wire_namelen) {
-    const struct dns_query *q = msg + sizeof(struct dns_header) + wire_namelen;
+    const struct dns_question *q = msg + sizeof(struct dns_header) + wire_namelen;
     return ntohs(q->qtype);
 }
 
@@ -286,7 +283,7 @@ size_t dns_remove_answer(void *noalias msg, int wire_namelen) {
     h->answer_count = 0;
     h->authority_count = 0;
     h->additional_count = 0;
-    return sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_query);
+    return sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_question);
 }
 
 void dns_to_reply_msg(void *noalias msg) {
