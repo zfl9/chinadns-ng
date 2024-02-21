@@ -274,21 +274,22 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, from_tcp
         var ip: net.IpStrBuf = undefined;
         var port: u16 = undefined;
         src_addr.to_text(&ip, &port);
-        log.info(@src(), "query(id:%u, tag:%s, qtype:%u, '%s') from %s#%u", .{
-            cc.to_uint(dns.get_id(msg)),
-            name_tag.desc(),
-            cc.to_uint(qtype),
-            &ascii_namebuf,
-            &ip,
-            cc.to_uint(port),
-        });
+        log.info(
+            @src(),
+            "query(id:%u, tag:%s, qtype:%u, '%s') from %s#%u",
+            .{ cc.to_uint(dns.get_id(msg)), name_tag.desc(), cc.to_uint(qtype), &ascii_namebuf, &ip, cc.to_uint(port) },
+        );
     }
 
     // no-AAAA filter
     if (qtype == c.DNS_RECORD_TYPE_AAAA) {
         if (g.noaaaa_query.filter(name_tag)) |by_rule| {
             if (g.verbose)
-                log.info(@src(), "query(AAAA, '%s') is filterd by rule: %s", .{ &ascii_namebuf, by_rule });
+                log.info(
+                    @src(),
+                    "query(id:%u, tag:%s, qtype:AAAA, '%s') filterd by rule: %s",
+                    .{ cc.to_uint(dns.get_id(msg)), name_tag.desc(), &ascii_namebuf, by_rule },
+                );
             dns.to_reply_msg(msg);
             return send_reply(msg, fdobj, src_addr, from_tcp);
         }
@@ -298,13 +299,21 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, from_tcp
 
     if (name_tag == .chn or name_tag == .none) {
         if (g.verbose)
-            log.info(@src(), "forward query(qid:%u, '%s') to china upstream group", .{ cc.to_uint(qctx.qid), &ascii_namebuf });
+            log.info(
+                @src(),
+                "forward query(qid:%u, from:%s, '%s') to china upstream group",
+                .{ cc.to_uint(qctx.qid), cc.b2s(from_tcp, "tcp", "udp"), &ascii_namebuf },
+            );
         nosuspend g.china_group.send(qmsg, from_tcp);
     }
 
     if (name_tag == .gfw or name_tag == .none) {
         if (g.verbose)
-            log.info(@src(), "forward query(qid:%u, '%s') to trust upstream group", .{ cc.to_uint(qctx.qid), &ascii_namebuf });
+            log.info(
+                @src(),
+                "forward query(qid:%u, from:%s, '%s') to trust upstream group",
+                .{ cc.to_uint(qctx.qid), cc.b2s(from_tcp, "tcp", "udp"), &ascii_namebuf },
+            );
         nosuspend g.trust_group.send(qmsg, from_tcp);
     }
 }
@@ -323,24 +332,19 @@ const ReplyLog = struct {
 
     pub noinline fn reply(self: *const ReplyLog, action: cc.ConstStr, alt_url: ?cc.ConstStr) void {
         const url = alt_url orelse self.url;
-        log.info(@src(), "reply(qid:%u, tag:%s, qtype:%u, '%s') from %s [%s]", .{
-            cc.to_uint(self.qid),
-            self.tag_desc(),
-            cc.to_uint(self.qtype),
-            self.name,
-            url,
-            action,
-        });
+        log.info(
+            @src(),
+            "reply(qid:%u, tag:%s, qtype:%u, '%s') from %s [%s]",
+            .{ cc.to_uint(self.qid), self.tag_desc(), cc.to_uint(self.qtype), self.name, url, action },
+        );
     }
 
     pub noinline fn add_ip(self: *const ReplyLog, setnames: cc.ConstStr) void {
-        log.info(@src(), "add answer_ip(qid:%u, tag:%s, qtype:%u, '%s') to %s", .{
-            cc.to_uint(self.qid),
-            self.tag_desc(),
-            cc.to_uint(self.qtype),
-            self.name,
-            setnames,
-        });
+        log.info(
+            @src(),
+            "add answer_ip(qid:%u, tag:%s, qtype:%u, '%s') to %s",
+            .{ cc.to_uint(self.qid), self.tag_desc(), cc.to_uint(self.qtype), self.name, setnames },
+        );
     }
 };
 
@@ -464,14 +468,11 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, fro
     var port: u16 = undefined;
     src_addr.to_text(&ip, &port);
 
-    log.err(@src(), "reply(id:%u, sz:%zu) to %s://%s#%u failed: (%d) %m", .{
-        cc.to_uint(dns.get_id(msg)),
-        msg.len,
-        cc.b2s(from_tcp, "tcp", "udp"),
-        &ip,
-        cc.to_uint(port),
-        cc.errno(),
-    });
+    log.err(
+        @src(),
+        "reply(id:%u, sz:%zu) to %s://%s#%u failed: (%d) %m",
+        .{ cc.to_uint(dns.get_id(msg)), msg.len, cc.b2s(from_tcp, "tcp", "udp"), &ip, cc.to_uint(port), cc.errno() },
+    );
 }
 
 /// qctx will be free()
@@ -484,13 +485,11 @@ fn on_timeout(qctx: *QueryCtx) void {
         var port: u16 = undefined;
         qctx.src_addr.to_text(&ip, &port);
 
-        log.info(@src(), "query(qid:%u, id:%u, tag:%s) from %s#%u timeout", .{
-            cc.to_uint(qctx.qid),
-            cc.to_uint(qctx.id),
-            qctx.name_tag.desc(),
-            &ip,
-            cc.to_uint(port),
-        });
+        log.info(
+            @src(),
+            "query(qid:%u, id:%u, tag:%s) from %s#%u timeout",
+            .{ cc.to_uint(qctx.qid), cc.to_uint(qctx.id), qctx.name_tag.desc(), &ip, cc.to_uint(port) },
+        );
     }
 
     _qctx_list.del(qctx);

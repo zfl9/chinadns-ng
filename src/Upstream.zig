@@ -54,6 +54,8 @@ fn send_tcp(self: *Upstream, qmsg: *RcMsg) void {
 }
 
 fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
+    defer co.terminate(@frame());
+
     const fd = net.new_tcp_conn_sock(self.addr.family()) orelse return;
 
     const fdobj = EvLoop.Fd.new(fd);
@@ -329,15 +331,8 @@ pub const Group = struct {
     /// nosuspend
     pub fn send(self: *const Group, qmsg: *RcMsg, from_tcp: bool) void {
         const in_proto: InProto = if (from_tcp) .tcp else .udp;
-        for (self.items()) |*upstream| {
-            if (g.verbose)
-                log.info(@src(), "forward query(qid:%u, in_proto:%s) to upstream %s", .{
-                    cc.to_uint(dns.get_id(qmsg.msg())),
-                    cc.b2s(from_tcp, "tcp", "udp"),
-                    upstream.url.ptr,
-                });
+        for (self.items()) |*upstream|
             upstream.send(qmsg, in_proto);
-        }
     }
 };
 

@@ -28,13 +28,13 @@ pub fn add(self: *StrList, str: []const u8) void {
         if (std.mem.eql(u8, cc.strslice(cstr.?), str))
             return;
     }
-    self.ensure_avail(1);
+    self.ensure_available(1);
     self.items.len += 1;
     self.items[self.items.len - 1] = cc.strdup(str).ptr;
     self.items[self.items.len] = null;
 }
 
-pub fn ensure_avail(self: *StrList, available_n: usize) void {
+pub fn ensure_available(self: *StrList, available_n: usize) void {
     if (self.capacity < self.items.len + available_n + 1) { // end with null
         const new_cap = std.math.max(self.items.len + available_n + 1, self.capacity * 3 / 2);
         const new_mem = cc.realloc(?cc.ConstStr, self.get_mem(), new_cap).?;
