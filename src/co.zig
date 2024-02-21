@@ -1,5 +1,6 @@
-const cc = @import("cc.zig");
 const std = @import("std");
+const cc = @import("cc.zig");
+const assert = std.debug.assert;
 
 /// create and start a new coroutine
 pub fn create(comptime func: anytype, args: anytype) void {
@@ -15,9 +16,9 @@ pub fn do_resume(frame: anyframe) void {
     check_terminated();
 }
 
-/// called when the coroutine is about to terminate: `defer co.on_terminate(@frame())`
-pub fn on_terminate(top_frame: anyframe) void {
-    std.debug.assert(_terminated == null);
+/// called when the coroutine is about to terminate: `defer co.terminate(@frame())`
+pub fn terminate(top_frame: anyframe) void {
+    assert(_terminated == null);
     _terminated = top_frame;
 }
 

@@ -5,8 +5,10 @@
 #include <sys/types.h>
 
 /* dns message size */
-#define DNS_MSG_MAXSIZE 4096
 #define DNS_MSG_MINSIZE (12 /* sizeof(struct dns_header) */ + DNS_NAME_WIRE_MINLEN + 4 /* sizeof(struct dns_question) */)
+#define DNS_MSG_MAXSIZE 65535
+#define DNS_QMSG_MAXSIZE 512
+#define DNS_EDNS_MAXSIZE 4096
 
 /* ASCII name length (not included \0) */
 #define DNS_NAME_MAXLEN 253 /* "www.example.com" n:15 */

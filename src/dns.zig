@@ -2,26 +2,25 @@ const std = @import("std");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
 
-pub inline fn get_id(noalias msg: *const anyopaque) c.be16 {
-    return c.dns_get_id(msg);
+pub inline fn get_id(msg: []const u8) c.be16 {
+    return c.dns_get_id(msg.ptr);
 }
 
-pub inline fn set_id(noalias msg: *anyopaque, id: c.be16) void {
-    return c.dns_set_id(msg, id);
+pub inline fn set_id(msg: []u8, id: c.be16) void {
+    return c.dns_set_id(msg.ptr, id);
 }
 
-pub inline fn get_qtype(noalias msg: *const anyopaque, wire_namelen: c_int) u16 {
-    return c.dns_get_qtype(msg, wire_namelen);
+pub inline fn get_qtype(msg: []const u8, wire_namelen: c_int) u16 {
+    return c.dns_get_qtype(msg.ptr, wire_namelen);
 }
 
-/// return the length of the modified response
-pub inline fn remove_answer(noalias msg: *anyopaque, wire_namelen: c_int) usize {
-    return c.dns_remove_answer(msg, wire_namelen);
+pub inline fn remove_answer(p_msg: *[]u8, wire_namelen: c_int) void {
+    p_msg.len = c.dns_remove_answer(p_msg.ptr, wire_namelen);
 }
 
 /// convert query msg to response msg with rcode `NOERROR` (no-AAAA filter)
-pub inline fn to_reply_msg(noalias msg: *anyopaque) void {
-    return c.dns_to_reply_msg(msg);
+pub inline fn to_reply_msg(msg: []u8) void {
+    return c.dns_to_reply_msg(msg.ptr);
 }
 
 /// get the ascii length based on the wire length
@@ -32,14 +31,14 @@ pub inline fn to_ascii_namelen(wire_namelen: c_int) c_int {
 /// check if the query msg is valid
 /// `ascii_name`: the buffer used to get the domain-name (ASCII-format)
 /// `p_wire_namelen`: used to get the length of the domain-name (wire-format)
-pub inline fn check_query(msg: []const u8, noalias ascii_name: ?[*]u8, noalias p_wire_namelen: ?*c_int) bool {
+pub inline fn check_query(msg: []const u8, ascii_name: ?[*]u8, p_wire_namelen: ?*c_int) bool {
     return c.dns_check_query(msg.ptr, cc.to_isize(msg.len), ascii_name, p_wire_namelen);
 }
 
 /// check if the reply msg is valid
 /// `ascii_name`: the buffer used to get the domain-name (ASCII-format)
 /// `p_wire_namelen`: used to get the length of the domain-name (wire-format)
-pub inline fn check_reply(msg: []const u8, noalias ascii_name: ?[*]u8, noalias p_wire_namelen: ?*c_int) bool {
+pub inline fn check_reply(msg: []const u8, ascii_name: ?[*]u8, p_wire_namelen: ?*c_int) bool {
     return c.dns_check_reply(msg.ptr, cc.to_isize(msg.len), ascii_name, p_wire_namelen);
 }
 

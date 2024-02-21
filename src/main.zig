@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const build_opts = @import("build_opts");
 const heap = std.heap;
+const assert = std.debug.assert;
 
 const tests = @import("tests.zig");
 
@@ -18,9 +19,12 @@ const fmtchk = @import("fmtchk.zig");
 const str2int = @import("str2int.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
+const server = @import("server.zig");
 const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
 const co = @import("co.zig");
+const Rc = @import("Rc.zig");
+const RcMsg = @import("RcMsg.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -28,7 +32,9 @@ const co = @import("co.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c, cc, g, log, opt, net, dnl, dns, ipset, fmtchk, str2int, DynStr, StrList, Upstream, EvLoop,
+    c,       cc,     g,        log,    opt,     net,
+    dnl,     dns,    ipset,    fmtchk, str2int, DynStr,
+    StrList, server, Upstream, EvLoop, Rc,      RcMsg,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -40,132 +46,11 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
         c.abort();
 }
 
-// =======================================================================================================
-
-var _evloop: EvLoop = undefined;
-
-fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
-    defer co.on_terminate(@frame());
-
-    const fd_obj = EvLoop.FdObj.new(fd);
-    defer fd_obj.free(&_evloop);
-
-    while (true) {
-        const conn_fd = _evloop.accept(fd_obj, null, null) orelse {
-            log.err(@src(), "failed to accept on %s#%u: (%d) %m", .{ ip, cc.to_uint(g.bind_port), cc.errno() });
-            // TODO: if it is a recoverable error then continue
-            return;
-        };
-        co.create(service_tcp, .{conn_fd});
-    }
-}
-
-fn service_tcp(fd: c_int) void {
-    defer co.on_terminate(@frame());
-
-    const fd_obj = EvLoop.FdObj.new(fd);
-    defer fd_obj.free(&_evloop);
-
-    // var query_ids = std.AutoHashMapUnmanaged(u16, void).init();
-    // _ = query_ids;
-
-    var addr: net.Addr = undefined;
-    var addrlen: c.socklen_t = @sizeOf(net.Addr);
-    _ = c.getpeername(fd, &addr.sa, &addrlen);
-
-    var ip: net.IpStrBuf = undefined;
-    var port: u16 = undefined;
-    addr.to_text(&ip, &port);
-
-    log.info(@src(), "new connection:%d from %s#%u", .{ fd, &ip, cc.to_uint(port) });
-
-    while (true) {
-        // read the msg length (be16)
-        var len: u16 = undefined;
-        _evloop.recv_exactly(fd_obj, std.mem.asBytes(&len), 0) orelse {
-            const err = cc.errno();
-            if (err == 0)
-                log.info(@src(), "connection:%d closed", .{fd})
-            else
-                log.err(@src(), "recv(%d, %s#%u, @len) failed: (%d) %m", .{ fd, &ip, cc.to_uint(port), cc.errno() });
-            return;
-        };
-        len = std.mem.bigToNative(u16, len);
-
-        if (len < c.DNS_MSG_MINSIZE) {
-            log.err(@src(), "query msg is too small: %u < %d", .{ cc.to_uint(len), c.DNS_MSG_MINSIZE });
-            return;
-        }
-        if (len > c.DNS_MSG_MAXSIZE) {
-            log.err(@src(), "query msg is too large: %u > %d", .{ cc.to_uint(len), c.DNS_MSG_MAXSIZE });
-            return;
-        }
-
-        // read the msg body
-        var buf: [c.DNS_MSG_MAXSIZE]u8 = undefined;
-        const msg = buf[0..len];
-        _evloop.recv_exactly(fd_obj, msg, 0) orelse {
-            const err = cc.errno();
-            if (err == 0)
-                log.info(@src(), "connection:%d closed", .{fd})
-            else
-                log.err(@src(), "recv(%d, %s#%u, @len) failed: (%d) %m", .{ fd, &ip, cc.to_uint(port), cc.errno() });
-            return;
-        };
-
-        // check msg format
-        var ascii_name: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
-        var wire_namelen: c_int = undefined;
-        if (!dns.check_query(msg, &ascii_name, &wire_namelen)) return;
-
-        const id = dns.get_id(msg.ptr);
-        log.info(@src(), "recv query(id=%u, sz=%u, '%s') from %s#%u", .{ cc.to_uint(id), cc.to_uint(len), &ascii_name, &ip, cc.to_uint(port) });
-
-        // TODO: forward to upstreams
-    }
-}
-
-fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
-    defer co.on_terminate(@frame());
-
-    const fd_obj = EvLoop.FdObj.new(fd);
-    defer fd_obj.free(&_evloop);
-
-    while (true) {
-        var buf: [c.DNS_MSG_MAXSIZE]u8 = undefined;
-
-        var addr: net.Addr = undefined;
-        var addrlen: c.socklen_t = @sizeOf(net.Addr);
-
-        const len = _evloop.recvfrom(fd_obj, &buf, 0, &addr.sa, &addrlen) orelse {
-            log.err(@src(), "recvfrom(%d) on %s#%u failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
-            return;
-        };
-
-        const msg = buf[0..len];
-        var ascii_name: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
-        var wire_namelen: c_int = undefined;
-        if (!dns.check_query(msg, &ascii_name, &wire_namelen)) return;
-
-        var ip: net.IpStrBuf = undefined;
-        var port: u16 = undefined;
-        addr.to_text(&ip, &port);
-
-        const id = dns.get_id(msg.ptr);
-        log.info(@src(), "recv query(id=%u, sz=%zu, '%s') from %s#%u", .{ cc.to_uint(id), len, &ascii_name, &ip, cc.to_uint(port) });
-
-        // TODO: forward to upstreams
-    }
-}
-
 /// called by EvLoop.check_timeout
-pub fn check_timeout() c_int {
-    // TODO
-    return -1;
-}
+pub const check_timeout = server.check_timeout;
 
 pub fn main() u8 {
-    net.ignore_sigpipe();
+    _ = c.signal(c.SIGPIPE, c.SIG_IGNORE());
 
     _ = cc.setvbuf(cc.stdout, null, c._IOLBF, 256);
 
@@ -184,11 +69,15 @@ pub fn main() u8 {
     for (g.bind_ips.items) |ip|
         log.info(@src(), "local listen addr: %s#%u", .{ ip.?, cc.to_uint(g.bind_port) });
 
-    for (g.chinadns_list.items()) |v, i|
+    for (g.china_group.items()) |*v, i| {
+        if (v.proto == .udp_in) continue; // avoid duplicate printing
         log.info(@src(), "chinadns server#%zu: %s", .{ i + 1, v.url.ptr });
+    }
 
-    for (g.trustdns_list.items()) |v, i|
+    for (g.trust_group.items()) |*v, i| {
+        if (v.proto == .udp_in) continue; // avoid duplicate printing
         log.info(@src(), "trustdns server#%zu: %s", .{ i + 1, v.url.ptr });
+    }
 
     dnl.init();
 
@@ -213,16 +102,11 @@ pub fn main() u8 {
 
     // ============================================================================
 
-    _evloop = EvLoop.init();
+    g.evloop = EvLoop.init();
 
-    // create listening sockets
-    for (g.bind_ips.items) |ip| {
-        const fds = net.new_dns_server(ip.?, g.bind_port);
-        co.create(listen_tcp, .{ fds[0], ip.? });
-        co.create(listen_udp, .{ fds[1], ip.? });
-    }
+    server.start();
 
-    _evloop.run();
+    g.evloop.run();
 
     return 0;
 }

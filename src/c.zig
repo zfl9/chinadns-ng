@@ -17,17 +17,18 @@ pub usingnamespace @cImport({
     @cInclude("unistd.h");
     @cInclude("signal.h");
     @cInclude("time.h");
-    @cInclude("fcntl.h");
-    @cInclude("linux/limits.h");
     @cInclude("sys/types.h");
-    @cInclude("sys/socket.h");
     @cInclude("sys/epoll.h");
+    @cInclude("sys/socket.h");
+    @cInclude("arpa/inet.h");
+    @cInclude("netinet/in.h");
+    @cInclude("netinet/tcp.h");
+    @cInclude("linux/limits.h");
 
     @cInclude("src/net.h");
     @cInclude("src/dns.h");
     @cInclude("src/dnl.h");
     @cInclude("src/ipset.h");
-    @cInclude("src/misc.h");
 });
 
 /// assuming CHAR_BIT=8

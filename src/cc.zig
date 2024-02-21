@@ -229,34 +229,37 @@ pub inline fn malloc_many(comptime T: type, n: usize) ?[]T {
 
 pub inline fn align_malloc_many(comptime T: type, n: usize, comptime alignment: u32) ?[]align(alignment) T {
     comptime assert(std.math.isPowerOfTwo(alignment));
-    comptime assert(alignment >= @sizeOf(*anyopaque));
-    comptime assert(alignment % @sizeOf(*anyopaque) == 0);
-    var ptr: [*]align(alignment) T = undefined;
-    return if (c.posix_memalign(@ptrCast(*?*anyopaque, &ptr), alignment, @sizeOf(T) * n) == 0)
+
+    // multiple of `sizeof(void *)`
+    const real_alignment = comptime std.math.max(@sizeOf(*anyopaque), alignment);
+    comptime assert(real_alignment % @sizeOf(*anyopaque) == 0);
+
+    var ptr: [*]align(real_alignment) T = undefined;
+    return if (c.posix_memalign(@ptrCast(*?*anyopaque, &ptr), real_alignment, @sizeOf(T) * n) == 0)
         ptr[0..n]
     else
         null;
 }
 
-/// if `old_memory.len` is 0 it is treated as a null pointer
-pub inline fn realloc(comptime T: type, old_memory: []T, new_n: usize) ?[]T {
+/// if `old_mem.len` is 0 it is treated as a null pointer
+pub inline fn realloc(comptime T: type, old_mem: []T, new_n: usize) ?[]T {
     comptime assert(@alignOf(T) <= @alignOf(c.max_align_t));
-    const old_ptr = if (old_memory.len > 0) old_memory.ptr else null;
+    const old_ptr = if (old_mem.len > 0) old_mem.ptr else null;
     const new_ptr = c.realloc(old_ptr, new_n * @sizeOf(T)) orelse return null;
     return @ptrCast([*]T, @alignCast(@alignOf(T), new_ptr))[0..new_n];
 }
 
-pub inline fn free(memory: anytype) void {
-    const T = @TypeOf(memory);
+pub inline fn free(mem: anytype) void {
+    const T = @TypeOf(mem);
     if (@typeInfo(T) == .Optional) {
-        const m = memory orelse return;
+        const m = mem orelse return;
         return free(m);
     }
     return if (comptime trait.isSlice(T)) {
-        if (memory.len > 0)
-            c.free(remove_const(memory.ptr));
+        if (mem.len > 0)
+            c.free(remove_const(mem.ptr));
     } else {
-        c.free(remove_const(memory));
+        c.free(remove_const(mem));
     };
 }
 

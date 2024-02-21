@@ -17,6 +17,7 @@ pub const Tag = enum(u8) {
         return @intToEnum(Tag, v);
     }
 
+    /// string literal
     pub inline fn desc(tag: Tag) cc.ConstStr {
         return c.get_tag_desc(tag.to_int());
     }
@@ -30,8 +31,11 @@ pub inline fn is_empty() bool {
     return c.dnl_is_empty();
 }
 
-pub inline fn get_name_tag(domain_name: [:0]const u8) Tag {
-    return Tag.from_int(c.get_name_tag(domain_name.ptr, cc.to_int(domain_name.len), g.default_tag.to_int()));
+pub inline fn get_name_tag(name: [*]const u8, namelen: c_int) Tag {
+    return if (namelen > 0 and !is_empty())
+        Tag.from_int(c.get_name_tag(name, namelen, g.default_tag.to_int()))
+    else
+        g.default_tag;
 }
 
 pub fn @"test: get tag desc"() !void {

@@ -222,10 +222,10 @@ fn opt_bind_port(in_value: ?[]const u8) void {
 }
 
 /// "upstream,..."
-fn add_upstreams(list: *Upstream.List, upstreams: []const u8) ?void {
+fn add_upstreams(group: *Upstream.Group, upstreams: []const u8) ?void {
     var it = std.mem.split(u8, upstreams, ",");
     while (it.next()) |upstream| {
-        list.add(upstream) orelse {
+        group.add(upstream) orelse {
             err_print(@src(), "invalid address", upstream);
             return null;
         };
@@ -234,12 +234,12 @@ fn add_upstreams(list: *Upstream.List, upstreams: []const u8) ?void {
 
 fn opt_china_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.chinadns_list, value) orelse err_exit(@src(), value);
+    add_upstreams(&g.china_group, value) orelse err_exit(@src(), value);
 }
 
 fn opt_trust_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.trustdns_list, value) orelse err_exit(@src(), value);
+    add_upstreams(&g.trust_group, value) orelse err_exit(@src(), value);
 }
 
 /// "foo.txt,..."
@@ -368,108 +368,108 @@ fn opt_help(_: ?[]const u8) void {
 
 // ================================================================
 
-idx: usize,
+const Parser = struct {
+    idx: usize,
 
-const Self = @This();
-
-fn init() Self {
-    return .{ .idx = 1 };
-}
-
-fn parse_opt(self: *Self) void {
-    const arg = self.pop_arg() orelse return;
-
-    if (std.mem.startsWith(u8, arg, "--")) {
-        if (arg.len < 4)
-            exit(@src(), "invalid long option: '%s'", .{arg.ptr});
-
-        // --name
-        // --name=value
-        // --name value
-        if (std.mem.indexOfScalar(u8, arg, '=')) |sep|
-            self.handle_opt(arg[2..sep], arg[sep + 1 ..])
-        else
-            self.handle_opt(arg[2..], null);
-        //
-    } else if (std.mem.startsWith(u8, arg, "-")) {
-        if (arg.len < 2)
-            exit(@src(), "invalid short option: '%s'", .{arg.ptr});
-
-        // -x
-        // -x5
-        // -x=5
-        // -x 5
-        if (arg.len == 2)
-            self.handle_opt(arg[1..], null)
-        else if (arg[2] == '=')
-            self.handle_opt(arg[1..2], arg[3..])
-        else
-            self.handle_opt(arg[1..2], arg[2..]);
-        //
-    } else {
-        exit(@src(), "expect an option, but got a positional-argument: '%s'", .{arg.ptr});
+    pub fn init() Parser {
+        return .{ .idx = 1 };
     }
 
-    return @call(.{ .modifier = .always_tail }, Self.parse_opt, .{self});
-}
+    pub fn parse(self: *Parser) void {
+        const arg = self.pop_arg() orelse return;
 
-fn peek_arg(self: Self) ?[:0]const u8 {
-    const argv = std.os.argv;
+        if (std.mem.startsWith(u8, arg, "--")) {
+            if (arg.len < 4)
+                exit(@src(), "invalid long option: '%s'", .{arg.ptr});
 
-    return if (self.idx < argv.len)
-        std.mem.sliceTo(argv[self.idx], 0)
-    else
-        null;
-}
+            // --name
+            // --name=value
+            // --name value
+            if (std.mem.indexOfScalar(u8, arg, '=')) |sep|
+                self.handle(arg[2..sep], arg[sep + 1 ..])
+            else
+                self.handle(arg[2..], null);
+            //
+        } else if (std.mem.startsWith(u8, arg, "-")) {
+            if (arg.len < 2)
+                exit(@src(), "invalid short option: '%s'", .{arg.ptr});
 
-fn pop_arg(self: *Self) ?[:0]const u8 {
-    if (self.peek_arg()) |arg| {
-        self.idx += 1;
-        return arg;
+            // -x
+            // -x5
+            // -x=5
+            // -x 5
+            if (arg.len == 2)
+                self.handle(arg[1..], null)
+            else if (arg[2] == '=')
+                self.handle(arg[1..2], arg[3..])
+            else
+                self.handle(arg[1..2], arg[2..]);
+            //
+        } else {
+            exit(@src(), "expect an option, but got a positional-argument: '%s'", .{arg.ptr});
+        }
+
+        return @call(.{ .modifier = .always_tail }, Parser.parse, .{self});
     }
-    return null;
-}
 
-fn handle_opt(self: *Self, name: []const u8, in_value: ?[:0]const u8) void {
-    const optdef = get_optdef(name) orelse
-        exit(@src(), "unknown option: '%.*s'", .{ cc.to_int(name.len), name.ptr });
+    fn peek_arg(self: Parser) ?[:0]const u8 {
+        const argv = std.os.argv;
 
-    const value = switch (optdef.value) {
-        .required => if (in_value) |v| v else self.take_value(name, true),
-        .optional => if (in_value) |v| v else self.take_value(name, false),
-        .no_value => if (in_value == null) null else {
-            exit(@src(), "option '%.*s' does not accept any values: '%s'", .{ cc.to_int(name.len), name.ptr, in_value.?.ptr });
-        },
-    };
+        return if (self.idx < argv.len)
+            std.mem.sliceTo(argv[self.idx], 0)
+        else
+            null;
+    }
 
-    if (value != null and value.?.len <= 0)
-        exit(@src(), "option '%.*s' does not accept empty string", .{ cc.to_int(name.len), name.ptr });
-
-    optdef.optfn(value);
-}
-
-fn take_value(self: *Self, name: []const u8, required: bool) ?[:0]const u8 {
-    const arg = self.peek_arg() orelse {
-        if (required)
-            exit(@src(), "expect a value for option '%.*s'", .{ cc.to_int(name.len), name.ptr });
+    fn pop_arg(self: *Parser) ?[:0]const u8 {
+        if (self.peek_arg()) |arg| {
+            self.idx += 1;
+            return arg;
+        }
         return null;
-    };
-
-    if (required or !std.mem.startsWith(u8, arg, "-")) {
-        _ = self.pop_arg();
-        return arg;
     }
 
-    return null;
-}
+    fn take_value(self: *Parser, name: []const u8, required: bool) ?[:0]const u8 {
+        const arg = self.peek_arg() orelse {
+            if (required)
+                exit(@src(), "expect a value for option '%.*s'", .{ cc.to_int(name.len), name.ptr });
+            return null;
+        };
+
+        if (required or !std.mem.startsWith(u8, arg, "-")) {
+            _ = self.pop_arg();
+            return arg;
+        }
+
+        return null;
+    }
+
+    fn handle(self: *Parser, name: []const u8, in_value: ?[:0]const u8) void {
+        const optdef = get_optdef(name) orelse
+            exit(@src(), "unknown option: '%.*s'", .{ cc.to_int(name.len), name.ptr });
+
+        const value = switch (optdef.value) {
+            .required => if (in_value) |v| v else self.take_value(name, true),
+            .optional => if (in_value) |v| v else self.take_value(name, false),
+            .no_value => if (in_value == null) null else {
+                exit(@src(), "option '%.*s' does not accept any values: '%s'", .{ cc.to_int(name.len), name.ptr, in_value.?.ptr });
+            },
+        };
+
+        if (value != null and value.?.len <= 0)
+            exit(@src(), "option '%.*s' does not accept empty string", .{ cc.to_int(name.len), name.ptr });
+
+        optdef.optfn(value);
+    }
+};
 
 // ================================================================
 
 pub fn parse() void {
     @setCold(true);
 
-    var parser = Self.init();
-    parser.parse_opt();
+    var parser = Parser.init();
+    parser.parse();
 
     if (g.chnroute_name.is_null())
         g.chnroute_name.set("chnroute");
@@ -483,11 +483,11 @@ pub fn parse() void {
     if (g.bind_ips.is_null())
         g.bind_ips.add("127.0.0.1");
 
-    if (g.chinadns_list.is_empty())
-        g.chinadns_list.add("114.114.114.114") orelse unreachable;
+    if (g.china_group.is_empty())
+        g.china_group.add("114.114.114.114") orelse unreachable;
 
-    if (g.trustdns_list.is_empty())
-        g.trustdns_list.add("8.8.8.8") orelse unreachable;
+    if (g.trust_group.is_empty())
+        g.trust_group.add("8.8.8.8") orelse unreachable;
 }
 
 pub fn @"test: parse option and config"() !void {

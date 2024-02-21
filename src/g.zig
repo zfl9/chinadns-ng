@@ -10,6 +10,7 @@ const NoAAAA = @import("NoAAAA.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
+const EvLoop = @import("EvLoop.zig");
 
 pub const VERSION: cc.ConstStr = b: {
     var target: [:0]const u8 = @tagName(builtin.cpu.arch) ++ "-" ++ @tagName(builtin.os.tag) ++ "-" ++ @tagName(builtin.abi);
@@ -83,9 +84,9 @@ pub var bind_ips: StrList = .{};
 
 pub var bind_port: u16 = 65353;
 
-pub var chinadns_list: Upstream.List = .{};
+pub var china_group = Upstream.Group.init(.china);
 
-pub var trustdns_list: Upstream.List = .{};
+pub var trust_group = Upstream.Group.init(.trust);
 
 /// too large may cause stack overflow
 pub const TRUSTDNS_PACKET_MAX: u8 = 5;
@@ -95,3 +96,5 @@ pub var trustdns_packet_n: u8 = 1;
 
 /// in seconds
 pub var upstream_timeout: u8 = 5;
+
+pub var evloop: EvLoop = undefined;

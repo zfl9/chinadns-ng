@@ -4,19 +4,32 @@ const cc = @import("cc.zig");
 const log = @import("log.zig");
 const std = @import("std");
 const trait = std.meta.trait;
+const assert = std.debug.assert;
+
+// ===============================================================
 
 pub inline fn init() void {
     return c.net_init();
-}
-
-pub inline fn ignore_sigpipe() void {
-    return c.ignore_sigpipe();
 }
 
 // ===============================================================
 
 /// ipv4/ipv6 address strbuf (char_array with sentinel 0)
 pub const IpStrBuf = [c.INET6_ADDRSTRLEN - 1:0]u8;
+
+pub fn get_ipstr_family(ip: cc.ConstStr) ?c.sa_family_t {
+    var net_ip: [c.IPV6_BINADDR_LEN]u8 = undefined;
+
+    if (c.inet_pton(c.AF_INET, ip, &net_ip) == 1)
+        return c.AF_INET;
+
+    if (c.inet_pton(c.AF_INET6, ip, &net_ip) == 1)
+        return c.AF_INET6;
+
+    return null;
+}
+
+// ===============================================================
 
 pub const Addr = extern union {
     sa: c.struct_sockaddr,
@@ -27,6 +40,15 @@ pub const Addr = extern union {
         return self.sa.sa_family;
     }
 
+    /// sizeof(sin) or sizeof(sin6)
+    pub inline fn len(self: *const Addr) c.socklen_t {
+        assert(self.is_sin() or self.is_sin6());
+        return if (self.is_sin())
+            @sizeOf(c.struct_sockaddr_in)
+        else
+            @sizeOf(c.struct_sockaddr_in6);
+    }
+
     pub inline fn is_sin(self: *const Addr) bool {
         return self.family() == c.AF_INET;
     }
@@ -35,93 +57,154 @@ pub const Addr = extern union {
         return self.family() == c.AF_INET6;
     }
 
-    pub inline fn len(self: *const Addr) c.socklen_t {
-        return if (self.is_sin())
-            @sizeOf(c.struct_sockaddr_in)
-        else
-            @sizeOf(c.struct_sockaddr_in6);
-    }
-
-    /// convert to raw c pointer (*skaddr or *const skaddr)
-    pub inline fn skaddr(self: anytype) if (trait.isConstPtr(@TypeOf(self))) *const c.skaddr else *c.skaddr {
-        return if (comptime trait.isConstPtr(@TypeOf(self)))
-            @ptrCast(*const c.skaddr, self)
-        else
-            @ptrCast(*c.skaddr, self);
-    }
-
+    /// assuming the `ip` and `port` are valid
     pub fn from_text(ip: cc.ConstStr, port: u16) Addr {
         var self: Addr = undefined;
-        std.mem.set(u8, std.mem.asBytes(&self), 0);
-        c.skaddr_from_text((&self).skaddr(), ip, port);
+        @memset(std.mem.asBytes(&self), 0, @sizeOf(Addr));
+
+        if (get_ipstr_family(ip).? == c.AF_INET) {
+            const sin = &self.sin;
+            sin.sin_family = c.AF_INET;
+            _ = c.inet_pton(c.AF_INET, ip, &sin.sin_addr);
+            sin.sin_port = c.htons(port);
+        } else {
+            const sin6 = &self.sin6;
+            sin6.sin6_family = c.AF_INET6;
+            _ = c.inet_pton(c.AF_INET6, ip, &sin6.sin6_addr);
+            sin6.sin6_port = c.htons(port);
+        }
+
         return self;
     }
 
-    pub inline fn to_text(self: *const Addr, ip: cc.Str, port: *u16) void {
-        return c.skaddr_to_text(self.skaddr(), ip, port);
+    pub fn to_text(self: *const Addr, ip: cc.Str, port: *u16) void {
+        if (self.is_sin()) {
+            const sin = &self.sin;
+            _ = c.inet_ntop(c.AF_INET, &sin.sin_addr, ip, c.INET_ADDRSTRLEN);
+            port.* = c.ntohs(sin.sin_port);
+        } else {
+            assert(self.is_sin6());
+            const sin6 = &self.sin6;
+            _ = c.inet_ntop(c.AF_INET6, &sin6.sin6_addr, ip, c.INET6_ADDRSTRLEN);
+            port.* = c.ntohs(sin6.sin6_port);
+        }
     }
 };
 
 // ===============================================================
 
-/// AF_INET, AF_INET6, null(invalid)
-pub inline fn get_ipstr_family(ip: cc.ConstStr) ?c.sa_family_t {
-    const res = c.get_ipstr_family(ip);
-    return if (res == -1) null else @intCast(c.sa_family_t, res);
-}
+pub const SockType = enum {
+    tcp,
+    udp,
 
-pub inline fn new_tcp_socket(family: c.sa_family_t, for_listen: bool) c_int {
-    return c.new_tcp_socket(family, for_listen, g.reuse_port);
-}
-
-pub inline fn new_udp_socket(family: c.sa_family_t, for_listen: bool) c_int {
-    return c.new_udp_socket(family, for_listen, g.reuse_port);
-}
-
-pub inline fn set_reuse_port(sock: c_int) void {
-    return c.set_reuse_port(sock);
-}
-
-/// create dns listen socket (tcp + udp)
-pub fn new_dns_server(ip: cc.ConstStr, port: u16) [2]c_int {
-    const sockaddr = Addr.from_text(ip, port);
-
-    const tcpsock = new_tcp_socket(sockaddr.family(), true);
-    const udpsock = new_udp_socket(sockaddr.family(), true);
-
-    if (c.bind(tcpsock, &sockaddr.sa, sockaddr.len()) < 0) {
-        log.err(@src(), "failed to bind tcpsock %d: (%d) %m", .{ tcpsock, cc.errno() });
-        c.exit(1);
-    }
-    if (c.bind(udpsock, &sockaddr.sa, sockaddr.len()) < 0) {
-        log.err(@src(), "failed to bind udpsock %d: (%d) %m", .{ udpsock, cc.errno() });
-        c.exit(1);
+    /// string literal
+    pub fn str(self: SockType) cc.ConstStr {
+        return switch (self) {
+            .tcp => "tcp",
+            .udp => "udp",
+        };
     }
 
-    // mark the socket as a listener
-    if (c.listen(tcpsock, 256) < 0) {
-        log.err(@src(), "failed to listen tcpsock %d: (%d) %m", .{ tcpsock, cc.errno() });
-        c.exit(1);
+    /// c.SOCK_STREAM, c.SOCK_DGRAM
+    pub fn value(self: SockType) c_int {
+        return switch (self) {
+            .tcp => c.SOCK_STREAM,
+            .udp => c.SOCK_DGRAM,
+        };
     }
+};
 
-    return .{ tcpsock, udpsock };
+noinline fn new_sock(family: c.sa_family_t, socktype: SockType) ?c_int {
+    const fd = c.socket(family, socktype.value() | c.SOCK_NONBLOCK | c.SOCK_CLOEXEC, 0);
+    if (fd == -1) {
+        const str_family = if (family == c.AF_INET) "ipv4" else "ipv6";
+        log.err(@src(), "socket(%s, %s) failed: (%d) %m", .{ str_family, socktype.str(), cc.errno() });
+        return null;
+    }
+    return fd;
+}
+
+pub fn new_listen_sock(family: c.sa_family_t, socktype: SockType) ?c_int {
+    const fd = new_sock(family, socktype) orelse return null;
+    setup_listen_sock(fd, family);
+    return fd;
+}
+
+pub fn new_tcp_conn_sock(family: c.sa_family_t) ?c_int {
+    const fd = new_sock(family, .tcp) orelse return null;
+    setup_tcp_conn_sock(fd);
+    return fd;
+}
+
+// ===============================================================
+
+/// `optname`: for printing
+noinline fn setsockopt(fd: c_int, level: c_int, opt: c_int, optname: cc.ConstStr, value: c_int) ?void {
+    if (c.setsockopt(fd, level, opt, &value, @sizeOf(c_int)) == -1) {
+        log.err(@src(), "setsockopt(%d, level=%d, opt=%s, value=%d) failed: (%d) %m", .{ fd, level, optname, value, cc.errno() });
+        return null;
+    }
+}
+
+fn setup_listen_sock(fd: c_int, family: c.sa_family_t) void {
+    _ = setsockopt(fd, c.SOL_SOCKET, c.SO_REUSEADDR, "SO_REUSEADDR", 1);
+
+    if (g.reuse_port)
+        _ = setsockopt(fd, c.SOL_SOCKET, c.SO_REUSEPORT, "SO_REUSEPORT", 1);
+
+    if (family == c.AF_INET6)
+        _ = setsockopt(fd, c.IPPROTO_IPV6, c.IPV6_V6ONLY, "IPV6_V6ONLY", 0);
+}
+
+pub fn setup_tcp_conn_sock(fd: c_int) void {
+    _ = setsockopt(fd, c.IPPROTO_TCP, c.TCP_NODELAY, "TCP_NODELAY", 1);
+
+    _ = setsockopt(fd, c.SOL_SOCKET, c.SO_KEEPALIVE, "SO_KEEPALIVE", 1);
+    _ = setsockopt(fd, c.IPPROTO_TCP, c.TCP_KEEPIDLE, "TCP_KEEPIDLE", 60);
+    _ = setsockopt(fd, c.IPPROTO_TCP, c.TCP_KEEPCNT, "TCP_KEEPCNT", 3);
+    _ = setsockopt(fd, c.IPPROTO_TCP, c.TCP_KEEPINTVL, "TCP_KEEPINTVL", 5);
 }
 
 // ===============================================================
 
 pub const iovec_t = extern struct {
-    iov_base: *anyopaque,
+    iov_base: [*]u8,
     iov_len: usize,
 };
 
 pub const msghdr_t = extern struct {
-    msg_name: ?*anyopaque = null,
+    msg_name: ?*Addr = null,
     msg_namelen: c.socklen_t = 0,
     msg_iov: [*]iovec_t,
     msg_iovlen: usize,
-    msg_control: ?*anyopaque = null,
+    msg_control: ?[*]u8 = null,
     msg_controllen: usize = 0,
     msg_flags: c_int = 0,
+
+    pub fn iov_items(self: *const msghdr_t) []iovec_t {
+        return self.msg_iov[0..self.msg_iovlen];
+    }
+
+    /// data length
+    pub fn calc_len(self: *const msghdr_t) usize {
+        var len: usize = 0;
+        for (self.iov_items()) |*iov|
+            len += iov.iov_len;
+        return len;
+    }
+
+    /// for sendmsg
+    pub fn skip_iov(self: *const msghdr_t, skip_len: usize) void {
+        var remain_skip = skip_len;
+        for (self.iov_items()) |*iov| {
+            if (iov.iov_len == 0) continue;
+            const n = std.math.min(iov.iov_len, remain_skip);
+            iov.iov_base += n;
+            iov.iov_len -= n;
+            remain_skip -= n;
+            if (remain_skip == 0) return;
+        }
+    }
 };
 
 pub const mmsghdr_t = extern struct {
@@ -131,30 +214,44 @@ pub const mmsghdr_t = extern struct {
 
 // ===============================================================
 
-pub inline fn recvmsg(sock: c_int, msg: *msghdr_t, flags: c_int) isize {
-    return c.RECVMSG(sock, @ptrCast(*c.MSGHDR, msg), flags);
+pub inline fn recvmsg(fd: c_int, msg: *msghdr_t, flags: c_int) isize {
+    return c.RECVMSG(fd, @ptrCast(*c.MSGHDR, msg), flags);
 }
 
-pub inline fn sendmsg(sock: c_int, msg: *const msghdr_t, flags: c_int) isize {
-    return c.SENDMSG(sock, @ptrCast(*const c.MSGHDR, msg), flags);
+pub inline fn sendmsg(fd: c_int, msg: *const msghdr_t, flags: c_int) isize {
+    return c.SENDMSG(fd, @ptrCast(*const c.MSGHDR, msg), flags);
 }
 
 /// return empty slice if failed
-pub inline fn recvmmsg(sock: c_int, msgs: []mmsghdr_t, flags: c_int) []mmsghdr_t {
-    std.debug.assert(msgs.len > 0);
+pub inline fn recvmmsg(fd: c_int, msgs: []mmsghdr_t, flags: c_int) []mmsghdr_t {
+    assert(msgs.len > 0);
     const vec = @ptrCast([*]c.MMSGHDR, msgs.ptr);
     const vlen = cc.to_uint(msgs.len);
-    const n = c.RECVMMSG.?(sock, vec, vlen, flags, null);
+    const n = c.RECVMMSG.?(fd, vec, vlen, flags, null);
     return if (n > 0) msgs[0..cc.to_usize(n)] else msgs[0..0];
 }
 
 /// return empty slice if failed
-pub inline fn sendmmsg(sock: c_int, msgs: []mmsghdr_t, flags: c_int) []mmsghdr_t {
-    std.debug.assert(msgs.len > 0);
+pub inline fn sendmmsg(fd: c_int, msgs: []mmsghdr_t, flags: c_int) []mmsghdr_t {
+    assert(msgs.len > 0);
     const vec = @ptrCast([*]c.MMSGHDR, msgs.ptr);
     const vlen = cc.to_uint(msgs.len);
-    const n = c.SENDMMSG.?(sock, vec, vlen, flags);
+    const n = c.SENDMMSG.?(fd, vec, vlen, flags);
     return if (n > 0) msgs[0..cc.to_usize(n)] else msgs[0..0];
+}
+
+// ===============================================================
+
+pub noinline fn getpeername(fd: c_int, addr: *Addr) ?void {
+    var addrlen: c.socklen_t = @sizeOf(Addr);
+    if (c.getpeername(fd, &addr.sa, &addrlen) == -1) {
+        log.err(@src(), "getpeername(%d) failed: (%d) %m", .{ fd, cc.errno() });
+        return null;
+    }
+}
+
+pub fn sendto(fd: c_int, msg: []const u8, flags: c_int, to_addr: *const Addr) isize {
+    return c.sendto(fd, msg.ptr, msg.len, flags, &to_addr.sa, to_addr.len());
 }
 
 // ===============================================================
@@ -164,12 +261,11 @@ pub fn @"test: net api"() !void {
     _ = sendmsg;
     _ = recvmmsg;
     _ = sendmmsg;
-    _ = new_udp_socket;
     _ = Addr;
     _ = Addr.family;
+    _ = Addr.len;
     _ = Addr.is_sin;
     _ = Addr.is_sin6;
-    _ = Addr.len;
     _ = Addr.from_text;
     _ = Addr.to_text;
 }

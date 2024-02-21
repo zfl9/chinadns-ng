@@ -55,28 +55,11 @@ extern int (*SENDMMSG)(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags
 
 void net_init(void);
 
-static inline void ignore_sigpipe(void) {
-    signal(SIGPIPE, SIG_IGN);
-}
+/* zig is currently unable to translate the SIG_IGN macro */
+static inline sighandler_t SIG_IGNORE(void) { return SIG_IGN; }
 
-int get_ipstr_family(const char *noalias ipstr);
-
-int new_tcp_socket(int family, bool for_listen, bool reuse_port);
-int new_udp_socket(int family, bool for_listen, bool reuse_port);
-
-union skaddr {
-    struct sockaddr sa;
-    struct sockaddr_in sin;
-    struct sockaddr_in6 sin6;
-};
-
-#define skaddr_family(p) ((p)->sa.sa_family)
-#define skaddr_is_sin(p) (skaddr_family(p) == AF_INET)
-#define skaddr_is_sin6(p) (skaddr_family(p) == AF_INET6)
-#define skaddr_len(p) (skaddr_is_sin(p) ? sizeof((p)->sin) : sizeof((p)->sin6))
-
-void skaddr_from_text(union skaddr *noalias skaddr, const char *noalias ipstr, u16 port);
-void skaddr_to_text(const union skaddr *noalias skaddr, char *noalias ipstr, u16 *noalias port);
+/* zig is currently unable to translate the SIG_DFL macro */
+static inline sighandler_t SIG_DEFAULT(void) { return SIG_DFL; }
 
 u32 epev_get_events(const void *noalias ev);
 void *epev_get_ptrdata(const void *noalias ev);

@@ -8,20 +8,20 @@ str: [:0]u8 = &[_:0]u8{},
 /// 0 means null, no memory allocated
 capacity: usize = 0,
 
-const Self = @This();
+const DynStr = @This();
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *DynStr) void {
     if (!self.is_null())
-        cc.free(self.get_memory());
+        cc.free(self.get_mem());
 }
 
 /// copy string to buffer
-pub fn set(self: *Self, str: []const u8) void {
+pub fn set(self: *DynStr, str: []const u8) void {
     return self.set_ex(&.{str});
 }
 
 /// copy strings to buffer
-pub fn set_ex(self: *Self, str_list: []const []const u8) void {
+pub fn set_ex(self: *DynStr, str_list: []const []const u8) void {
     var strlen: usize = 0;
     for (str_list) |str|
         strlen += str.len;
@@ -39,26 +39,26 @@ pub fn set_ex(self: *Self, str_list: []const []const u8) void {
     self.str[strlen] = 0;
 }
 
-fn check_cap(self: *Self, strlen: usize) void {
+fn check_cap(self: *DynStr, strlen: usize) void {
     if (strlen + 1 > self.capacity) {
-        const new_memory = cc.realloc(u8, self.get_memory(), strlen + 1).?;
-        self.set_memory(new_memory);
+        const new_mem = cc.realloc(u8, self.get_mem(), strlen + 1).?;
+        self.set_mem(new_mem);
     }
 }
 
-fn get_memory(self: *const Self) []u8 {
+fn get_mem(self: *const DynStr) []u8 {
     return self.str.ptr[0..self.capacity];
 }
 
-fn set_memory(self: *Self, new_memory: []u8) void {
-    self.str.ptr = @ptrCast(@TypeOf(self.str.ptr), new_memory.ptr);
-    self.capacity = new_memory.len;
+fn set_mem(self: *DynStr, new_mem: []u8) void {
+    self.str.ptr = @ptrCast(@TypeOf(self.str.ptr), new_mem.ptr);
+    self.capacity = new_mem.len;
 }
 
-pub inline fn is_null(self: *const Self) bool {
+pub inline fn is_null(self: *const DynStr) bool {
     return self.capacity == 0;
 }
 
-pub inline fn is_empty(self: *const Self) bool {
+pub inline fn is_empty(self: *const DynStr) bool {
     return self.str.len == 0;
 }
