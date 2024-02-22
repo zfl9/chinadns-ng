@@ -30,21 +30,12 @@ addr: net.Addr,
 // runtime info
 fdobj: ?*EvLoop.Fd = null,
 
-pub const InProto = enum { tcp, udp };
-
-/// send query to upstream
-pub fn send(self: *Upstream, qmsg: *RcMsg, in_proto: InProto) void {
+/// [nosuspend] send query to upstream
+fn send(self: *Upstream, qmsg: *RcMsg) void {
     switch (self.proto) {
-        .tcp_in => if (in_proto == .tcp) self.send_tcp(qmsg),
-
-        .tcp => self.send_tcp(qmsg),
-
-        .udp_in => if (in_proto == .udp) self.send_udp(qmsg),
-
-        .udp => self.send_udp(qmsg),
-
+        .tcp_in, .tcp => self.send_tcp(qmsg),
+        .udp_in, .udp => self.send_udp(qmsg),
         .https => self.send_https(qmsg),
-
         else => unreachable,
     }
 }
@@ -87,19 +78,19 @@ fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
         // read the len
         var rlen: u16 = undefined;
         g.evloop.recv_exactly(fdobj, std.mem.asBytes(&rlen), 0) orelse
-            break :e .{ .op = "read_len", .msg = if (cc.errno() == 0) "the connection is closed" else null };
+            break :e .{ .op = "read_len", .msg = if (cc.errno() == 0) "connection closed" else null };
 
         rlen = c.ntohs(rlen);
         if (rlen == 0)
-            break :e .{ .op = "read_len", .msg = "the length field is 0" };
+            break :e .{ .op = "read_len", .msg = "length field is 0" };
 
         const rmsg = RcMsg.new(rlen);
         defer rmsg.free();
 
-        // read the body
+        // read the msg
         rmsg.len = rlen;
         g.evloop.recv_exactly(fdobj, rmsg.msg(), 0) orelse
-            break :e .{ .op = "read_body", .msg = if (cc.errno() == 0) "the connection is closed" else null };
+            break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
 
         // send to requester
         server.on_reply(rmsg, self);
@@ -114,18 +105,20 @@ fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
     _ = qmsg;
     _ = self;
     // TODO
+
 }
 
 fn send_https(self: *Upstream, qmsg: *RcMsg) void {
     _ = qmsg;
-    _ = self;
+
     // TODO
+    log.warn(@src(), "currently https upstream is not supported: %s", .{self.url.ptr});
 }
 
 pub const Proto = enum {
-    tcp_or_udp, // "1.1.1.1" (only for parsing)
-    tcp_in, // "tcp://1.1.1.1" (enabled when the query msg is received over tcp)
-    udp_in, // "udp://1.1.1.1" (enabled when the query msg is received over udp)
+    tcp_or_udp, // only exists in the parsing stage
+    tcp_in, // "1.1.1.1" (enabled when the query msg is received over tcp)
+    udp_in, // "1.1.1.1" (enabled when the query msg is received over udp)
     tcp, // "tcp://1.1.1.1"
     udp, // "udp://1.1.1.1"
     https, // "https://1.1.1.1"
@@ -134,10 +127,9 @@ pub const Proto = enum {
     pub fn from_str(str: []const u8) ?Proto {
         // zig fmt: off
         const map = .{
-            .{ .str = "",         .proto = .tcp_or_udp  },
-            .{ .str = "tcp://",   .proto = .tcp         },
-            .{ .str = "udp://",   .proto = .udp         },
-            .{ .str = "https://", .proto = .https       },
+            .{ .str = "tcp://",   .proto = .tcp   },
+            .{ .str = "udp://",   .proto = .udp   },
+            .{ .str = "https://", .proto = .https },
         };
         // zig fmt: on
         inline for (map) |v| {
@@ -150,10 +142,11 @@ pub const Proto = enum {
     /// "tcp://" (string literal)
     pub fn to_str(self: Proto) []const u8 {
         return switch (self) {
-            .tcp_or_udp, .tcp_in, .udp_in => "",
+            .tcp_in, .udp_in => "",
             .tcp => "tcp://",
             .udp => "udp://",
             .https => "https://",
+            else => unreachable,
         };
     }
 
@@ -330,9 +323,26 @@ pub const Group = struct {
 
     /// nosuspend
     pub fn send(self: *const Group, qmsg: *RcMsg, from_tcp: bool) void {
-        const in_proto: InProto = if (from_tcp) .tcp else .udp;
-        for (self.items()) |*upstream|
-            upstream.send(qmsg, in_proto);
+        const in_proto: Proto = if (from_tcp) .tcp_in else .udp_in;
+
+        const verbose_info = if (g.verbose) .{
+            .qid = dns.get_id(qmsg.msg()),
+            .from = cc.b2s(from_tcp, "tcp", "udp"),
+        } else undefined;
+
+        for (self.items()) |*upstream| {
+            if (upstream.proto == .tcp_in or upstream.proto == .udp_in)
+                if (in_proto != upstream.proto) continue;
+
+            if (g.verbose)
+                log.info(
+                    @src(),
+                    "forward query(qid:%u, from:%s) to upstream %s",
+                    .{ cc.to_uint(verbose_info.qid), verbose_info.from, upstream.url.ptr },
+                );
+
+            upstream.send(qmsg);
+        }
     }
 };
 

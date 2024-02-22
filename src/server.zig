@@ -173,6 +173,7 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
             log.err(@src(), "accept(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(g.bind_port), cc.errno() });
             continue;
         };
+        net.setup_tcp_conn_sock(conn_fd);
         co.create(service_tcp, .{ conn_fd, &src_addr });
     }
 }

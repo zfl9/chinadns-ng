@@ -230,7 +230,7 @@ fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*const Ev) bool {
             else => unreachable,
         };
         const events = if (ev) |e| cc.to_ulong(e.get_events()) else 0;
-        log.err(@src(), "epoll_ctl(%d, %s, %d, events=%lu) failed: (%d) %m", .{ self.epfd, op_name, fd, events, cc.errno() });
+        log.err(@src(), "epoll_ctl(%d, %s, %d, events:%lu) failed: (%d) %m", .{ self.epfd, op_name, fd, events, cc.errno() });
         return false;
     }
     return true;
@@ -414,15 +414,14 @@ pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const net.Addr) ?void {
     suspend {}
     self.del_writable(fdobj, @frame());
 
-    var err: c_int = 0;
-    var errlen: c.socklen_t = @sizeOf(c_int);
-    _ = c.getsockopt(fdobj.fd, c.SOL_SOCKET, c.SO_ERROR, &err, &errlen);
-
-    if (err == 0)
-        return;
-
-    cc.set_errno(err);
-    return null;
+    if (net.getsockopt(fdobj.fd, c.SOL_SOCKET, c.SO_ERROR, "SO_ERROR")) |err| {
+        if (err == 0) return;
+        cc.set_errno(err);
+        return null;
+    } else {
+        // getsockopt failed
+        return null;
+    }
 }
 
 pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*net.Addr) ?c_int {

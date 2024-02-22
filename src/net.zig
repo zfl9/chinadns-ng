@@ -139,9 +139,21 @@ pub fn new_tcp_conn_sock(family: c.sa_family_t) ?c_int {
 // ===============================================================
 
 /// `optname`: for printing
-noinline fn setsockopt(fd: c_int, level: c_int, opt: c_int, optname: cc.ConstStr, value: c_int) ?void {
+pub noinline fn getsockopt(fd: c_int, level: c_int, opt: c_int, optname: cc.ConstStr) ?c_int {
+    var value: c_int = undefined;
+    var valuelen: c.socklen_t = @sizeOf(c_int);
+    if (c.getsockopt(fd, level, opt, &value, &valuelen) == -1) {
+        log.err(@src(), "getsockopt(%d, level:%d, opt:%s) failed: (%d) %m", .{ fd, level, optname, cc.errno() });
+        return null;
+    }
+    assert(valuelen == @sizeOf(c_int));
+    return value;
+}
+
+/// `optname`: for printing
+pub noinline fn setsockopt(fd: c_int, level: c_int, opt: c_int, optname: cc.ConstStr, value: c_int) ?void {
     if (c.setsockopt(fd, level, opt, &value, @sizeOf(c_int)) == -1) {
-        log.err(@src(), "setsockopt(%d, level=%d, opt=%s, value=%d) failed: (%d) %m", .{ fd, level, optname, value, cc.errno() });
+        log.err(@src(), "setsockopt(%d, level:%d, opt:%s, value:%d) failed: (%d) %m", .{ fd, level, optname, value, cc.errno() });
         return null;
     }
 }
