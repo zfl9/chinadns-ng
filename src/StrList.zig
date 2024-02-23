@@ -12,15 +12,6 @@ capacity: usize = 0,
 
 const StrList = @This();
 
-pub fn deinit(self: *StrList) void {
-    if (self.is_null()) return;
-
-    for (self.items) |ptr|
-        g.allocator.free(ptr);
-
-    g.allocator.free(self.get_mem());
-}
-
 /// a copy of string `str` will be created (strdup)
 /// if the string already exists, it will not be added
 /// TODO: replace strdup with alloc_only allocator

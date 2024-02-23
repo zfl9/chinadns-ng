@@ -11,11 +11,6 @@ capacity: usize = 0,
 
 const DynStr = @This();
 
-pub fn deinit(self: *DynStr) void {
-    if (!self.is_null())
-        g.allocator.free(self.get_mem());
-}
-
 /// copy string to buffer
 pub fn set(self: *DynStr, str: []const u8) void {
     return self.set_ex(&.{str});

@@ -443,6 +443,21 @@ pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*net.Addr) ?c_int {
     }
 }
 
+pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ?usize {
+    while (true) {
+        const res = c.read(fdobj.fd, buf.ptr, buf.len);
+        if (res >= 0)
+            return cc.to_usize(res);
+
+        if (cc.errno() != c.EAGAIN)
+            return null;
+
+        self.add_readable(fdobj, @frame());
+        suspend {}
+        self.del_readable(fdobj, @frame());
+    }
+}
+
 pub fn recvfrom(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int, src_addr: ?*net.Addr) ?usize {
     while (true) {
         const addr = if (src_addr) |addr| &addr.sa else null;

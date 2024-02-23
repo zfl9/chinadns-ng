@@ -17,6 +17,7 @@ pub usingnamespace @cImport({
     @cInclude("unistd.h");
     @cInclude("signal.h");
     @cInclude("time.h");
+    @cInclude("fcntl.h");
     @cInclude("sys/types.h");
     @cInclude("sys/epoll.h");
     @cInclude("sys/socket.h");

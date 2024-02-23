@@ -46,18 +46,56 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
         c.abort();
 }
 
+// ============================================================================
+
+const _debug = builtin.mode == .Debug;
+
+const gpa_t = if (_debug) std.heap.GeneralPurposeAllocator(.{}) else void;
+var _gpa: gpa_t = undefined;
+
+const pipe_fds_t = if (_debug) [2]c_int else void;
+var _pipe_fds: pipe_fds_t = undefined;
+
+fn on_sigusr1(_: c_int) callconv(.C) void {
+    const v: u8 = 0;
+    _ = c.write(_pipe_fds[1], &v, @sizeOf(u8));
+}
+
+fn memleak_checker() void {
+    defer co.terminate(@frame(), @frameSize(memleak_checker));
+
+    if (c.pipe2(&_pipe_fds, c.O_CLOEXEC | c.O_NONBLOCK) == -1) {
+        log.err(@src(), "pipe() failed: (%d) %m", .{cc.errno()});
+        @panic("pipe failed");
+    }
+    defer c.close(_pipe_fds[1]); // wirte end
+
+    // register sig_handler
+    _ = c.signal(c.SIGUSR1, on_sigusr1);
+
+    const fdobj = EvLoop.Fd.new(_pipe_fds[0]);
+    defer fdobj.free(); // read end
+
+    while (true) {
+        var v: u8 = undefined;
+        _ = g.evloop.read(fdobj, std.mem.asBytes(&v)) orelse {
+            log.err(@src(), "read(%d) failed: (%d) %m", .{ fdobj.fd, cc.errno() });
+            continue;
+        };
+        log.info(@src(), "signal received, check memory leaks ...", .{});
+        _ = _gpa.detectLeaks();
+    }
+}
+
+// ============================================================================
+
 /// called by EvLoop.check_timeout
 pub const check_timeout = server.check_timeout;
 
 pub fn main() u8 {
-    const is_debug = builtin.mode == .Debug;
-
-    const gpa_t = if (is_debug) std.heap.GeneralPurposeAllocator(.{}) else void;
-    var gpa: gpa_t = undefined;
-
-    g.allocator = if (is_debug) b: {
-        gpa = gpa_t{};
-        break :b gpa.allocator();
+    g.allocator = if (_debug) b: {
+        _gpa = gpa_t{};
+        break :b _gpa.allocator();
     } else std.heap.c_allocator;
 
     // ============================================================================
@@ -117,6 +155,9 @@ pub fn main() u8 {
     g.evloop = EvLoop.init();
 
     server.start();
+
+    if (_debug)
+        co.create(memleak_checker, .{});
 
     g.evloop.run();
 
