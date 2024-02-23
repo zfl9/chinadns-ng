@@ -286,7 +286,10 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, from_tcp
     var ascii_namebuf: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
     const p_ascii_namebuf: ?[*]u8 = if (g.verbose or !dnl.is_empty()) &ascii_namebuf else null;
     var wire_namelen: c_int = undefined;
-    if (!dns.check_query(msg, p_ascii_namebuf, &wire_namelen)) return;
+    if (!dns.check_query(msg, p_ascii_namebuf, &wire_namelen)) {
+        log.err(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
+        return;
+    }
 
     const name_tag = dnl.get_name_tag(&ascii_namebuf, dns.to_ascii_namelen(wire_namelen));
     const qtype = dns.get_qtype(msg, wire_namelen);
@@ -388,7 +391,10 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
 
     var ascii_name: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
     var wire_namelen: c_int = undefined;
-    if (!dns.check_reply(rmsg.msg(), &ascii_name, &wire_namelen)) return;
+    if (!dns.check_reply(rmsg.msg(), &ascii_name, &wire_namelen)) {
+        log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url.ptr});
+        return;
+    }
 
     var replylog: ReplyLog = if (g.verbose) .{
         .qid = dns.get_id(rmsg.msg()),
