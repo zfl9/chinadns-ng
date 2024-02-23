@@ -221,7 +221,9 @@ fn service_tcp(fd: c_int, p_src_addr: *const net.Addr) void {
             on_query(qmsg, fdobj, &src_addr, true);
 
             if (qmsg.is_unique())
-                free_qmsg = qmsg;
+                free_qmsg = qmsg
+            else
+                qmsg.unref();
         }
     };
 
@@ -256,7 +258,9 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
         on_query(qmsg, fdobj, &src_addr, false);
 
         if (qmsg.is_unique())
-            free_qmsg = qmsg;
+            free_qmsg = qmsg
+        else
+            qmsg.unref();
     }
 }
 
