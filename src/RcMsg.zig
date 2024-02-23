@@ -35,7 +35,12 @@ pub fn new(cap: u16) *RcMsg {
 pub fn realloc(self: *RcMsg, new_cap: u16) *RcMsg {
     assert(self.is_unique());
     if (new_cap > self.cap) {
-        const bytes = g.allocator.realloc(self.mem(), header_len + new_cap) catch unreachable;
+        const bytes = g.allocator.reallocAdvanced(
+            self.mem(),
+            alignment,
+            header_len + new_cap,
+            .exact,
+        ) catch unreachable;
         const new_self = header(bytes);
         new_self.cap = new_cap;
         return new_self;
