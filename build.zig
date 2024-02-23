@@ -510,6 +510,9 @@ fn build_openssl() *Step {
         \\  make install_sw
     ;
 
+    const str_musl: [:0]const u8 = if (is_musl()) "1" else "0";
+    const str_lto: [:0]const u8 = if (_lto) "-flto" else "";
+
     const cmd = fmt(cmd_, .{
         _b.pathFromRoot(_dep_openssl.base_dir),
         _dep_openssl.src_dir,
@@ -517,8 +520,8 @@ fn build_openssl() *Step {
         get_target_mcpu(),
         openssl_target,
         _b.pathFromRoot(_b.cache_root),
-        if (is_musl()) "1" else "0",
-        if (_lto) "-flto" else "",
+        str_musl,
+        str_lto,
     });
 
     openssl.dependOn(add_sh_cmd_x(cmd));
