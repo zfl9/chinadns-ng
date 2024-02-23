@@ -162,7 +162,7 @@ fn option_name() void {
 }
 
 fn option_openssl() void {
-    _enable_openssl = _b.option(bool, "openssl", "enable openssl to support DoH protocol, default: true") orelse true;
+    _enable_openssl = _b.option(bool, "openssl", "enable openssl to support DoH protocol, default: false") orelse false;
 }
 
 fn option_mimalloc() void {
