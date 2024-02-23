@@ -59,7 +59,7 @@ fn log_write(comptime level: Level, comptime src: SourceLocation, comptime in_fm
     const timefmt = "%d-%02d-%02d %02d:%02d:%02d";
     const fmt = "\x1b[" ++ level.color() ++ ";1m" ++ timefmt ++ " " ++ level.desc() ++ "\x1b[0m \x1b[1m%s\x1b[0m" ++ " " ++ in_fmt ++ "\n";
     const t = time();
-    const args = .{ t[0], t[1], t[2], t[3], t[4], t[5], srcinfo(src).ptr } ++ in_args;
+    const args = .{ t[0], t[1], t[2], t[3], t[4], t[5], comptime srcinfo(src).ptr } ++ in_args;
     @call(.{}, cc.printf, .{ fmt, args });
 }
 

@@ -19,7 +19,6 @@ const alignment = @alignOf(RcMsg);
 const header_len = @sizeOf(RcMsg);
 
 fn header(bytes: []align(alignment) u8) *RcMsg {
-    // const aligned = @alignCast(@alignOf(RcMsg), bytes);
     return std.mem.bytesAsValue(RcMsg, bytes[0..header_len]);
 }
 

@@ -313,7 +313,7 @@ pub inline fn setenv(env_name: ConstStr, value: ConstStr, is_replace: bool) c_in
 
 // ==============================================================
 
-pub inline fn retry_EINTR(func: anytype, args: anytype) @TypeOf(@call(.{}, func, args)) {
+pub fn retry_EINTR(func: anytype, args: anytype) @TypeOf(@call(.{}, func, args)) {
     while (true) {
         const ret = @call(.{}, func, args);
         if (!(ret == -1 and errno() == c.EINTR)) return ret;

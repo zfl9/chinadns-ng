@@ -9,7 +9,6 @@ const root = @import("root");
 const std = @import("std");
 const trait = std.meta.trait;
 const assert = std.debug.assert;
-const heap = std.heap;
 
 const EvLoop = @This();
 
@@ -115,7 +114,7 @@ pub const Fd = struct {
         g.allocator.destroy(self);
 
         // record to the destroyed list, see `evloop.run()`
-        g.evloop.destroyed.put(heap.raw_c_allocator, self, {}) catch unreachable;
+        g.evloop.destroyed.put(g.allocator, self, {}) catch unreachable;
     }
 
     pub fn interest_events(self: *const Fd) u32 {
@@ -289,7 +288,7 @@ fn del_writable(self: *EvLoop, fdobj: *Fd, frame: anyframe) void {
 }
 
 fn cache_change(self: *EvLoop, fdobj: *const Fd, change: Change.T) void {
-    const v = self.change_list.getOrPut(heap.raw_c_allocator, fdobj) catch unreachable;
+    const v = self.change_list.getOrPut(g.allocator, fdobj) catch unreachable;
     const change_set = v.value_ptr;
     if (v.found_existing) {
         change_set.add(change);

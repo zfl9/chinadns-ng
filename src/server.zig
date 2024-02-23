@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_opts = @import("build_opts");
-const heap = std.heap;
 const assert = std.debug.assert;
 
 const c = @import("c.zig");
@@ -119,7 +118,7 @@ const QueryCtx = struct {
             dns.set_id(msg, qid);
 
             const qctx = QueryCtx.new(qid, id, fdobj, src_addr, name_tag);
-            self.map.putNoClobber(heap.raw_c_allocator, qid, qctx) catch unreachable;
+            self.map.putNoClobber(g.allocator, qid, qctx) catch unreachable;
             self.link(qctx);
             return qctx;
         }
@@ -264,6 +263,23 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
     }
 }
 
+// =========================================================================
+
+const QueryLog = struct {
+    src_ip: net.IpStrBuf,
+    src_port: u16,
+    id: u16,
+    tag: dnl.Tag,
+    qtype: u16,
+    name: cc.ConstStr,
+
+    pub noinline fn query(self: *const QueryLog) void {
+        _ = self;
+        // TODO
+        log.info(@src(), ");");
+    }
+};
+
 fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, from_tcp: bool) void {
     const msg = qmsg.msg();
 
@@ -322,6 +338,8 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, from_tcp
         nosuspend g.trust_group.send(qmsg, from_tcp);
     }
 }
+
+// =========================================================================
 
 const ReplyLog = struct {
     qid: u16,
@@ -480,6 +498,8 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, fro
     );
 }
 
+// =========================================================================
+
 /// qctx will be free()
 fn on_timeout(qctx: *QueryCtx) void {
     if (g.verbose) {
@@ -514,7 +534,7 @@ pub fn check_timeout() c_int {
     return -1;
 }
 
-// ===============================================================
+// =========================================================================
 
 /// listen socket (tcp + udp)
 fn create_socks(ip: cc.ConstStr, port: u16) [2]c_int {

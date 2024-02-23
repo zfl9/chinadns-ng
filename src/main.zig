@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_opts = @import("build_opts");
-const heap = std.heap;
 const assert = std.debug.assert;
 
 const tests = @import("tests.zig");

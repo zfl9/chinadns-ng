@@ -321,7 +321,7 @@ pub const Group = struct {
             }
         }
 
-        self.list.append(std.heap.raw_c_allocator, item) catch unreachable;
+        self.list.append(g.allocator, item) catch unreachable;
     }
 
     /// nosuspend
