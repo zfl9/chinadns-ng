@@ -45,7 +45,7 @@ fn send_tcp(self: *Upstream, qmsg: *RcMsg) void {
 }
 
 fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
-    defer co.terminate(@frame());
+    defer co.terminate(@frame(), @frameSize(_send_tcp));
 
     const fd = net.new_tcp_conn_sock(self.addr.family()) orelse return;
 
@@ -98,7 +98,10 @@ fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
         return;
     };
 
-    log.err(@src(), "%s(%d, '%s') failed: (%d) %m", .{ e.op, fd, self.url.ptr, cc.errno() });
+    if (e.msg) |msg|
+        log.err(@src(), "%s(%d, '%s') failed: %s", .{ e.op, fd, self.url.ptr, msg })
+    else
+        log.err(@src(), "%s(%d, '%s') failed: (%d) %m", .{ e.op, fd, self.url.ptr, cc.errno() });
 }
 
 fn send_udp(self: *Upstream, qmsg: *RcMsg) void {

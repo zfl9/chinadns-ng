@@ -3,6 +3,7 @@
 const cc = @This();
 
 const c = @import("c.zig");
+const g = @import("g.zig");
 const fmtchk = @import("fmtchk.zig");
 
 const std = @import("std");
@@ -187,10 +188,10 @@ fn StrSlice(comptime S: type, comptime force_const: bool) type {
     }
 }
 
-/// caller own the returned memory | cc.free(ptr)
+/// caller own the returned memory | g.allocator.free(buf)
 pub fn strdup(str: anytype) [:0]u8 {
     const s = strslice_c(str);
-    return strdup_internal(s, malloc_many(u8, s.len + 1).?);
+    return strdup_internal(s, g.allocator.alloc(u8, s.len + 1) catch unreachable);
 }
 
 /// note: `str` and `buf` cannot overlap
@@ -210,57 +211,6 @@ fn strdup_internal(s: anytype, buf: []u8) [:0]u8 {
         buf[s.len] = 0;
     }
     return buf[0..s.len :0];
-}
-
-// ==============================================================
-
-pub inline fn malloc_one(comptime T: type) ?*T {
-    comptime assert(@alignOf(T) <= @alignOf(c.max_align_t));
-    return @ptrCast(?*T, @alignCast(@alignOf(T), c.malloc(@sizeOf(T))));
-}
-
-pub inline fn malloc_many(comptime T: type, n: usize) ?[]T {
-    comptime assert(@alignOf(T) <= @alignOf(c.max_align_t));
-    return if (c.malloc(@sizeOf(T) * n)) |ptr|
-        @ptrCast([*]T, @alignCast(@alignOf(T), ptr))[0..n]
-    else
-        null;
-}
-
-pub inline fn align_malloc_many(comptime T: type, n: usize, comptime alignment: u32) ?[]align(alignment) T {
-    comptime assert(std.math.isPowerOfTwo(alignment));
-
-    // multiple of `sizeof(void *)`
-    const real_alignment = comptime std.math.max(@sizeOf(*anyopaque), alignment);
-    comptime assert(real_alignment % @sizeOf(*anyopaque) == 0);
-
-    var ptr: [*]align(real_alignment) T = undefined;
-    return if (c.posix_memalign(@ptrCast(*?*anyopaque, &ptr), real_alignment, @sizeOf(T) * n) == 0)
-        ptr[0..n]
-    else
-        null;
-}
-
-/// if `old_mem.len` is 0 it is treated as a null pointer
-pub inline fn realloc(comptime T: type, old_mem: []T, new_n: usize) ?[]T {
-    comptime assert(@alignOf(T) <= @alignOf(c.max_align_t));
-    const old_ptr = if (old_mem.len > 0) old_mem.ptr else null;
-    const new_ptr = c.realloc(old_ptr, new_n * @sizeOf(T)) orelse return null;
-    return @ptrCast([*]T, @alignCast(@alignOf(T), new_ptr))[0..new_n];
-}
-
-pub inline fn free(mem: anytype) void {
-    const T = @TypeOf(mem);
-    if (@typeInfo(T) == .Optional) {
-        const m = mem orelse return;
-        return free(m);
-    }
-    return if (comptime trait.isSlice(T)) {
-        if (mem.len > 0)
-            c.free(remove_const(mem.ptr));
-    } else {
-        c.free(remove_const(mem));
-    };
 }
 
 // ==============================================================
@@ -376,7 +326,7 @@ pub fn @"test: strdup"() !void {
     const org_str = "helloworld";
 
     const dup_str = strdup(org_str);
-    defer free(dup_str);
+    defer g.allocator.free(dup_str);
 
     try testing.expectEqual(@as(usize, 10), org_str.len);
     try testing.expectEqual(org_str.len, dup_str.len);
@@ -384,33 +334,6 @@ pub fn @"test: strdup"() !void {
 
     dup_str[dup_str.len - 1] = 'x';
     try testing.expectEqualStrings(org_str[0 .. org_str.len - 1], dup_str[0 .. dup_str.len - 1]);
-}
-
-pub fn @"test: malloc"() !void {
-    {
-        const p = malloc_one(u64);
-        defer free(p);
-
-        const p2 = malloc_many(u32, 10);
-        defer free(p2);
-    }
-
-    const p_item = malloc_one(u32).?;
-    defer free(p_item);
-
-    const items = malloc_many(i64, 10).?;
-    defer free(items);
-
-    p_item.* = 99;
-    try testing.expectEqual(@as(u32, 99), p_item.*);
-
-    std.mem.set(i64, items, 'a');
-    items[items.len - 1] = 'b';
-
-    try testing.expectEqual(@as(usize, 10), items.len);
-    try testing.expectEqual(@as(usize, 0), std.mem.indexOfScalar(i64, items, 'a').?);
-    try testing.expectEqual(@as(usize, 8), std.mem.lastIndexOfScalar(i64, items, 'a').?);
-    try testing.expectEqual(@as(usize, 9), std.mem.indexOfScalar(i64, items, 'b').?);
 }
 
 pub fn @"test: strslice"() !void {

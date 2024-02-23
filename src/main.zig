@@ -50,6 +50,18 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 pub const check_timeout = server.check_timeout;
 
 pub fn main() u8 {
+    const is_debug = builtin.mode == .Debug;
+
+    const gpa_t = if (is_debug) std.heap.GeneralPurposeAllocator(.{}) else void;
+    var gpa: gpa_t = undefined;
+
+    g.allocator = if (is_debug) b: {
+        gpa = gpa_t{};
+        break :b gpa.allocator();
+    } else std.heap.c_allocator;
+
+    // ============================================================================
+
     _ = c.signal(c.SIGPIPE, c.SIG_IGNORE());
 
     _ = cc.setvbuf(cc.stdout, null, c._IOLBF, 256);

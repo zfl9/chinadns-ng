@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
+const g = @import("g.zig");
 const Rc = @import("Rc.zig");
 
 const assert = std.debug.assert;
@@ -14,16 +15,17 @@ cap: u16, // capacity of the msg data
 len: u16, // msg len (0 means empty)
 // msg data (variable part)
 
+const alignment = @alignOf(RcMsg);
 const header_len = @sizeOf(RcMsg);
 
-fn as_rcmsg(bytes: []u8) *RcMsg {
-    const aligned = @alignCast(@alignOf(RcMsg), bytes);
-    return std.mem.bytesAsValue(RcMsg, aligned[0..header_len]);
+fn header(bytes: []align(alignment) u8) *RcMsg {
+    // const aligned = @alignCast(@alignOf(RcMsg), bytes);
+    return std.mem.bytesAsValue(RcMsg, bytes[0..header_len]);
 }
 
 pub fn new(cap: u16) *RcMsg {
-    const bytes = cc.malloc_many(u8, header_len + cap).?;
-    const self = as_rcmsg(bytes);
+    const bytes = g.allocator.alignedAlloc(u8, alignment, header_len + cap) catch unreachable;
+    const self = header(bytes);
     self.* = .{
         .cap = cap,
         .len = 0,
@@ -34,8 +36,8 @@ pub fn new(cap: u16) *RcMsg {
 pub fn realloc(self: *RcMsg, new_cap: u16) *RcMsg {
     assert(self.is_unique());
     if (new_cap > self.cap) {
-        const bytes = cc.realloc(u8, self.mem(), header_len + new_cap).?;
-        const new_self = as_rcmsg(bytes);
+        const bytes = g.allocator.realloc(self.mem(), header_len + new_cap) catch unreachable;
+        const new_self = header(bytes);
         new_self.cap = new_cap;
         return new_self;
     }
@@ -51,7 +53,7 @@ pub const unref = free;
 
 pub fn free(self: *RcMsg) void {
     if (self.rc.unref() == 0)
-        cc.free(self);
+        g.allocator.free(self.mem());
 }
 
 /// ref count is 1

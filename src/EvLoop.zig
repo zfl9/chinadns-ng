@@ -91,7 +91,7 @@ pub const Fd = struct {
 
     /// ownership of `fd` is transferred to `fdobj`
     pub fn new(fd: c_int) *Fd {
-        const self = cc.malloc_one(Fd).?;
+        const self = g.allocator.create(Fd) catch unreachable;
         self.* = .{ .fd = fd };
         return self;
     }
@@ -112,7 +112,7 @@ pub const Fd = struct {
         g.evloop.on_close_fd(self);
         _ = c.close(self.fd);
 
-        cc.free(self);
+        g.allocator.destroy(self);
 
         // record to the destroyed list, see `evloop.run()`
         g.evloop.destroyed.put(heap.raw_c_allocator, self, {}) catch unreachable;

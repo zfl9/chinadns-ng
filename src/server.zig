@@ -32,7 +32,7 @@ const QueryCtx = struct {
     next: ?*QueryCtx = null,
 
     fn new(qid: u16, id: c.be16, fdobj: *EvLoop.Fd, src_addr: ?*const net.Addr, name_tag: dnl.Tag) *QueryCtx {
-        const self = cc.malloc_one(QueryCtx).?;
+        const self = g.allocator.create(QueryCtx) catch unreachable;
         self.* = .{
             .qid = qid,
             .id = id,
@@ -54,7 +54,7 @@ const QueryCtx = struct {
             assert(msg.is_unique());
             msg.unref();
         }
-        cc.free(self);
+        g.allocator.destroy(self);
     }
 
     pub fn is_from_tcp(self: *const QueryCtx) bool {
@@ -162,7 +162,7 @@ var _qctx_list: QueryCtx.List = .{};
 // =======================================================================================================
 
 fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
-    defer co.terminate(@frame());
+    defer co.terminate(@frame(), @frameSize(listen_tcp));
 
     const fdobj = EvLoop.Fd.new(fd);
     defer fdobj.free();
@@ -179,7 +179,7 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
 }
 
 fn service_tcp(fd: c_int, p_src_addr: *const net.Addr) void {
-    defer co.terminate(@frame());
+    defer co.terminate(@frame(), @frameSize(service_tcp));
 
     const fdobj = EvLoop.Fd.new(fd);
     defer fdobj.free();
@@ -234,7 +234,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const net.Addr) void {
 }
 
 fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
-    defer co.terminate(@frame());
+    defer co.terminate(@frame(), @frameSize(listen_udp));
 
     const fdobj = EvLoop.Fd.new(fd);
     defer fdobj.free();

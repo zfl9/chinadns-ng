@@ -138,7 +138,7 @@ fn opt_config(in_value: ?[]const u8) void {
 
     // TODO: vla/alloca allocator
     const filename = cc.strdup(value);
-    defer cc.free(filename);
+    defer g.allocator.free(filename);
 
     const file = cc.fopen(filename, "r") orelse
         exit(@src(), "failed to open the config file: '%s' (%m)", .{filename.ptr});

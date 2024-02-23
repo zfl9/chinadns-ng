@@ -2,6 +2,7 @@
 //! not looking for performance, but it's better to keep the structure compact.
 
 const cc = @import("cc.zig");
+const g = @import("g.zig");
 
 /// string content
 str: [:0]u8 = &[_:0]u8{},
@@ -12,7 +13,7 @@ const DynStr = @This();
 
 pub fn deinit(self: *DynStr) void {
     if (!self.is_null())
-        cc.free(self.get_mem());
+        g.allocator.free(self.get_mem());
 }
 
 /// copy string to buffer
@@ -41,7 +42,7 @@ pub fn set_ex(self: *DynStr, str_list: []const []const u8) void {
 
 fn check_cap(self: *DynStr, strlen: usize) void {
     if (strlen + 1 > self.capacity) {
-        const new_mem = cc.realloc(u8, self.get_mem(), strlen + 1).?;
+        const new_mem = g.allocator.realloc(self.get_mem(), strlen + 1) catch unreachable;
         self.set_mem(new_mem);
     }
 }

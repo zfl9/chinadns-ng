@@ -98,3 +98,6 @@ pub var trustdns_packet_n: u8 = 1;
 pub var upstream_timeout: u8 = 5;
 
 pub var evloop: EvLoop = undefined;
+
+/// global memory allocator
+pub var allocator: std.mem.Allocator = undefined;

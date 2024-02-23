@@ -2,6 +2,7 @@
 //! not looking for performance, but it's better to keep the structure compact.
 
 const cc = @import("cc.zig");
+const g = @import("g.zig");
 const std = @import("std");
 
 /// string pointers
@@ -15,9 +16,9 @@ pub fn deinit(self: *StrList) void {
     if (self.is_null()) return;
 
     for (self.items) |ptr|
-        cc.free(ptr);
+        g.allocator.free(ptr);
 
-    cc.free(self.get_mem());
+    g.allocator.free(self.get_mem());
 }
 
 /// a copy of string `str` will be created (strdup)
@@ -37,7 +38,7 @@ pub fn add(self: *StrList, str: []const u8) void {
 pub fn ensure_available(self: *StrList, available_n: usize) void {
     if (self.capacity < self.items.len + available_n + 1) { // end with null
         const new_cap = std.math.max(self.items.len + available_n + 1, self.capacity * 3 / 2);
-        const new_mem = cc.realloc(?cc.ConstStr, self.get_mem(), new_cap).?;
+        const new_mem = g.allocator.realloc(self.get_mem(), new_cap) catch unreachable;
         self.set_mem(new_mem);
     }
 }
