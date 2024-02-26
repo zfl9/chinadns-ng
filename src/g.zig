@@ -18,13 +18,13 @@ pub const VERSION: cc.ConstStr = b: {
     if (builtin.target.isGnuLibC())
         target = target ++ std.fmt.comptimePrint(".{}", .{builtin.os.version_range.linux.glibc});
 
-    if (!std.mem.eql(u8, target, build_opts.cc_target))
-        @compileError("target-triple mismatch: " ++ target ++ " != " ++ build_opts.cc_target);
+    if (!std.mem.eql(u8, target, build_opts.target))
+        @compileError("target-triple mismatch: " ++ target ++ " != " ++ build_opts.target);
 
     const cpu_model = builtin.cpu.model.name;
 
-    if (!std.mem.startsWith(u8, build_opts.cc_cpu, cpu_model))
-        @compileError("cpu-model mismatch: " ++ cpu_model ++ " != " ++ build_opts.cc_cpu);
+    if (!std.mem.startsWith(u8, build_opts.cpu, cpu_model))
+        @compileError("cpu-model mismatch: " ++ cpu_model ++ " != " ++ build_opts.cpu);
 
     var prefix: [:0]const u8 = "ChinaDNS-NG " ++ build_opts.version;
 
@@ -36,9 +36,9 @@ pub const VERSION: cc.ConstStr = b: {
 
     break :b std.fmt.comptimePrint("{s} | target:{s} | cpu:{s} | mode:{s} | {s}", .{
         prefix,
-        build_opts.cc_target,
-        build_opts.cc_cpu,
-        build_opts.cc_mode,
+        build_opts.target,
+        build_opts.cpu,
+        build_opts.mode,
         "<https://github.com/zfl9/chinadns-ng>",
     });
 };

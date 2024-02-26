@@ -1,6 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
-const build_opts = @import("build_opts");
 const assert = std.debug.assert;
 
 const c = @import("c.zig");
@@ -13,7 +11,6 @@ const dns = @import("dns.zig");
 const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
-const NoAAAA = @import("NoAAAA.zig");
 const co = @import("co.zig");
 
 const QueryCtx = struct {

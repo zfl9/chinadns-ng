@@ -99,9 +99,9 @@ fn init(b: *Builder) void {
     _build_opts.addOption([:0]const u8, "version", chinadns_version);
     _build_opts.addOption([:0]const u8, "openssl_version", dupeZ(_dep_openssl.version));
     _build_opts.addOption([:0]const u8, "mimalloc_version", dupeZ(_dep_mimalloc.version));
-    _build_opts.addOption([:0]const u8, "cc_target", dupeZ(desc_target()));
-    _build_opts.addOption([:0]const u8, "cc_cpu", dupeZ(desc_cpu()));
-    _build_opts.addOption([:0]const u8, "cc_mode", dupeZ(desc_mode(null)));
+    _build_opts.addOption([:0]const u8, "target", dupeZ(desc_target()));
+    _build_opts.addOption([:0]const u8, "cpu", dupeZ(desc_cpu()));
+    _build_opts.addOption([:0]const u8, "mode", dupeZ(desc_mode(null)));
 }
 
 fn init_dep(step: *Step, dep: DependLib) void {
