@@ -2,9 +2,6 @@ const c = @import("c.zig");
 const g = @import("g.zig");
 const cc = @import("cc.zig");
 const log = @import("log.zig");
-const std = @import("std");
-const trait = std.meta.trait;
-const assert = std.debug.assert;
 
 // ===============================================================
 

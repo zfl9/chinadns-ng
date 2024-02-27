@@ -281,9 +281,19 @@ pub inline fn feof(file: *FILE) bool {
 }
 
 /// if file is `null` then flush all output streams
-pub extern fn fflush(file: ?*FILE) c_int;
+pub inline fn fflush(file: ?*FILE) ?void {
+    const raw = struct {
+        extern fn fflush(file: ?*FILE) c_int;
+    };
+    return if (raw.fflush(file) == c.EOF) null;
+}
 
-pub extern fn setvbuf(file: *FILE, buffer: ?[*]u8, mode: c_int, size: usize) c_int;
+pub inline fn setvbuf(file: *FILE, buffer: ?[*]u8, mode: c_int, size: usize) ?void {
+    const raw = struct {
+        extern fn setvbuf(file: *FILE, buffer: ?[*]u8, mode: c_int, size: usize) c_int;
+    };
+    return if (raw.setvbuf(file, buffer, mode, size) != 0) null;
+}
 
 // ==============================================================
 
@@ -639,6 +649,7 @@ pub const msghdr_t = extern struct {
 
     /// for sendmsg
     pub fn skip_iov(self: *const msghdr_t, skip_len: usize) void {
+        assert(skip_len > 0);
         var remain_skip = skip_len;
         for (self.iov_items()) |*iov| {
             if (iov.iov_len == 0) continue;
@@ -648,6 +659,7 @@ pub const msghdr_t = extern struct {
             remain_skip -= n;
             if (remain_skip == 0) return;
         }
+        unreachable;
     }
 };
 
