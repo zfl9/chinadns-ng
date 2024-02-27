@@ -259,7 +259,12 @@ pub fn snprintf(buffer: []u8, comptime fmt: [:0]const u8, args: anytype) [:0]u8 
 
 pub extern fn fopen(filename: ConstStr, mode: ConstStr) ?*FILE;
 
-pub extern fn fclose(file: *FILE) c_int;
+pub inline fn fclose(file: *FILE) ?void {
+    const raw = struct {
+        extern fn fclose(file: *FILE) c_int;
+    };
+    return if (raw.fclose(file) == c.EOF) null;
+}
 
 pub inline fn fgets(file: *FILE, buf: []u8) ?Str {
     const raw = struct {
@@ -766,7 +771,7 @@ pub fn @"test: fopen fclose"() !void {
     // open non-exist file
     {
         const file = fopen(&filename, "rb");
-        defer if (file) |f| fclose(f);
+        defer if (file) |f| fclose(f) orelse unreachable;
 
         // assuming it fails because the file doesn's exist
         if (file == null)
@@ -776,7 +781,7 @@ pub fn @"test: fopen fclose"() !void {
     // open ./build.zig file
     {
         const file = fopen("./build.zig", "rb") orelse unreachable;
-        defer fclose(file);
+        defer fclose(file) orelse unreachable;
     }
 }
 
