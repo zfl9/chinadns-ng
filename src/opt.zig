@@ -57,7 +57,7 @@ const OptDef = struct {
     optfn: OptFn,
 };
 
-const OptFn = fn (in_value: ?[]const u8) void;
+const OptFn = std.meta.FnPtr(fn (in_value: ?[]const u8) void);
 
 // zig fmt: off
 const optdef_array = [_]OptDef{
@@ -105,7 +105,7 @@ fn print(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, a
 fn exit(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
     cc.printf(log.srcinfo(src) ++ " " ++ fmt ++ "\n", args);
     cc.printf("%s\n", .{help});
-    c.exit(1);
+    cc.exit(1);
 }
 
 /// simple version of `print`
@@ -142,7 +142,7 @@ fn opt_config(in_value: ?[]const u8) void {
 
     const file = cc.fopen(filename, "r") orelse
         exit(@src(), "failed to open the config file: '%s' (%m)", .{filename.ptr});
-    defer cc.fclose(file);
+    defer _ = cc.fclose(file);
 
     var buf: [512]u8 = undefined;
     while (cc.fgets(file, &buf)) |p_line| {
@@ -195,7 +195,7 @@ pub fn check_ip(value: []const u8) ?void {
         return null;
     };
 
-    if (net.get_ipstr_family(ip.ptr) == null) {
+    if (cc.get_ipstr_family(ip.ptr) == null) {
         err_print(@src(), "invalid ip", value);
         return null;
     }
@@ -358,12 +358,12 @@ fn opt_verbose(_: ?[]const u8) void {
 
 fn opt_version(_: ?[]const u8) void {
     cc.printf("%s\n", .{g.VERSION});
-    c.exit(0);
+    cc.exit(0);
 }
 
 fn opt_help(_: ?[]const u8) void {
     cc.printf("%s\n", .{help});
-    c.exit(0);
+    cc.exit(0);
 }
 
 // ================================================================

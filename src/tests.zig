@@ -4,7 +4,7 @@ const cc = @import("cc.zig");
 
 const TestFn = struct {
     name: [:0]const u8,
-    func: fn () anyerror!void,
+    func: std.meta.FnPtr(fn () anyerror!void),
 };
 
 const all_test_fns = collect(.{root} ++ root.project_modules);

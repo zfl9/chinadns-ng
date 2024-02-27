@@ -42,7 +42,7 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
     if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe)
         std.builtin.default_panic(msg, error_return_trace, ret_addr)
     else
-        c.abort();
+        cc.abort();
 }
 
 // ============================================================================
@@ -57,20 +57,20 @@ var _pipe_fds: pipe_fds_t = undefined;
 
 fn on_sigusr1(_: c_int) callconv(.C) void {
     const v: u8 = 0;
-    _ = c.write(_pipe_fds[1], &v, @sizeOf(u8));
+    _ = cc.write(_pipe_fds[1], std.mem.asBytes(&v));
 }
 
 fn memleak_checker() void {
     defer co.terminate(@frame(), @frameSize(memleak_checker));
 
-    if (c.pipe2(&_pipe_fds, c.O_CLOEXEC | c.O_NONBLOCK) == -1) {
+    cc.pipe2(&_pipe_fds, c.O_CLOEXEC | c.O_NONBLOCK) orelse {
         log.err(@src(), "pipe() failed: (%d) %m", .{cc.errno()});
         @panic("pipe failed");
-    }
-    defer c.close(_pipe_fds[1]); // wirte end
+    };
+    defer cc.close(_pipe_fds[1]); // wirte end
 
     // register sig_handler
-    _ = c.signal(c.SIGUSR1, on_sigusr1);
+    _ = cc.signal(c.SIGUSR1, on_sigusr1);
 
     const fdobj = EvLoop.Fd.new(_pipe_fds[0]);
     defer fdobj.free(); // read end
@@ -99,7 +99,7 @@ pub fn main() u8 {
 
     // ============================================================================
 
-    _ = c.signal(c.SIGPIPE, c.SIG_IGNORE());
+    _ = cc.signal(c.SIGPIPE, cc.SIG_IGN());
 
     _ = cc.setvbuf(cc.stdout, null, c._IOLBF, 256);
 

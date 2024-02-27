@@ -55,12 +55,6 @@ extern int (*SENDMMSG)(int sockfd, MMSGHDR *msgvec, unsigned int vlen, int flags
 
 void net_init(void);
 
-/* zig is currently unable to translate the SIG_IGN macro */
-static inline sighandler_t SIG_IGNORE(void) { return SIG_IGN; }
-
-/* zig is currently unable to translate the SIG_DFL macro */
-static inline sighandler_t SIG_DEFAULT(void) { return SIG_DFL; }
-
 u32 epev_get_events(const void *noalias ev);
 void *epev_get_ptrdata(const void *noalias ev);
 

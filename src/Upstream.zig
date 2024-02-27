@@ -25,7 +25,7 @@ port: u16,
 path: []const u8, // DoH
 
 url: [:0]const u8, // for printing
-addr: net.Addr,
+addr: cc.SockAddr,
 
 // runtime info
 fdobj: ?*EvLoop.Fd = null,
@@ -59,9 +59,9 @@ fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
     const e: struct { op: cc.ConstStr, msg: ?cc.ConstStr = null } = e: {
         g.evloop.connect(fdobj, &self.addr) orelse break :e .{ .op = "connect" };
 
-        var iov = [_]net.iovec_t{
+        var iov = [_]cc.iovec_t{
             .{
-                .iov_base = std.mem.asBytes(&c.htons(qmsg.len)),
+                .iov_base = std.mem.asBytes(&cc.htons(qmsg.len)),
                 .iov_len = @sizeOf(u16),
             },
             .{
@@ -69,7 +69,7 @@ fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
                 .iov_len = qmsg.len,
             },
         };
-        const msg = net.msghdr_t{
+        const msg = cc.msghdr_t{
             .msg_iov = &iov,
             .msg_iovlen = iov.len,
         };
@@ -80,7 +80,7 @@ fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
         g.evloop.recv_exactly(fdobj, std.mem.asBytes(&rlen), 0) orelse
             break :e .{ .op = "read_len", .msg = if (cc.errno() == 0) "connection closed" else null };
 
-        rlen = c.ntohs(rlen);
+        rlen = cc.ntohs(rlen);
         if (rlen == 0)
             break :e .{ .op = "read_len", .msg = "length field is 0" };
 
@@ -280,7 +280,7 @@ pub const Group = struct {
             // zig fmt: on
         }
 
-        var tmpbuf: net.IpStrBuf = undefined;
+        var tmpbuf: cc.IpStrBuf = undefined;
 
         var url = DynStr{};
 
@@ -306,7 +306,7 @@ pub const Group = struct {
             .port = port,
             .path = path,
             .url = url.str,
-            .addr = net.Addr.from_text(cc.strdup_r(ip, &tmpbuf).?, port),
+            .addr = cc.SockAddr.from_text(cc.strdup_r(ip, &tmpbuf).?, port),
         };
 
         const raw_values = .{ host, ip, path };

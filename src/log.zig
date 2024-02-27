@@ -84,7 +84,7 @@ pub fn err(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: anyty
 pub fn fatal(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
     log_write(.Fatal, src, fmt, args);
     _ = cc.fflush(null);
-    c.abort();
+    cc.abort();
 }
 
 pub fn @"test: logging"() !void {

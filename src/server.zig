@@ -17,7 +17,7 @@ const QueryCtx = struct {
     qid: u16,
     id: c.be16, // original id
     fdobj: *EvLoop.Fd, // requester's fdobj
-    src_addr: net.Addr, // udp requester's sock_addr (`sa_family == 0` means tcp)
+    src_addr: cc.SockAddr, // udp requester's sock_addr (`sa_family == 0` means tcp)
     req_time: c.time_t,
     name_tag: dnl.Tag,
     china_got: bool = false,
@@ -27,7 +27,7 @@ const QueryCtx = struct {
     prev: ?*QueryCtx = null,
     next: ?*QueryCtx = null,
 
-    fn new(qid: u16, id: c.be16, fdobj: *EvLoop.Fd, src_addr: ?*const net.Addr, name_tag: dnl.Tag) *QueryCtx {
+    fn new(qid: u16, id: c.be16, fdobj: *EvLoop.Fd, src_addr: ?*const cc.SockAddr, name_tag: dnl.Tag) *QueryCtx {
         const self = g.allocator.create(QueryCtx) catch unreachable;
         self.* = .{
             .qid = qid,
@@ -102,7 +102,7 @@ const QueryCtx = struct {
         }
 
         /// [on_query] msg.id => qid
-        pub fn add(self: *List, msg: []u8, fdobj: *EvLoop.Fd, src_addr: ?*const net.Addr, name_tag: dnl.Tag) ?*QueryCtx {
+        pub fn add(self: *List, msg: []u8, fdobj: *EvLoop.Fd, src_addr: ?*const cc.SockAddr, name_tag: dnl.Tag) ?*QueryCtx {
             if (self.len() >= std.math.maxInt(u16) + 1) {
                 log.err(@src(), "too many pending requests: %zu", .{self.len()});
                 return null;
@@ -164,7 +164,7 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
     defer fdobj.free();
 
     while (true) {
-        var src_addr: net.Addr = undefined;
+        var src_addr: cc.SockAddr = undefined;
         const conn_fd = g.evloop.accept(fdobj, &src_addr) orelse {
             log.err(@src(), "accept(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(g.bind_port), cc.errno() });
             continue;
@@ -174,7 +174,7 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
     }
 }
 
-fn service_tcp(fd: c_int, p_src_addr: *const net.Addr) void {
+fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
     defer co.terminate(@frame(), @frameSize(service_tcp));
 
     const fdobj = EvLoop.Fd.new(fd);
@@ -183,7 +183,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const net.Addr) void {
     // copy to local variable
     const src_addr = p_src_addr.*;
 
-    var ip: net.IpStrBuf = undefined;
+    var ip: cc.IpStrBuf = undefined;
     var port: u16 = undefined;
     if (g.verbose) src_addr.to_text(&ip, &port);
 
@@ -200,7 +200,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const net.Addr) void {
             g.evloop.recv_exactly(fdobj, std.mem.asBytes(&len), 0) orelse
                 if (cc.errno() == 0) return else break :e .{ .op = "read_len" };
 
-            len = c.ntohs(len);
+            len = cc.ntohs(len);
             if (len < c.DNS_MSG_MINSIZE or len > c.DNS_QMSG_MAXSIZE) {
                 log.err(@src(), "invalid query_msg length: %u", .{cc.to_uint(len)});
                 break :e .{ .op = "read_len", .msg = "invalid query_msg length" };
@@ -244,7 +244,7 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
         const qmsg = free_qmsg orelse RcMsg.new(c.DNS_QMSG_MAXSIZE);
         free_qmsg = null;
 
-        var src_addr: net.Addr = undefined;
+        var src_addr: cc.SockAddr = undefined;
         const len = g.evloop.recvfrom(fdobj, qmsg.buf(), 0, &src_addr) orelse {
             log.err(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
             continue;
@@ -263,7 +263,7 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
 // =========================================================================
 
 const QueryLog = struct {
-    src_ip: net.IpStrBuf,
+    src_ip: cc.IpStrBuf,
     src_port: u16,
     id: u16,
     tag: dnl.Tag,
@@ -277,7 +277,7 @@ const QueryLog = struct {
     }
 };
 
-fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, from_tcp: bool) void {
+fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool) void {
     const msg = qmsg.msg();
 
     var ascii_namebuf: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
@@ -292,7 +292,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, from_tcp
     const qtype = dns.get_qtype(msg, wire_namelen);
 
     if (g.verbose) {
-        var ip: net.IpStrBuf = undefined;
+        var ip: cc.IpStrBuf = undefined;
         var port: u16 = undefined;
         src_addr.to_text(&ip, &port);
         log.info(
@@ -467,11 +467,11 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     _qctx_list.del(qctx);
 }
 
-fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, from_tcp: bool) void {
+fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool) void {
     if (from_tcp) {
-        var iov = [_]net.iovec_t{
+        var iov = [_]cc.iovec_t{
             .{
-                .iov_base = std.mem.asBytes(&c.htons(cc.to_u16(msg.len))),
+                .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
                 .iov_len = @sizeOf(u16),
             },
             .{
@@ -479,18 +479,18 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, fro
                 .iov_len = msg.len,
             },
         };
-        const msghdr = net.msghdr_t{
+        const msghdr = cc.msghdr_t{
             .msg_iov = &iov,
             .msg_iovlen = iov.len,
         };
         if (g.evloop.sendmsg(fdobj, &msghdr, 0) != null) return;
     } else {
         // TODO: check the message length and set the `TC` flag if necessary
-        if (net.sendto(fdobj.fd, msg, 0, src_addr) >= 0) return;
+        if (cc.sendto(fdobj.fd, msg, 0, src_addr) != null) return;
     }
 
     // error handling
-    var ip: net.IpStrBuf = undefined;
+    var ip: cc.IpStrBuf = undefined;
     var port: u16 = undefined;
     src_addr.to_text(&ip, &port);
 
@@ -507,9 +507,9 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const net.Addr, fro
 fn on_timeout(qctx: *QueryCtx) void {
     if (g.verbose) {
         if (qctx.is_from_tcp())
-            _ = net.getpeername(qctx.fdobj.fd, &qctx.src_addr);
+            _ = cc.getpeername(qctx.fdobj.fd, &qctx.src_addr);
 
-        var ip: net.IpStrBuf = undefined;
+        var ip: cc.IpStrBuf = undefined;
         var port: u16 = undefined;
         qctx.src_addr.to_text(&ip, &port);
 
@@ -542,26 +542,26 @@ pub fn check_timeout() c_int {
 /// listen socket (tcp + udp)
 fn create_socks(ip: cc.ConstStr, port: u16) [2]c_int {
     const e: struct { op: cc.ConstStr, t: cc.ConstStr } = e: {
-        const addr = net.Addr.from_text(ip, port);
+        const addr = cc.SockAddr.from_text(ip, port);
 
-        const tcp = net.new_listen_sock(addr.family(), .tcp) orelse c.exit(1);
-        const udp = net.new_listen_sock(addr.family(), .udp) orelse c.exit(1);
+        const tcp = net.new_listen_sock(addr.family(), .tcp) orelse cc.exit(1);
+        const udp = net.new_listen_sock(addr.family(), .udp) orelse cc.exit(1);
 
-        if (c.bind(tcp, &addr.sa, addr.len()) < 0)
+        cc.bind(tcp, &addr) orelse
             break :e .{ .op = "bind", .t = "tcp" };
 
-        if (c.bind(udp, &addr.sa, addr.len()) < 0)
+        cc.bind(udp, &addr) orelse
             break :e .{ .op = "bind", .t = "udp" };
 
         // mark the socket as a listener
-        if (c.listen(tcp, 256) < 0)
+        cc.listen(tcp, 256) orelse
             break :e .{ .op = "listen", .t = "tcp" };
 
         return .{ tcp, udp };
     };
 
     log.err(@src(), "%s(%s, %s#%u) failed: (%d) %m", .{ e.op, e.t, ip, cc.to_uint(port), cc.errno() });
-    c.exit(1);
+    cc.exit(1);
 }
 
 pub fn start() void {

@@ -92,3 +92,8 @@ typedef u8 bitvec_t;
 /* align to `n` (struct, struct member) */
 #define struct_alignto(n) \
     __attribute__((packed,aligned(n)))
+
+/* zig is currently unable to translate the SIG_IGN/DFL/ERR macro */
+const void *SIG_IGNORE(void);
+const void *SIG_DEFAULT(void);
+const void *SIG_ERROR(void);

@@ -109,7 +109,7 @@ pub const Fd = struct {
         assert(self.write_frame == null);
 
         g.evloop.on_close_fd(self);
-        _ = c.close(self.fd);
+        _ = cc.close(self.fd);
 
         g.allocator.destroy(self);
 
@@ -204,24 +204,17 @@ const Ev = opaque {
 
 // =============================================================
 
-extern fn epoll_create1(flags: c_int) c_int;
-extern fn epoll_ctl(epfd: c_int, op: c_int, fd: c_int, ev: ?*const anyopaque) c_int;
-extern fn epoll_wait(epfd: c_int, evs: *anyopaque, n_evs: c_int, timeout: c_int) c_int;
-
-// =============================================================
-
 pub fn init() EvLoop {
-    const epfd = epoll_create1(c.EPOLL_CLOEXEC);
-    if (epfd < 0) {
+    const epfd = cc.epoll_create1(c.EPOLL_CLOEXEC) orelse {
         log.err(@src(), "failed to create epoll: (%d) %m", .{cc.errno()});
-        c.exit(1);
-    }
+        cc.exit(1);
+    };
     return .{ .epfd = epfd };
 }
 
 /// return true if ok (internal api)
-fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*const Ev) bool {
-    if (epoll_ctl(self.epfd, op, fd, ev) < 0) {
+fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*Ev) bool {
+    cc.epoll_ctl(self.epfd, op, fd, ev) orelse {
         const op_name = switch (op) {
             c.EPOLL_CTL_ADD => "ADD",
             c.EPOLL_CTL_MOD => "MOD",
@@ -231,18 +224,20 @@ fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*const Ev) bool {
         const events = if (ev) |e| cc.to_ulong(e.get_events()) else 0;
         log.err(@src(), "epoll_ctl(%d, %s, %d, events:%lu) failed: (%d) %m", .{ self.epfd, op_name, fd, events, cc.errno() });
         return false;
-    }
+    };
     return true;
 }
 
 /// return true if ok
 fn add(self: *EvLoop, fdobj: *const Fd, events: u32) bool {
-    return self.ctl(c.EPOLL_CTL_ADD, fdobj.fd, Ev.V.init(events, fdobj).ptr());
+    var ev = Ev.V.init(events, fdobj);
+    return self.ctl(c.EPOLL_CTL_ADD, fdobj.fd, ev.ptr());
 }
 
 /// return true if ok
 fn mod(self: *EvLoop, fdobj: *const Fd, events: u32) bool {
-    return self.ctl(c.EPOLL_CTL_MOD, fdobj.fd, Ev.V.init(events, fdobj).ptr());
+    var ev = Ev.V.init(events, fdobj);
+    return self.ctl(c.EPOLL_CTL_MOD, fdobj.fd, ev.ptr());
 }
 
 /// return true if ok
@@ -362,11 +357,11 @@ pub fn run(self: *EvLoop) void {
         self.apply_change();
 
         // waiting for I/O events
-        const n = epoll_wait(self.epfd, evs.at(0), cc.to_int(evs.len()), timeout);
-        if (n < 0 and cc.errno() != c.EINTR) {
+        const n = cc.epoll_wait(self.epfd, evs.at(0), cc.to_int(evs.len()), timeout) orelse b: {
+            if (cc.errno() == c.EINTR) break :b -1;
             log.err(@src(), "epoll_wait(%d) failed: (%d) %m", .{ self.epfd, cc.errno() });
-            c.exit(1);
-        }
+            cc.exit(1);
+        };
 
         // handling I/O events
         var i: c_int = 0;
@@ -401,94 +396,84 @@ comptime {
     assert(c.EAGAIN == c.EWOULDBLOCK);
 }
 
-pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const net.Addr) ?void {
-    const res = c.connect(fdobj.fd, &addr.sa, addr.len());
-    if (res == 0)
-        return;
-
-    if (cc.errno() != c.EINPROGRESS)
-        return null;
-
-    self.add_writable(fdobj, @frame());
-    suspend {}
-    self.del_writable(fdobj, @frame());
-
-    if (net.getsockopt(fdobj.fd, c.SOL_SOCKET, c.SO_ERROR, "SO_ERROR")) |err| {
-        if (err == 0) return;
-        cc.set_errno(err);
-        return null;
-    } else {
-        // getsockopt failed
-        return null;
-    }
-}
-
-pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*net.Addr) ?c_int {
-    while (true) {
-        const addr = if (src_addr) |addr| &addr.sa else null;
-        var addrlen: c.socklen_t = @sizeOf(net.Addr);
-        const p_addrlen = if (src_addr != null) &addrlen else null;
-
-        const res = c.accept4(fdobj.fd, addr, p_addrlen, c.SOCK_NONBLOCK | c.SOCK_CLOEXEC);
-        if (res >= 0)
-            return res;
-
-        if (cc.errno() != c.EAGAIN)
+pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const cc.SockAddr) ?void {
+    cc.connect(fdobj.fd, addr) orelse {
+        if (cc.errno() != c.EINPROGRESS)
             return null;
 
-        self.add_readable(fdobj, @frame());
+        self.add_writable(fdobj, @frame());
         suspend {}
-        self.del_readable(fdobj, @frame());
+        self.del_writable(fdobj, @frame());
+
+        if (net.getsockopt_int(fdobj.fd, c.SOL_SOCKET, c.SO_ERROR, "SO_ERROR")) |err| {
+            if (err == 0) return;
+            cc.set_errno(err);
+            return null;
+        } else {
+            // getsockopt failed
+            return null;
+        }
+    };
+}
+
+pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*cc.SockAddr) ?c_int {
+    while (true) {
+        return cc.accept4(fdobj.fd, src_addr, c.SOCK_NONBLOCK | c.SOCK_CLOEXEC) orelse {
+            if (cc.errno() != c.EAGAIN)
+                return null;
+
+            self.add_readable(fdobj, @frame());
+            suspend {}
+            self.del_readable(fdobj, @frame());
+
+            continue;
+        };
     }
 }
 
 pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ?usize {
     while (true) {
-        const res = c.read(fdobj.fd, buf.ptr, buf.len);
-        if (res >= 0)
-            return cc.to_usize(res);
+        return cc.read(fdobj.fd, buf) orelse {
+            if (cc.errno() != c.EAGAIN)
+                return null;
 
-        if (cc.errno() != c.EAGAIN)
-            return null;
+            self.add_readable(fdobj, @frame());
+            suspend {}
+            self.del_readable(fdobj, @frame());
 
-        self.add_readable(fdobj, @frame());
-        suspend {}
-        self.del_readable(fdobj, @frame());
+            continue;
+        };
     }
 }
 
-pub fn recvfrom(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int, src_addr: ?*net.Addr) ?usize {
+pub fn recvfrom(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int, src_addr: *cc.SockAddr) ?usize {
     while (true) {
-        const addr = if (src_addr) |addr| &addr.sa else null;
-        var addrlen: c.socklen_t = @sizeOf(net.Addr);
-        const p_addrlen = if (src_addr != null) &addrlen else null;
+        return cc.recvfrom(fdobj.fd, buf, flags, src_addr) orelse {
+            if (cc.errno() != c.EAGAIN)
+                return null;
 
-        const res = c.recvfrom(fdobj.fd, buf.ptr, buf.len, flags, addr, p_addrlen);
-        if (res >= 0)
-            return cc.to_usize(res);
+            self.add_readable(fdobj, @frame());
+            suspend {}
+            self.del_readable(fdobj, @frame());
 
-        if (cc.errno() != c.EAGAIN)
-            return null;
-
-        self.add_readable(fdobj, @frame());
-        suspend {}
-        self.del_readable(fdobj, @frame());
+            continue;
+        };
     }
 }
 
 /// length 0 means EOF
 pub fn recv(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ?usize {
     while (true) {
-        const res = c.recv(fdobj.fd, buf.ptr, buf.len, flags);
-        if (res >= 0)
-            return cc.to_usize(res);
+        return cc.recv(fdobj.fd, buf, flags) orelse {
+            if (cc.errno() != c.EAGAIN)
+                return null;
 
-        if (cc.errno() != c.EAGAIN)
-            return null;
+            self.add_readable(fdobj, @frame());
+            suspend {}
+            self.del_readable(fdobj, @frame());
 
-        self.add_readable(fdobj, @frame());
-        suspend {}
-        self.del_readable(fdobj, @frame());
+            continue;
+        };
     }
 }
 
@@ -514,13 +499,12 @@ pub fn recv_exactly(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ?void {
 pub fn send(self: *EvLoop, fdobj: *Fd, data: []const u8, flags: c_int) ?void {
     var nsend: usize = 0;
     while (nsend < data.len) {
-        const buf = data[nsend..];
-        const n = c.send(fdobj.fd, buf.ptr, buf.len, flags);
-        if (n >= 0) {
-            nsend += n;
-        } else if (cc.errno() != c.EAGAIN) {
-            return null;
-        }
+        const n = cc.send(fdobj.fd, data[nsend..], flags) orelse b: {
+            if (cc.errno() != c.EAGAIN)
+                return null;
+            break :b 0;
+        };
+        nsend += n;
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (nsend < data.len) {
             self.add_writable(fdobj, @frame());
@@ -531,15 +515,17 @@ pub fn send(self: *EvLoop, fdobj: *Fd, data: []const u8, flags: c_int) ?void {
 }
 
 /// the `iov` struct will be modified
-pub fn sendmsg(self: *EvLoop, fdobj: *Fd, msg: *const net.msghdr_t, flags: c_int) ?void {
+pub fn sendmsg(self: *EvLoop, fdobj: *Fd, msg: *const cc.msghdr_t, flags: c_int) ?void {
     var remain_len: usize = msg.calc_len();
     while (remain_len > 0) {
-        const n = net.sendmsg(fdobj.fd, msg, flags);
-        if (n >= 0) {
-            remain_len -= cc.to_usize(n);
-            if (n > 0) msg.skip_iov(cc.to_usize(n));
-        } else if (cc.errno() != c.EAGAIN) {
-            return null;
+        const n = cc.sendmsg(fdobj.fd, msg, flags) orelse b: {
+            if (cc.errno() != c.EAGAIN)
+                return null;
+            break :b 0;
+        };
+        if (n > 0) {
+            remain_len -= n;
+            msg.skip_iov(n);
         }
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (remain_len > 0) {

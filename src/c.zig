@@ -30,6 +30,7 @@ pub usingnamespace @cImport({
     @cInclude("src/dns.h");
     @cInclude("src/dnl.h");
     @cInclude("src/ipset.h");
+    @cInclude("src/misc.h");
 });
 
 /// assuming CHAR_BIT=8
