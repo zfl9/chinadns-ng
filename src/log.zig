@@ -1,6 +1,4 @@
 const std = @import("std");
-// const builtin = @import("builtin");
-const c = @import("c.zig");
 const cc = @import("cc.zig");
 const SourceLocation = std.builtin.SourceLocation;
 

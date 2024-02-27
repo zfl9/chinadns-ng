@@ -1,6 +1,4 @@
 const std = @import("std");
-const c = @import("c.zig");
-const cc = @import("cc.zig");
 const g = @import("g.zig");
 const Rc = @import("Rc.zig");
 

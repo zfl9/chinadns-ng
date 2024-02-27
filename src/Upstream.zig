@@ -1,5 +1,4 @@
 const std = @import("std");
-const c = @import("c.zig");
 const cc = @import("cc.zig");
 const opt = @import("opt.zig");
 const net = @import("net.zig");
@@ -8,7 +7,6 @@ const log = @import("log.zig");
 const DynStr = @import("DynStr.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
-const dnl = @import("dnl.zig");
 const co = @import("co.zig");
 const g = @import("g.zig");
 const server = @import("server.zig");
