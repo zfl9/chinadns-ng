@@ -60,7 +60,7 @@ fn on_eol(self: *Upstream) void {
     assert(fdobj.write_frame == null);
 
     // test code
-    log.debug(@src(), "udp upstream socket(fd:%d) is end-of-life ...", .{fdobj.fd});
+    // log.debug(@src(), "udp upstream socket(fd:%d) is end-of-life ...", .{fdobj.fd});
 
     if (fdobj.read_frame) |frame| {
         co.do_resume(frame);
@@ -323,6 +323,10 @@ pub const Group = struct {
             }
             return eol;
         }
+
+        pub fn on_query(self: *Life) void {
+            self.query_count +|= 1;
+        }
     };
 
     pub const Tag = enum {
@@ -481,6 +485,9 @@ pub const Group = struct {
 
         const now_time = cc.time();
 
+        var udp_touched = false;
+        var udpin_touched = false;
+
         for (self.items()) |*upstream| {
             if (upstream.proto == .tcp_in or upstream.proto == .udp_in)
                 if (in_proto != upstream.proto) continue;
@@ -510,8 +517,19 @@ pub const Group = struct {
                     upstream.on_eol();
             }
 
+            switch (upstream.proto) {
+                .udp => udp_touched = true,
+                .udp_in => udpin_touched = true,
+                else => {},
+            }
+
             upstream.send(qmsg);
         }
+
+        if (udp_touched)
+            self.udp_life.on_query();
+        if (udpin_touched)
+            self.udpin_life.on_query();
     }
 };
 
