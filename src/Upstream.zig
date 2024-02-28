@@ -1,4 +1,5 @@
 const std = @import("std");
+const c = @import("c.zig");
 const cc = @import("cc.zig");
 const opt = @import("opt.zig");
 const net = @import("net.zig");
@@ -10,23 +11,68 @@ const RcMsg = @import("RcMsg.zig");
 const co = @import("co.zig");
 const g = @import("g.zig");
 const server = @import("server.zig");
+const assert = std.debug.assert;
+
+// ======================================================
+
+comptime {
+    // @compileLog("sizeof(Upstream):", @sizeOf(Upstream), "alignof(Upstream):", @alignOf(Upstream));
+    // @compileLog("sizeof([]const u8):", @sizeOf([]const u8), "alignof([]const u8):", @alignOf([]const u8));
+    // @compileLog("sizeof([:0]const u8):", @sizeOf([:0]const u8), "alignof([:0]const u8):", @alignOf([:0]const u8));
+    // @compileLog("sizeof(cc.SockAddr):", @sizeOf(cc.SockAddr), "alignof(cc.SockAddr):", @alignOf(cc.SockAddr));
+    // @compileLog("sizeof(Proto):", @sizeOf(Proto), "alignof(Proto):", @alignOf(Proto));
+}
 
 const Upstream = @This();
+
+// runtime info
+fdobj: ?*EvLoop.Fd = null, // udp
 
 // config info
 group: *const Group,
 
-proto: Proto,
 host: []const u8, // DoH
-ip: []const u8,
-port: u16,
 path: []const u8, // DoH
-
 url: [:0]const u8, // for printing
+
 addr: cc.SockAddr,
 
-// runtime info
-fdobj: ?*EvLoop.Fd = null,
+proto: Proto,
+
+// ======================================================
+
+fn eql(self: *const Upstream, proto: Proto, addr: *const cc.SockAddr, host: []const u8, path: []const u8) bool {
+    // zig fmt: off
+    return self.proto == proto
+        and self.addr.eql(addr)
+        and std.mem.eql(u8, self.host, host)
+        and std.mem.eql(u8, self.path, path);
+    // zig fmt: on
+}
+
+/// for `udp` and `udp_in` upstream
+fn on_eol(self: *Upstream) void {
+    assert(self.proto == .udp or self.proto == .udp_in);
+
+    const fdobj = self.fdobj orelse return;
+    self.fdobj = null; // set to null
+
+    assert(fdobj.write_frame == null);
+
+    // test code
+    log.debug(@src(), "udp upstream socket(fd:%d) is end-of-life ...", .{fdobj.fd});
+
+    if (fdobj.read_frame) |frame| {
+        co.do_resume(frame);
+    } else {
+        // this coroutine may be sending a response to the tcp client (suspended)
+    }
+}
+
+/// for `udp` and `udp_in` upstream
+fn is_eol(self: *const Upstream, in_fdobj: *EvLoop.Fd) bool {
+    return self.fdobj != in_fdobj;
+}
 
 /// [nosuspend] send query to upstream
 fn send(self: *Upstream, qmsg: *RcMsg) void {
@@ -103,10 +149,81 @@ fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
 }
 
 fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
-    _ = qmsg;
-    _ = self;
-    // TODO
+    const fd = if (self.fdobj) |fdobj| fdobj.fd else b: {
+        const fd = net.new_sock(self.addr.family(), .udp) orelse return;
+        co.create(recv_udp, .{ self, fd });
+        assert(self.fdobj != null);
+        break :b fd;
+    };
 
+    if (self.group.tag == .trust and g.trustdns_packet_n > 1) {
+        var iov = [_]cc.iovec_t{
+            .{
+                .iov_base = qmsg.msg().ptr,
+                .iov_len = qmsg.len,
+            },
+        };
+
+        var msgv: [g.TRUSTDNS_PACKET_MAX]cc.mmsghdr_t = undefined;
+
+        msgv[0] = .{
+            .msg_hdr = .{
+                .msg_name = &self.addr,
+                .msg_namelen = self.addr.len(),
+                .msg_iov = &iov,
+                .msg_iovlen = iov.len,
+            },
+        };
+
+        // repeat msg
+        var i: u8 = 1;
+        while (i < g.trustdns_packet_n) : (i += 1)
+            msgv[i] = msgv[0];
+
+        if (cc.sendmmsg(fd, &msgv, 0) != null) return;
+    } else {
+        if (cc.sendto(fd, qmsg.msg(), 0, &self.addr) != null) return;
+    }
+
+    // error handling
+    log.err(@src(), "send_query(%d, '%s') failed: (%d) %m", .{ fd, self.url.ptr, cc.errno() });
+}
+
+fn recv_udp(self: *Upstream, fd: c_int) void {
+    defer co.terminate(@frame(), @frameSize(recv_udp));
+
+    const fdobj = EvLoop.Fd.new(fd);
+    defer fdobj.free();
+
+    self.fdobj = fdobj;
+
+    var free_rmsg: ?*RcMsg = null;
+    defer if (free_rmsg) |rmsg| rmsg.free();
+
+    while (!self.is_eol(fdobj)) {
+        const rmsg = free_rmsg orelse RcMsg.new(c.DNS_EDNS_MAXSIZE);
+        free_rmsg = null;
+
+        const rlen = while (!self.is_eol(fdobj)) {
+            break cc.recv(fd, rmsg.buf(), 0) orelse {
+                if (cc.errno() != c.EAGAIN) {
+                    log.err(@src(), "recv(%d, '%s') failed: (%d) %m", .{ fd, self.url.ptr, cc.errno() });
+                    return;
+                }
+                g.evloop.wait_readable(fdobj);
+                continue;
+            };
+        } else return;
+
+        rmsg.len = cc.to_u16(rlen);
+
+        server.on_reply(rmsg, self);
+
+        if (rmsg.is_unique())
+            free_rmsg = rmsg
+        else
+            rmsg.unref();
+    }
 }
 
 fn send_https(self: *Upstream, qmsg: *RcMsg) void {
@@ -115,6 +232,8 @@ fn send_https(self: *Upstream, qmsg: *RcMsg) void {
     // TODO
     log.warn(@src(), "currently https upstream is not supported: %s", .{self.url.ptr});
 }
+
+// ======================================================
 
 pub const Proto = enum {
     tcp_or_udp, // only exists in the parsing stage
@@ -141,7 +260,7 @@ pub const Proto = enum {
     }
 
     /// "tcp://" (string literal)
-    pub fn to_str(self: Proto) []const u8 {
+    pub fn to_str(self: Proto) [:0]const u8 {
         return switch (self) {
             .tcp_in, .udp_in => "",
             .tcp => "tcp://",
@@ -171,9 +290,38 @@ pub const Proto = enum {
     }
 };
 
+// ======================================================
+
 pub const Group = struct {
     list: std.ArrayListUnmanaged(Upstream) = .{},
+
+    udp_life: Life = .{},
+    udpin_life: Life = .{},
+
     tag: Tag,
+
+    /// for udp/udp_in upstream
+    const Life = struct {
+        create_time: c.time_t = 0,
+        query_count: u8 = 0,
+
+        const LIFE_MAX = 20;
+        const QUERY_MAX = 30;
+
+        /// called before the first query
+        pub fn check_eol(self: *Life, now_time: c.time_t) bool {
+            // zig fmt: off
+            const eol = self.query_count >= QUERY_MAX
+                        or now_time < self.create_time
+                        or now_time - self.create_time >= LIFE_MAX;
+            // zig fmt: on
+            if (eol) {
+                self.create_time = now_time;
+                self.query_count = 1;
+            }
+            return eol;
+        }
+    };
 
     pub const Tag = enum {
         china,
@@ -268,17 +416,14 @@ pub const Group = struct {
     noinline fn do_add(self: *Group, proto: Proto, host: []const u8, ip: []const u8, port: u16, path: []const u8) void {
         @setCold(true);
 
-        for (self.items()) |v| {
-            // zig fmt: off
-            if (v.proto == proto
-                and std.mem.eql(u8, v.host, host)
-                and std.mem.eql(u8, v.ip, ip)
-                and v.port == port
-                and std.mem.eql(u8, v.path, path)) return;
-            // zig fmt: on
-        }
-
         var tmpbuf: cc.IpStrBuf = undefined;
+
+        const addr = cc.SockAddr.from_text(cc.strdup_r(ip, &tmpbuf).?, port);
+
+        for (self.items()) |*v| {
+            if (v.eql(proto, &addr, host, path))
+                return;
+        }
 
         var url = DynStr{};
 
@@ -299,16 +444,14 @@ pub const Group = struct {
         var item = Upstream{
             .group = self,
             .proto = proto,
+            .addr = addr,
             .host = host,
-            .ip = ip,
-            .port = port,
             .path = path,
             .url = url.str,
-            .addr = cc.SockAddr.from_text(cc.strdup_r(ip, &tmpbuf).?, port),
         };
 
-        const raw_values = .{ host, ip, path };
-        const field_names = .{ "host", "ip", "path" };
+        const raw_values = .{ host, path };
+        const field_names = .{ "host", "path" };
         inline for (field_names) |field_name, i| {
             const raw_v = raw_values[i];
             if (raw_v.len > 0) {
@@ -323,13 +466,18 @@ pub const Group = struct {
     }
 
     /// nosuspend
-    pub fn send(self: *const Group, qmsg: *RcMsg, from_tcp: bool) void {
+    pub fn send(self: *Group, qmsg: *RcMsg, from_tcp: bool, first_query: bool) void {
         const in_proto: Proto = if (from_tcp) .tcp_in else .udp_in;
 
         const verbose_info = if (g.verbose) .{
             .qid = dns.get_id(qmsg.msg()),
             .from = cc.b2s(from_tcp, "tcp", "udp"),
         } else undefined;
+
+        var udp_eol: ?bool = null;
+        var udpin_eol: ?bool = null;
+
+        const now_time = cc.time();
 
         for (self.items()) |*upstream| {
             if (upstream.proto == .tcp_in or upstream.proto == .udp_in)
@@ -342,10 +490,30 @@ pub const Group = struct {
                     .{ cc.to_uint(verbose_info.qid), verbose_info.from, upstream.url.ptr },
                 );
 
+            if (first_query) {
+                const eol = switch (upstream.proto) {
+                    .udp => udp_eol orelse b: {
+                        const eol = self.udp_life.check_eol(now_time);
+                        udp_eol = eol;
+                        break :b eol;
+                    },
+                    .udp_in => udpin_eol orelse b: {
+                        const eol = self.udpin_life.check_eol(now_time);
+                        udpin_eol = eol;
+                        break :b eol;
+                    },
+                    else => false,
+                };
+                if (eol)
+                    upstream.on_eol();
+            }
+
             upstream.send(qmsg);
         }
     }
 };
+
+// ======================================================
 
 pub fn @"test: Upstream api"() !void {
     // _ =

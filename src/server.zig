@@ -13,34 +13,45 @@ const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
 const co = @import("co.zig");
 
-const QueryCtx = struct {
-    qid: u16,
-    id: c.be16, // original id
-    fdobj: *EvLoop.Fd, // requester's fdobj
-    src_addr: cc.SockAddr, // udp requester's sock_addr (`sa_family == 0` means tcp)
-    req_time: c.time_t,
-    name_tag: dnl.Tag,
-    china_got: bool = false,
-    trust_msg: ?*RcMsg = null,
+comptime {
+    // @compileLog("sizeof(QueryCtx):", @sizeOf(QueryCtx), "alignof(QueryCtx):", @alignOf(QueryCtx));
+    // @compileLog("sizeof(c.time_t):", @sizeOf(c.time_t), "alignof(c.time_t):", @alignOf(c.time_t));
+    // @compileLog("sizeof(cc.SockAddr):", @sizeOf(cc.SockAddr), "alignof(cc.SockAddr):", @alignOf(cc.SockAddr));
+}
 
+const QueryCtx = struct {
     // linked list
     prev: ?*QueryCtx = null,
     next: ?*QueryCtx = null,
 
-    fn new(qid: u16, id: c.be16, fdobj: *EvLoop.Fd, src_addr: ?*const cc.SockAddr, name_tag: dnl.Tag) *QueryCtx {
+    // alignment: 8/4
+    fdobj: *EvLoop.Fd, // requester's fdobj
+    trust_msg: ?*RcMsg = null,
+    req_time: c.time_t,
+
+    // alignment: 4
+    src_addr: cc.SockAddr,
+
+    // alignment: 2
+    qid: u16,
+    id: c.be16, // original id
+
+    // alignment: 1
+    name_tag: dnl.Tag,
+    from_tcp: bool,
+    china_got: bool = false,
+
+    fn new(qid: u16, id: c.be16, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool, name_tag: dnl.Tag) *QueryCtx {
         const self = g.allocator.create(QueryCtx) catch unreachable;
         self.* = .{
             .qid = qid,
             .id = id,
             .fdobj = fdobj.ref(),
-            .src_addr = undefined,
-            .req_time = cc.time(),
+            .src_addr = src_addr.*,
+            .from_tcp = from_tcp,
             .name_tag = name_tag,
+            .req_time = cc.time(),
         };
-        if (src_addr) |p| // udp
-            self.src_addr = p.*
-        else // tcp
-            self.src_addr.sa.sa_family = 0;
         return self;
     }
 
@@ -51,10 +62,6 @@ const QueryCtx = struct {
             msg.unref();
         }
         g.allocator.destroy(self);
-    }
-
-    pub fn is_from_tcp(self: *const QueryCtx) bool {
-        return self.src_addr.sa.sa_family == 0;
     }
 
     pub const List = struct {
@@ -68,6 +75,10 @@ const QueryCtx = struct {
 
         pub fn len(self: *const List) usize {
             return self.map.count();
+        }
+
+        pub fn is_empty(self: *const List) bool {
+            return self.len() == 0;
         }
 
         fn link(self: *List, qctx: *QueryCtx) void {
@@ -102,11 +113,21 @@ const QueryCtx = struct {
         }
 
         /// [on_query] msg.id => qid
-        pub fn add(self: *List, msg: []u8, fdobj: *EvLoop.Fd, src_addr: ?*const cc.SockAddr, name_tag: dnl.Tag) ?*QueryCtx {
+        pub fn add(
+            self: *List,
+            msg: []u8,
+            fdobj: *EvLoop.Fd,
+            src_addr: *const cc.SockAddr,
+            from_tcp: bool,
+            name_tag: dnl.Tag,
+            first_query: *bool,
+        ) ?*QueryCtx {
             if (self.len() >= std.math.maxInt(u16) + 1) {
                 log.err(@src(), "too many pending requests: %zu", .{self.len()});
                 return null;
             }
+
+            first_query.* = self.is_empty();
 
             _last_qid +%= 1;
             const qid = _last_qid;
@@ -114,9 +135,11 @@ const QueryCtx = struct {
             const id = dns.get_id(msg);
             dns.set_id(msg, qid);
 
-            const qctx = QueryCtx.new(qid, id, fdobj, src_addr, name_tag);
+            const qctx = QueryCtx.new(qid, id, fdobj, src_addr, from_tcp, name_tag);
+
             self.map.putNoClobber(g.allocator, qid, qctx) catch unreachable;
             self.link(qctx);
+
             return qctx;
         }
 
@@ -130,9 +153,14 @@ const QueryCtx = struct {
 
         /// remove from list and free(qctx)
         pub fn del(self: *List, qctx: *const QueryCtx) void {
+            self.del_nofree(qctx);
+            qctx.free();
+        }
+
+        /// remove from list
+        pub fn del_nofree(self: *List, qctx: *const QueryCtx) void {
             self.unlink(qctx);
             assert(self.map.remove(qctx.qid));
-            qctx.free();
         }
 
         /// in insertion order, it is safe to `del` the current element
@@ -262,18 +290,23 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
 
 // =========================================================================
 
+comptime {
+    // @compileLog("sizeof(cc.ConstStr):", @sizeOf(cc.ConstStr), "alignof(cc.ConstStr):", @alignOf(cc.ConstStr));
+    // @compileLog("sizeof(dnl.Tag):", @sizeOf(dnl.Tag), "alignof(dnl.Tag):", @alignOf(dnl.Tag));
+    // @compileLog("sizeof(cc.IpStrBuf):", @sizeOf(cc.IpStrBuf), "alignof(cc.IpStrBuf):", @alignOf(cc.IpStrBuf));
+}
+
 const QueryLog = struct {
-    src_ip: cc.IpStrBuf,
+    name: cc.ConstStr,
     src_port: u16,
     id: u16,
-    tag: dnl.Tag,
     qtype: u16,
-    name: cc.ConstStr,
+    tag: dnl.Tag,
+    src_ip: cc.IpStrBuf,
 
     pub noinline fn query(self: *const QueryLog) void {
         _ = self;
         // TODO
-        log.info(@src(), ");");
     }
 };
 
@@ -316,7 +349,8 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
         }
     }
 
-    const qctx = _qctx_list.add(msg, fdobj, if (from_tcp) null else src_addr, name_tag) orelse return;
+    var first_query: bool = undefined;
+    const qctx = _qctx_list.add(msg, fdobj, src_addr, from_tcp, name_tag, &first_query) orelse return;
 
     if (name_tag == .chn or name_tag == .none) {
         if (g.verbose)
@@ -325,7 +359,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
                 "forward query(qid:%u, from:%s, '%s') to china upstream group",
                 .{ cc.to_uint(qctx.qid), cc.b2s(from_tcp, "tcp", "udp"), &ascii_namebuf },
             );
-        nosuspend g.china_group.send(qmsg, from_tcp);
+        nosuspend g.china_group.send(qmsg, from_tcp, first_query);
     }
 
     if (name_tag == .gfw or name_tag == .none) {
@@ -335,18 +369,24 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
                 "forward query(qid:%u, from:%s, '%s') to trust upstream group",
                 .{ cc.to_uint(qctx.qid), cc.b2s(from_tcp, "tcp", "udp"), &ascii_namebuf },
             );
-        nosuspend g.trust_group.send(qmsg, from_tcp);
+        nosuspend g.trust_group.send(qmsg, from_tcp, first_query);
     }
 }
 
 // =========================================================================
 
+comptime {
+    // @compileLog("sizeof(ReplyLog):", @sizeOf(ReplyLog), "alignof(ReplyLog):", @alignOf(ReplyLog));
+    // @compileLog("sizeof(u16):", @sizeOf(u16), "alignof(u16):", @alignOf(u16));
+    // @compileLog("sizeof(?dnl.Tag):", @sizeOf(?dnl.Tag), "alignof(?dnl.Tag):", @alignOf(?dnl.Tag));
+}
+
 const ReplyLog = struct {
-    qid: u16,
-    tag: ?dnl.Tag,
-    qtype: u16,
     name: cc.ConstStr,
     url: cc.ConstStr,
+    qid: u16,
+    qtype: u16,
+    tag: ?dnl.Tag,
 
     /// string literal
     fn tag_desc(self: *const ReplyLog) cc.ConstStr {
@@ -409,7 +449,8 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
 
     replylog.tag = qctx.name_tag;
 
-    switch (upstream.group.tag) {
+    // determines whether to end the current query context
+    nosuspend switch (upstream.group.tag) {
         .china => {
             if (qctx.name_tag == .chn or use_china_reply(rmsg, wire_namelen)) {
                 if (g.verbose) {
@@ -460,11 +501,15 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
                 return;
             }
         },
-    }
+    };
 
-    send_reply(rmsg.msg(), qctx.fdobj, &qctx.src_addr, qctx.is_from_tcp());
+    // see check_timeout()
+    _qctx_list.del_nofree(qctx);
 
-    _qctx_list.del(qctx);
+    // may be suspended
+    send_reply(rmsg.msg(), qctx.fdobj, &qctx.src_addr, qctx.from_tcp);
+
+    qctx.free();
 }
 
 fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool) void {
@@ -506,9 +551,6 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
 /// qctx will be free()
 fn on_timeout(qctx: *QueryCtx) void {
     if (g.verbose) {
-        if (qctx.is_from_tcp())
-            _ = cc.getpeername(qctx.fdobj.fd, &qctx.src_addr);
-
         var ip: cc.IpStrBuf = undefined;
         var port: u16 = undefined;
         qctx.src_addr.to_text(&ip, &port);
@@ -529,7 +571,7 @@ pub fn check_timeout() c_int {
     while (it.next()) |qctx| {
         const deadline = qctx.req_time + g.upstream_timeout;
         if (now >= deadline) {
-            on_timeout(qctx);
+            nosuspend on_timeout(qctx);
         } else {
             return cc.to_int((deadline - now) * 1000); // ms
         }

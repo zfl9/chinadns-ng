@@ -12,14 +12,14 @@ const assert = std.debug.assert;
 
 const EvLoop = @This();
 
-/// epoll instance (fd)
-epfd: c_int,
-
 /// avoid touching freed ptr, see evloop.run()
 destroyed: std.AutoHashMapUnmanaged(*const Fd, void) = .{},
 
 /// cache fd's add/del operation (reducing epoll_ctl calls)
 change_list: std.AutoHashMapUnmanaged(*const Fd, Change.Set) = .{},
+
+/// epoll instance (fd)
+epfd: c_int,
 
 // =============================================================
 
@@ -80,6 +80,12 @@ const Change = opaque {
 };
 
 // =============================================================
+
+comptime {
+    // @compileLog("sizeof(Fd):", @sizeOf(Fd));
+    // @compileLog("sizeof(anyframe):", @sizeOf(anyframe));
+    // @compileLog("sizeof(?anyframe):", @sizeOf(?anyframe));
+}
 
 /// wrap the raw fd to work with evloop
 pub const Fd = struct {
@@ -348,7 +354,7 @@ pub fn run(self: *EvLoop) void {
 
     while (true) {
         // handling timeout events and get the next interval
-        const timeout = check_timeout();
+        const timeout = nosuspend check_timeout();
 
         // empty the list before starting a new epoll_wait
         self.destroyed.clearRetainingCapacity();
@@ -394,6 +400,22 @@ pub fn run(self: *EvLoop) void {
 
 comptime {
     assert(c.EAGAIN == c.EWOULDBLOCK);
+}
+
+/// used for external modules, not for this module:
+/// because the async-call chains consume at least 24 bytes per level (x86_64)
+pub fn wait_readable(self: *EvLoop, fdobj: *Fd) void {
+    self.add_readable(fdobj, @frame());
+    suspend {}
+    self.del_readable(fdobj, @frame());
+}
+
+/// used for external modules, not for this module:
+/// because the async-call chains consume at least 24 bytes per level (x86_64)
+pub fn wait_writable(self: *EvLoop, fdobj: *Fd) void {
+    self.add_writable(fdobj, @frame());
+    suspend {}
+    self.del_writable(fdobj, @frame());
 }
 
 pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const cc.SockAddr) ?void {

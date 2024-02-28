@@ -32,13 +32,12 @@ pub const SockType = enum {
     }
 };
 
-noinline fn new_sock(family: c.sa_family_t, socktype: SockType) ?c_int {
-    const fd = cc.socket(family, socktype.value() | c.SOCK_NONBLOCK | c.SOCK_CLOEXEC, 0) orelse {
+pub noinline fn new_sock(family: c.sa_family_t, socktype: SockType) ?c_int {
+    return cc.socket(family, socktype.value() | c.SOCK_NONBLOCK | c.SOCK_CLOEXEC, 0) orelse {
         const str_family = if (family == c.AF_INET) "ipv4" else "ipv6";
         log.err(@src(), "socket(%s, %s) failed: (%d) %m", .{ str_family, socktype.str(), cc.errno() });
         return null;
     };
-    return fd;
 }
 
 pub fn new_listen_sock(family: c.sa_family_t, socktype: SockType) ?c_int {

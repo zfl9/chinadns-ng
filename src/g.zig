@@ -91,7 +91,7 @@ pub var trust_group = Upstream.Group.init(.trust);
 /// too large may cause stack overflow
 pub const TRUSTDNS_PACKET_MAX: u8 = 5;
 
-/// number of packets to send
+/// number of packets to send (udp)
 pub var trustdns_packet_n: u8 = 1;
 
 /// in seconds

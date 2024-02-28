@@ -63,24 +63,24 @@ pub fn is_unique(self: *const RcMsg) bool {
     return self.rc.ref_count == 1;
 }
 
-fn RetType(comptime T: type, comptime ptr: bool) type {
-    if (isConstPtr(T))
-        return if (ptr) [*]const u8 else []const u8
+fn Bytes(comptime Self: type, t: enum { ptr, slice }) type {
+    if (isConstPtr(Self))
+        return if (t == .ptr) [*]const u8 else []const u8
     else
-        return if (ptr) [*]u8 else []u8;
+        return if (t == .ptr) [*]u8 else []u8;
 }
 
-fn mem(self: anytype) RetType(@TypeOf(self), false) {
-    const T = RetType(@TypeOf(self), true);
-    return @ptrCast(T, self)[0 .. header_len + self.cap];
+fn mem(self: anytype) Bytes(@TypeOf(self), .slice) {
+    const P = Bytes(@TypeOf(self), .ptr);
+    return @ptrCast(P, self)[0 .. header_len + self.cap];
 }
 
-pub fn buf(self: anytype) RetType(@TypeOf(self), false) {
+pub fn buf(self: anytype) Bytes(@TypeOf(self), .slice) {
     return self.mem()[header_len..];
 }
 
-pub fn msg(self: anytype) RetType(@TypeOf(self), false) {
-    return self.mem()[header_len .. header_len + self.len];
+pub fn msg(self: anytype) Bytes(@TypeOf(self), .slice) {
+    return self.buf()[0..self.len];
 }
 
 // =============================================================

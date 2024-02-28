@@ -50,11 +50,18 @@ const help =
     \\bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
 ;
 
+comptime {
+    // @compileLog("sizeof(OptDef):", @sizeOf(OptDef), "alignof(OptDef):", @alignOf(OptDef));
+    // @compileLog("sizeof([]const u8):", @sizeOf([]const u8), "alignof([]const u8):", @alignOf([]const u8));
+    // @compileLog("sizeof(OptFn):", @sizeOf(OptFn), "alignof(OptFn):", @alignOf(OptFn));
+    // @compileLog("sizeof(enum{a,b,c}):", @sizeOf(enum { a, b, c }), "alignof(enum{a,b,c}):", @alignOf(enum { a, b, c }));
+}
+
 const OptDef = struct {
     short: []const u8, // short name
     long: []const u8, // long name
-    value: enum { required, optional, no_value },
     optfn: OptFn,
+    value: enum { required, optional, no_value },
 };
 
 const OptFn = std.meta.FnPtr(fn (in_value: ?[]const u8) void);

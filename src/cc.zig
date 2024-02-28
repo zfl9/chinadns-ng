@@ -400,11 +400,11 @@ pub inline fn pipe2(fds: *[2]c_int, flags: c_int) ?void {
     return if (raw.pipe2(fds, flags) == -1) null;
 }
 
-pub inline fn socket(domain: c_int, type_: c_int, protocol: c_int) ?c_int {
+pub inline fn socket(family: c_int, type_: c_int, protocol: c_int) ?c_int {
     const raw = struct {
-        extern fn socket(domain: c_int, type: c_int, protocol: c_int) c_int;
+        extern fn socket(family: c_int, type: c_int, protocol: c_int) c_int;
     };
-    const res = raw.socket(domain, type_, protocol);
+    const res = raw.socket(family, type_, protocol);
     return if (res >= 0) res else null;
 }
 
@@ -477,18 +477,18 @@ pub extern fn ntohl(net_v: u32) u32;
 pub extern fn htons(host_v: u16) u16;
 pub extern fn htonl(host_v: u32) u32;
 
-pub inline fn inet_pton(af: c_int, str_ip: ConstStr, net_ip: *anyopaque) bool {
+pub inline fn inet_pton(family: c_int, str_ip: ConstStr, net_ip: *anyopaque) bool {
     const raw = struct {
-        extern fn inet_pton(af: c_int, str_ip: ConstStr, net_ip: *anyopaque) c_int;
+        extern fn inet_pton(family: c_int, str_ip: ConstStr, net_ip: *anyopaque) c_int;
     };
-    return raw.inet_pton(af, str_ip, net_ip) == 1;
+    return raw.inet_pton(family, str_ip, net_ip) == 1;
 }
 
-pub inline fn inet_ntop(af: c_int, net_ip: *const anyopaque, str_buf: *IpStrBuf) ?void {
+pub inline fn inet_ntop(family: c_int, net_ip: *const anyopaque, str_buf: *IpStrBuf) ?void {
     const raw = struct {
-        extern fn inet_ntop(af: c_int, net_ip: *const anyopaque, str_buf: [*]u8, str_bufsz: c.socklen_t) ?ConstStr;
+        extern fn inet_ntop(family: c_int, net_ip: *const anyopaque, str_buf: [*]u8, str_bufsz: c.socklen_t) ?ConstStr;
     };
-    return if (raw.inet_ntop(af, net_ip, str_buf, str_buf.len) == null) null;
+    return if (raw.inet_ntop(family, net_ip, str_buf, str_buf.len) == null) null;
 }
 
 // =============================================================
@@ -583,6 +583,15 @@ pub const SockAddr = extern union {
 
     pub inline fn is_sin6(self: *const SockAddr) bool {
         return self.family() == c.AF_INET6;
+    }
+
+    pub fn eql(self: *const SockAddr, other: *const SockAddr) bool {
+        const af = self.family();
+        return af == other.family() and switch (af) {
+            c.AF_INET => std.mem.eql(u8, std.mem.asBytes(&self.sin), std.mem.asBytes(&self.sin)),
+            c.AF_INET6 => std.mem.eql(u8, std.mem.asBytes(&self.sin6), std.mem.asBytes(&self.sin6)),
+            else => false,
+        };
     }
 
     /// assuming the `ip` and `port` are valid

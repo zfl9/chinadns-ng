@@ -67,7 +67,7 @@ fn memleak_checker() void {
         log.err(@src(), "pipe() failed: (%d) %m", .{cc.errno()});
         @panic("pipe failed");
     };
-    defer _ = cc.close(_pipe_fds[1]); // wirte end
+    defer _ = cc.close(_pipe_fds[1]); // write end
 
     // register sig_handler
     _ = cc.signal(c.SIGUSR1, on_sigusr1);
