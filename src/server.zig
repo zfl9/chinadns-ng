@@ -237,17 +237,19 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
             const qmsg = free_qmsg orelse RcMsg.new(c.DNS_QMSG_MAXSIZE);
             free_qmsg = null;
 
+            defer {
+                if (qmsg.is_unique())
+                    free_qmsg = qmsg
+                else
+                    qmsg.unref();
+            }
+
             // read msg
             qmsg.len = len;
             g.evloop.recv_exactly(fdobj, qmsg.msg(), 0) orelse
                 break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
 
             on_query(qmsg, fdobj, &src_addr, true);
-
-            if (qmsg.is_unique())
-                free_qmsg = qmsg
-            else
-                qmsg.unref();
         }
     };
 
@@ -272,6 +274,13 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
         const qmsg = free_qmsg orelse RcMsg.new(c.DNS_QMSG_MAXSIZE);
         free_qmsg = null;
 
+        defer {
+            if (qmsg.is_unique())
+                free_qmsg = qmsg
+            else
+                qmsg.unref();
+        }
+
         var src_addr: cc.SockAddr = undefined;
         const len = g.evloop.recvfrom(fdobj, qmsg.buf(), 0, &src_addr) orelse {
             log.err(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
@@ -280,11 +289,6 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
         qmsg.len = cc.to_u16(len);
 
         on_query(qmsg, fdobj, &src_addr, false);
-
-        if (qmsg.is_unique())
-            free_qmsg = qmsg
-        else
-            qmsg.unref();
     }
 }
 

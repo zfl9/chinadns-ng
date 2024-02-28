@@ -204,6 +204,13 @@ fn recv_udp(self: *Upstream, fd: c_int) void {
         const rmsg = free_rmsg orelse RcMsg.new(c.DNS_EDNS_MAXSIZE);
         free_rmsg = null;
 
+        defer {
+            if (rmsg.is_unique())
+                free_rmsg = rmsg
+            else
+                rmsg.unref();
+        }
+
         const rlen = while (!self.is_eol(fdobj)) {
             break cc.recv(fd, rmsg.buf(), 0) orelse {
                 if (cc.errno() != c.EAGAIN) {
@@ -218,11 +225,6 @@ fn recv_udp(self: *Upstream, fd: c_int) void {
         rmsg.len = cc.to_u16(rlen);
 
         server.on_reply(rmsg, self);
-
-        if (rmsg.is_unique())
-            free_rmsg = rmsg
-        else
-            rmsg.unref();
     }
 }
 
