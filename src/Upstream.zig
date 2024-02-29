@@ -60,7 +60,11 @@ fn on_eol(self: *Upstream) void {
     assert(fdobj.write_frame == null);
 
     // test code
-    // log.debug(@src(), "udp upstream socket(fd:%d) is end-of-life ...", .{fdobj.fd});
+    // log.debug(
+    //     @src(),
+    //     "udp upstream socket(fd:%d, url:'%s', group:%s) is end-of-life ...",
+    //     .{ fdobj.fd, self.url.ptr, @tagName(self.group.tag).ptr },
+    // );
 
     if (fdobj.read_frame) |frame| {
         co.do_resume(frame);
@@ -319,13 +323,13 @@ pub const Group = struct {
             // zig fmt: on
             if (eol) {
                 self.create_time = now_time;
-                self.query_count = 1;
+                self.query_count = 0;
             }
             return eol;
         }
 
-        pub fn on_query(self: *Life) void {
-            self.query_count +|= 1;
+        pub fn on_query(self: *Life, add_count: u8) void {
+            self.query_count +|= add_count;
         }
     };
 
@@ -480,10 +484,10 @@ pub const Group = struct {
             .from = cc.b2s(from_tcp, "tcp", "udp"),
         } else undefined;
 
+        const now_time = cc.time();
+
         var udp_eol: ?bool = null;
         var udpin_eol: ?bool = null;
-
-        const now_time = cc.time();
 
         var udp_touched = false;
         var udpin_touched = false;
@@ -526,10 +530,13 @@ pub const Group = struct {
             upstream.send(qmsg);
         }
 
+        const add_count = if (self.tag == .trust) g.trustdns_packet_n else 1;
+
         if (udp_touched)
-            self.udp_life.on_query();
+            self.udp_life.on_query(add_count);
+
         if (udpin_touched)
-            self.udpin_life.on_query();
+            self.udpin_life.on_query(add_count);
     }
 };
 

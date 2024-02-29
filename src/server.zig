@@ -309,8 +309,27 @@ const QueryLog = struct {
     src_ip: cc.IpStrBuf,
 
     pub noinline fn query(self: *const QueryLog) void {
-        _ = self;
-        // TODO
+        log.info(
+            @src(),
+            "query(id:%u, tag:%s, qtype:%u, '%s') from %s#%u",
+            .{ cc.to_uint(self.id), self.tag.desc(), cc.to_uint(self.qtype), self.name, &self.src_ip, cc.to_uint(self.src_port) },
+        );
+    }
+
+    pub noinline fn filter_aaaa(self: *const QueryLog, by_rule: cc.ConstStr) void {
+        log.info(
+            @src(),
+            "query(id:%u, tag:%s, qtype:AAAA, '%s') filterd by rule: %s",
+            .{ cc.to_uint(self.id), self.tag.desc(), self.name, by_rule },
+        );
+    }
+
+    pub noinline fn forward(self: *const QueryLog, qctx: *const QueryCtx, group: cc.ConstStr) void {
+        log.info(
+            @src(),
+            "forward query(qid:%u, from:%s, '%s') to %s upstream group",
+            .{ cc.to_uint(qctx.qid), cc.b2s(qctx.from_tcp, "tcp", "udp"), self.name, group },
+        );
     }
 };
 
@@ -328,26 +347,25 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
     const name_tag = dnl.get_name_tag(&ascii_namebuf, dns.to_ascii_namelen(wire_namelen));
     const qtype = dns.get_qtype(msg, wire_namelen);
 
+    var querylog: QueryLog = if (g.verbose) .{
+        .src_ip = undefined,
+        .src_port = undefined,
+        .id = dns.get_id(msg),
+        .qtype = qtype,
+        .tag = name_tag,
+        .name = &ascii_namebuf,
+    } else undefined;
+
     if (g.verbose) {
-        var ip: cc.IpStrBuf = undefined;
-        var port: u16 = undefined;
-        src_addr.to_text(&ip, &port);
-        log.info(
-            @src(),
-            "query(id:%u, tag:%s, qtype:%u, '%s') from %s#%u",
-            .{ cc.to_uint(dns.get_id(msg)), name_tag.desc(), cc.to_uint(qtype), &ascii_namebuf, &ip, cc.to_uint(port) },
-        );
+        src_addr.to_text(&querylog.src_ip, &querylog.src_port);
+
+        querylog.query();
     }
 
     // no-AAAA filter
     if (qtype == c.DNS_RECORD_TYPE_AAAA) {
         if (g.noaaaa_query.filter(name_tag)) |by_rule| {
-            if (g.verbose)
-                log.info(
-                    @src(),
-                    "query(id:%u, tag:%s, qtype:AAAA, '%s') filterd by rule: %s",
-                    .{ cc.to_uint(dns.get_id(msg)), name_tag.desc(), &ascii_namebuf, by_rule },
-                );
+            if (g.verbose) querylog.filter_aaaa(by_rule);
             dns.to_reply_msg(msg);
             return send_reply(msg, fdobj, src_addr, from_tcp);
         }
@@ -357,22 +375,12 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
     const qctx = _qctx_list.add(msg, fdobj, src_addr, from_tcp, name_tag, &first_query) orelse return;
 
     if (name_tag == .chn or name_tag == .none) {
-        if (g.verbose)
-            log.info(
-                @src(),
-                "forward query(qid:%u, from:%s, '%s') to china upstream group",
-                .{ cc.to_uint(qctx.qid), cc.b2s(from_tcp, "tcp", "udp"), &ascii_namebuf },
-            );
+        if (g.verbose) querylog.forward(qctx, "china");
         nosuspend g.china_group.send(qmsg, from_tcp, first_query);
     }
 
     if (name_tag == .gfw or name_tag == .none) {
-        if (g.verbose)
-            log.info(
-                @src(),
-                "forward query(qid:%u, from:%s, '%s') to trust upstream group",
-                .{ cc.to_uint(qctx.qid), cc.b2s(from_tcp, "tcp", "udp"), &ascii_namebuf },
-            );
+        if (g.verbose) querylog.forward(qctx, "trust");
         nosuspend g.trust_group.send(qmsg, from_tcp, first_query);
     }
 }
