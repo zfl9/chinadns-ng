@@ -37,10 +37,7 @@ void dns_set_id(void *noalias msg, u16 id);
 u16 dns_get_qtype(const void *noalias msg, int wire_namelen);
 
 /* keep only the HEADER and QUESTION section */
-size_t dns_remove_answer(void *noalias msg, int wire_namelen);
-
-/* convert a query msg to a reply msg (rcode: NOERROR) */
-void dns_to_reply_msg(void *noalias msg);
+size_t dns_empty_reply(void *noalias msg, int wire_namelen);
 
 /* "\0" => 0 */
 /* "\1x\0" => 1 */

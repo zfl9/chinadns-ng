@@ -11,6 +11,7 @@ const dns = @import("dns.zig");
 const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
+const NoAAAA = @import("NoAAAA.zig");
 const co = @import("co.zig");
 
 comptime {
@@ -316,7 +317,7 @@ const QueryLog = struct {
         );
     }
 
-    pub noinline fn filter_aaaa(self: *const QueryLog, by_rule: cc.ConstStr) void {
+    pub noinline fn noaaaa(self: *const QueryLog, by_rule: cc.ConstStr) void {
         log.info(
             @src(),
             "query(id:%u, tag:%s, qtype:AAAA, '%s') filterd by rule: %s",
@@ -327,7 +328,7 @@ const QueryLog = struct {
     pub noinline fn forward(self: *const QueryLog, qctx: *const QueryCtx, group: cc.ConstStr) void {
         log.info(
             @src(),
-            "forward query(qid:%u, from:%s, '%s') to %s upstream group",
+            "forward query(qid:%u, from:%s, '%s') to %s",
             .{ cc.to_uint(qctx.qid), cc.b2s(qctx.from_tcp, "tcp", "udp"), self.name, group },
         );
     }
@@ -362,24 +363,36 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
         querylog.query();
     }
 
+    var tagnone_to_china = true;
+    var tagnone_to_trust = true;
+
     // no-AAAA filter
-    if (qtype == c.DNS_RECORD_TYPE_AAAA) {
+    if (qtype == c.DNS_RECORD_TYPE_AAAA and !g.noaaaa_query.is_empty()) {
         if (g.noaaaa_query.filter(name_tag)) |by_rule| {
-            if (g.verbose) querylog.filter_aaaa(by_rule);
-            dns.to_reply_msg(msg);
-            return send_reply(msg, fdobj, src_addr, from_tcp);
+            if (g.verbose) querylog.noaaaa(by_rule);
+            var reply_msg = msg;
+            reply_msg.len = dns.empty_reply(reply_msg, wire_namelen);
+            return send_reply(reply_msg, fdobj, src_addr, from_tcp);
+        }
+
+        // tag:none
+        if (g.noaaaa_query.has_any(NoAAAA.ALL_DNS) and name_tag == .none) {
+            if (g.noaaaa_query.has(NoAAAA.CHINA_DNS))
+                tagnone_to_china = false
+            else // if (g.noaaaa_query.has(NoAAAA.TRUST_DNS))
+                tagnone_to_trust = false;
         }
     }
 
     var first_query: bool = undefined;
     const qctx = _qctx_list.add(msg, fdobj, src_addr, from_tcp, name_tag, &first_query) orelse return;
 
-    if (name_tag == .chn or name_tag == .none) {
+    if (name_tag == .chn or (name_tag == .none and tagnone_to_china)) {
         if (g.verbose) querylog.forward(qctx, "china");
         nosuspend g.china_group.send(qmsg, from_tcp, first_query);
     }
 
-    if (name_tag == .gfw or name_tag == .none) {
+    if (name_tag == .gfw or (name_tag == .none and tagnone_to_trust)) {
         if (g.verbose) querylog.forward(qctx, "trust");
         nosuspend g.trust_group.send(qmsg, from_tcp, first_query);
     }
@@ -421,17 +434,86 @@ const ReplyLog = struct {
             .{ cc.to_uint(self.qid), self.tag_desc(), cc.to_uint(self.qtype), self.name, setnames },
         );
     }
+
+    pub noinline fn noaaaa(self: *const ReplyLog, by_rule: cc.ConstStr) void {
+        log.info(
+            @src(),
+            "reply(qid:%u, tag:%s, qtype:AAAA, '%s') filterd by rule: %s",
+            .{ cc.to_uint(self.qid), self.tag_desc(), self.name, by_rule },
+        );
+    }
+
+    pub noinline fn china_noip(self: *const ReplyLog) void {
+        const action = cc.b2s(g.noip_as_chnip, "accept", "filter");
+        log.info(
+            @src(),
+            "reply(qid:%u, tag:%s, qtype:%u, '%s') has no answer ip [%s]",
+            .{ cc.to_uint(self.qid), self.tag_desc(), cc.to_uint(self.qtype), self.name, action },
+        );
+    }
 };
 
-fn use_china_reply(rmsg: *RcMsg, wire_namelen: c_int) bool {
-    _ = rmsg;
-    _ = wire_namelen;
-    return true;
+/// tag:none
+fn use_china_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog) bool {
+    const msg = rmsg.msg();
+    const qtype = dns.get_qtype(msg, wire_namelen);
+
+    // only filter A/AAAA
+    if (qtype != c.DNS_RECORD_TYPE_A and qtype != c.DNS_RECORD_TYPE_AAAA)
+        return true;
+
+    // no-aaaa filter
+    const only_china = qtype == c.DNS_RECORD_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.TRUST_DNS);
+    if (only_china and !g.noaaaa_query.has(NoAAAA.CHINA_IPCHK))
+        return true;
+
+    // test the answer ip
+    switch (dns.test_ip(msg, wire_namelen)) {
+        .is_chnip => return true,
+
+        .not_chnip => {
+            if (only_china) {
+                if (g.verbose) replylog.noaaaa("china_ipchk");
+                rmsg.len = cc.to_u16(dns.empty_reply(msg, wire_namelen)); // `.len` updated
+                return true;
+            }
+            return false;
+        },
+
+        .not_found => {
+            if (only_china) {
+                if (g.verbose) replylog.noaaaa("china_ipchk");
+                return true;
+            }
+            if (g.verbose) replylog.china_noip();
+            return g.noip_as_chnip;
+        },
+
+        else => return false,
+    }
 }
 
-fn use_trust_reply(rmsg: *RcMsg, wire_namelen: c_int) bool {
-    _ = rmsg;
-    _ = wire_namelen;
+/// tag:none && !china_got
+fn use_trust_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog) bool {
+    const msg = rmsg.msg();
+    const qtype = dns.get_qtype(msg, wire_namelen);
+
+    // no-aaaa filter
+    const only_trust = qtype == c.DNS_RECORD_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.CHINA_DNS);
+    if (!only_trust)
+        return false; // waiting for chinadns
+
+    // [only_trust]
+
+    // no-aaaa ipchk
+    if (g.noaaaa_query.has(NoAAAA.TRUST_IPCHK)) {
+        const res = dns.test_ip(msg, wire_namelen);
+        if (res == .not_chnip or res == .not_found) {
+            if (g.verbose) replylog.noaaaa("trust_ipchk");
+            if (res == .not_chnip) rmsg.len = cc.to_u16(dns.empty_reply(msg, wire_namelen)); // `.len` updated
+        }
+    }
+
     return true;
 }
 
@@ -464,7 +546,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     // determines whether to end the current query context
     nosuspend switch (upstream.group.tag) {
         .china => {
-            if (qctx.name_tag == .chn or use_china_reply(rmsg, wire_namelen)) {
+            if (qctx.name_tag == .chn or use_china_reply(rmsg, wire_namelen, &replylog)) {
                 if (g.verbose) {
                     replylog.reply("accept", null);
 
@@ -493,7 +575,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
             }
         },
         .trust => {
-            if (qctx.name_tag == .gfw or qctx.china_got or use_trust_reply(rmsg, wire_namelen)) {
+            if (qctx.name_tag == .gfw or qctx.china_got or use_trust_reply(rmsg, wire_namelen, &replylog)) {
                 if (g.verbose)
                     replylog.reply("accept", null);
 

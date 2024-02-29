@@ -14,13 +14,9 @@ pub inline fn get_qtype(msg: []const u8, wire_namelen: c_int) u16 {
     return c.dns_get_qtype(msg.ptr, wire_namelen);
 }
 
-pub inline fn remove_answer(p_msg: *[]u8, wire_namelen: c_int) void {
-    p_msg.len = c.dns_remove_answer(p_msg.ptr, wire_namelen);
-}
-
-/// convert query msg to response msg with rcode `NOERROR` (no-AAAA filter)
-pub inline fn to_reply_msg(msg: []u8) void {
-    return c.dns_to_reply_msg(msg.ptr);
+/// return the updated msg length
+pub inline fn empty_reply(msg: []u8, wire_namelen: c_int) usize {
+    return c.dns_empty_reply(msg.ptr, wire_namelen);
 }
 
 /// get the ascii length based on the wire length
@@ -43,10 +39,10 @@ pub inline fn check_reply(msg: []const u8, ascii_name: ?[*]u8, p_wire_namelen: ?
 }
 
 pub const TestIpResult = enum(c_int) {
-    IS_CHNIP = c.DNS_TEST_IP_IS_CHNIP,
-    NOT_CHNIP = c.DNS_TEST_IP_NOT_CHNIP,
-    NOT_FOUND = c.DNS_TEST_IP_NOT_FOUND,
-    BAD_MSG = c.DNS_TEST_IP_BAD_MSG,
+    is_chnip = c.DNS_TEST_IP_IS_CHNIP,
+    not_chnip = c.DNS_TEST_IP_NOT_CHNIP,
+    not_found = c.DNS_TEST_IP_NOT_FOUND,
+    bad_msg = c.DNS_TEST_IP_BAD_MSG,
 
     pub inline fn from_int(v: c_int) TestIpResult {
         return @intToEnum(TestIpResult, v);

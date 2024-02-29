@@ -277,19 +277,14 @@ u16 dns_get_qtype(const void *noalias msg, int wire_namelen) {
     return ntohs(q->qtype);
 }
 
-size_t dns_remove_answer(void *noalias msg, int wire_namelen) {
+size_t dns_empty_reply(void *noalias msg, int wire_namelen) {
     struct dns_header *h = msg;
+    h->qr = DNS_QR_REPLY;
     h->rcode = DNS_RCODE_NOERROR;
     h->answer_count = 0;
     h->authority_count = 0;
     h->additional_count = 0;
     return sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_question);
-}
-
-void dns_to_reply_msg(void *noalias msg) {
-    struct dns_header *h = msg;
-    h->qr = DNS_QR_REPLY;
-    h->rcode = DNS_RCODE_NOERROR;
 }
 
 bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_wire_namelen) {

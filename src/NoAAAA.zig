@@ -21,8 +21,24 @@ pub const TAG_NONE: Flags = 1 << 2;
 pub const CHINA_DNS: Flags = 1 << 3;
 pub const TRUST_DNS: Flags = 1 << 4;
 
+/// [tag:none && only_china_path] filter non-chn-ip reply
 pub const CHINA_IPCHK: Flags = 1 << 5;
+/// [tag:none && only_trust_path] filter non-chn-ip reply
 pub const TRUST_IPCHK: Flags = 1 << 6;
+
+pub fn is_empty(self: NoAAAA) bool {
+    return self.flags == 0;
+}
+
+pub fn is_full(self: NoAAAA) bool {
+    return self.flags == ALL;
+}
+
+/// try simplify to flags ALL
+fn check_full(self: *NoAAAA) void {
+    if (self.flags != ALL and (self.has(ALL_TAG) or self.has(ALL_DNS)))
+        self.flags = ALL;
+}
 
 pub fn has(self: NoAAAA, flags: Flags) bool {
     return self.flags & flags == flags;
@@ -34,18 +50,15 @@ pub fn has_any(self: NoAAAA, flags: Flags) bool {
 
 pub fn add(self: *NoAAAA, flags: Flags) void {
     self.flags |= flags;
-
-    // try simplify to flags ALL
-    if (self.flags != ALL and (self.has(ALL_TAG) or self.has(ALL_DNS)))
-        self.flags = ALL;
+    self.check_full();
 }
 
 /// return the rule (string literal) that caused the filter
 pub fn filter(self: NoAAAA, name_tag: dnl.Tag) ?cc.ConstStr {
-    if (self.flags == 0)
+    if (self.is_empty())
         return null;
 
-    if (self.flags == ALL)
+    if (self.is_full())
         return "all";
 
     switch (name_tag) {
@@ -66,7 +79,7 @@ pub fn filter(self: NoAAAA, name_tag: dnl.Tag) ?cc.ConstStr {
 }
 
 pub fn display(self: NoAAAA) void {
-    if (self.flags == 0) return;
+    if (self.is_empty()) return;
 
     // zig fmt: off
     const list = .{
