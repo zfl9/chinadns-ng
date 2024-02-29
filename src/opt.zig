@@ -93,7 +93,7 @@ const optdef_array = [_]OptDef{
 };
 // zig fmt: on
 
-fn get_optdef(name: []const u8) ?OptDef {
+noinline fn get_optdef(name: []const u8) ?OptDef {
     for (optdef_array) |optdef| {
         if (std.mem.eql(u8, optdef.short, name) or std.mem.eql(u8, optdef.long, name))
             return optdef;
@@ -116,8 +116,8 @@ fn exit(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, ar
 }
 
 /// simple version of `print`
-pub fn err_print(comptime src: std.builtin.SourceLocation, comptime msg: [:0]const u8, value: []const u8) void {
-    print(src, msg ++ ": '%.*s'", .{ cc.to_int(value.len), value.ptr });
+pub fn err_print(comptime src: std.builtin.SourceLocation, msg: [:0]const u8, value: []const u8) void {
+    print(src, "%s: '%.*s'", .{ msg.ptr, cc.to_int(value.len), value.ptr });
 }
 
 /// simple version of `exit`
@@ -133,82 +133,94 @@ fn opt_config(in_value: ?[]const u8) void {
         var depth: u8 = 0;
     };
 
+    const src = @src();
+
     if (static.depth + 1 > 20)
-        exit(@src(), "call chain is too deep, please check the config for a dead loop", .{});
+        exit(src, "call chain is too deep, please check the config for a dead loop", .{});
 
     static.depth += 1;
     defer static.depth -= 1;
 
     const value = in_value.?;
     if (value.len > c.PATH_MAX)
-        exit(@src(), "filename is too long: '%.*s'", .{ cc.to_int(value.len), value.ptr });
+        exit(src, "filename is too long: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 
     // TODO: vla/alloca allocator
     const filename = cc.strdup(value);
     defer g.allocator.free(filename);
 
     const file = cc.fopen(filename, "r") orelse
-        exit(@src(), "failed to open the config file: '%s' (%m)", .{filename.ptr});
+        exit(src, "failed to open the config file: '%s' (%m)", .{filename.ptr});
     defer _ = cc.fclose(file);
 
     var buf: [512]u8 = undefined;
+
     while (cc.fgets(file, &buf)) |p_line| {
-        const line = cc.strslice_c(p_line);
+        const errmsg: cc.ConstStr = e: {
+            const line = cc.strslice_c(p_line);
 
-        if (line[line.len - 1] == '\n')
-            p_line[line.len - 1] = 0 // remove \n
-        else if (!cc.feof(file)) // last line may not have \n
-            exit(@src(), "'%s': line is too long: %s", .{ filename.ptr, p_line });
+            if (line[line.len - 1] == '\n')
+                p_line[line.len - 1] = 0 // remove \n
+            else if (!cc.feof(file)) // last line may not have \n
+                break :e "line is too long";
 
-        // optname [optvalue]
-        var it = std.mem.tokenize(u8, line, " \t\r\n\x00");
+            // optname [optvalue]
+            var it = std.mem.tokenize(u8, line, " \t\r\n\x00");
 
-        const optname = it.next() orelse continue;
+            const optname = it.next() orelse continue;
 
-        if (std.mem.startsWith(u8, optname, "#")) continue;
+            if (std.mem.startsWith(u8, optname, "#")) continue;
 
-        const optvalue = it.next();
+            const optvalue = it.next();
 
-        if (it.next() != null)
-            exit(@src(), "'%s': too many values: %s", .{ filename.ptr, p_line });
+            if (it.next() != null)
+                break :e "too many values";
 
-        const optdef = get_optdef(optname) orelse
-            exit(@src(), "'%s': unknown option: %s", .{ filename.ptr, p_line });
+            const optdef = get_optdef(optname) orelse
+                break :e "unknown option";
 
-        switch (optdef.value) {
-            .required => {
-                if (optvalue == null)
-                    exit(@src(), "'%s': missing opt-value: %s", .{ filename.ptr, p_line });
-            },
-            .no_value => {
-                if (optvalue != null)
-                    exit(@src(), "'%s': unexpected opt-value: %s", .{ filename.ptr, p_line });
-            },
-            else => {},
-        }
+            switch (optdef.value) {
+                .required => {
+                    if (optvalue == null)
+                        break :e "missing opt-value";
+                },
+                .no_value => {
+                    if (optvalue != null)
+                        break :e "unexpected opt-value";
+                },
+                else => {},
+            }
 
-        if (optvalue != null and optvalue.?.len <= 0)
-            exit(@src(), "'%s': invalid format: %s", .{ filename.ptr, p_line });
+            if (optvalue != null and optvalue.?.len <= 0)
+                break :e "invalid format";
 
-        optdef.optfn(optvalue);
+            optdef.optfn(optvalue);
+
+            continue;
+        };
+
+        // error handling
+        exit(src, "'%s': %s: %s", .{ filename.ptr, errmsg, p_line });
     }
 }
 
-pub fn check_ip(value: []const u8) ?void {
+pub noinline fn check_ip(value: []const u8) ?void {
     var buf: [64]u8 = undefined;
 
+    const src = @src();
+
     const ip = cc.strdup_r(value, &buf) orelse {
-        err_print(@src(), "ip is too long", value);
+        err_print(src, "ip is too long", value);
         return null;
     };
 
     if (cc.get_ipstr_family(ip.ptr) == null) {
-        err_print(@src(), "invalid ip", value);
+        err_print(src, "invalid ip", value);
         return null;
     }
 }
 
-pub fn check_port(value: []const u8) ?u16 {
+pub noinline fn check_port(value: []const u8) ?u16 {
     const port = str2int.parse(u16, value, 10) orelse 0;
     if (port == 0) {
         err_print(@src(), "invalid port", value);
@@ -229,7 +241,7 @@ fn opt_bind_port(in_value: ?[]const u8) void {
 }
 
 /// "upstream,..."
-fn add_upstreams(group: *Upstream.Group, upstreams: []const u8) ?void {
+noinline fn add_upstreams(group: *Upstream.Group, upstreams: []const u8) ?void {
     var it = std.mem.split(u8, upstreams, ",");
     while (it.next()) |upstream| {
         group.add(upstream) orelse {
@@ -250,15 +262,16 @@ fn opt_trust_dns(in_value: ?[]const u8) void {
 }
 
 /// "foo.txt,..."
-fn add_paths(list: *StrList, paths: []const u8) ?void {
+noinline fn add_paths(list: *StrList, paths: []const u8) ?void {
     var it = std.mem.split(u8, paths, ",");
     while (it.next()) |path| {
+        const src = @src();
         if (path.len <= 0) {
-            err_print(@src(), "invalid paths format", paths);
+            err_print(src, "invalid paths format", paths);
             return null;
         }
         if (path.len > c.PATH_MAX) {
-            err_print(@src(), "path is too long", path);
+            err_print(src, "path is too long", path);
             return null;
         }
         list.add(path);
@@ -382,44 +395,49 @@ const Parser = struct {
         return .{ .idx = 1 };
     }
 
-    pub fn parse(self: *Parser) void {
+    pub noinline fn parse(self: *Parser) void {
         const arg = self.pop_arg() orelse return;
 
-        if (std.mem.startsWith(u8, arg, "--")) {
-            if (arg.len < 4)
-                exit(@src(), "invalid long option: '%s'", .{arg.ptr});
+        const errmsg: cc.ConstStr = e: {
+            if (std.mem.startsWith(u8, arg, "--")) {
+                if (arg.len < 4)
+                    break :e "invalid long option";
 
-            // --name
-            // --name=value
-            // --name value
-            if (std.mem.indexOfScalar(u8, arg, '=')) |sep|
-                self.handle(arg[2..sep], arg[sep + 1 ..])
-            else
-                self.handle(arg[2..], null);
-            //
-        } else if (std.mem.startsWith(u8, arg, "-")) {
-            if (arg.len < 2)
-                exit(@src(), "invalid short option: '%s'", .{arg.ptr});
+                // --name
+                // --name=value
+                // --name value
+                if (std.mem.indexOfScalar(u8, arg, '=')) |sep|
+                    self.handle(arg[2..sep], arg[sep + 1 ..])
+                else
+                    self.handle(arg[2..], null);
+                //
+            } else if (std.mem.startsWith(u8, arg, "-")) {
+                if (arg.len < 2)
+                    break :e "invalid short option";
 
-            // -x
-            // -x5
-            // -x=5
-            // -x 5
-            if (arg.len == 2)
-                self.handle(arg[1..], null)
-            else if (arg[2] == '=')
-                self.handle(arg[1..2], arg[3..])
-            else
-                self.handle(arg[1..2], arg[2..]);
-            //
-        } else {
-            exit(@src(), "expect an option, but got a positional-argument: '%s'", .{arg.ptr});
-        }
+                // -x
+                // -x5
+                // -x=5
+                // -x 5
+                if (arg.len == 2)
+                    self.handle(arg[1..], null)
+                else if (arg[2] == '=')
+                    self.handle(arg[1..2], arg[3..])
+                else
+                    self.handle(arg[1..2], arg[2..]);
+                //
+            } else {
+                break :e "expect an option, got the pos-argument";
+            }
 
-        return @call(.{ .modifier = .always_tail }, Parser.parse, .{self});
+            return @call(.{ .modifier = .always_tail }, Parser.parse, .{self});
+        };
+
+        // error handling
+        exit(@src(), "%s: '%s'", .{ errmsg, arg.ptr });
     }
 
-    fn peek_arg(self: Parser) ?[:0]const u8 {
+    noinline fn peek_arg(self: Parser) ?[:0]const u8 {
         const argv = std.os.argv;
 
         return if (self.idx < argv.len)
@@ -428,7 +446,7 @@ const Parser = struct {
             null;
     }
 
-    fn pop_arg(self: *Parser) ?[:0]const u8 {
+    noinline fn pop_arg(self: *Parser) ?[:0]const u8 {
         if (self.peek_arg()) |arg| {
             self.idx += 1;
             return arg;
@@ -436,7 +454,7 @@ const Parser = struct {
         return null;
     }
 
-    fn take_value(self: *Parser, name: []const u8, required: bool) ?[:0]const u8 {
+    noinline fn take_value(self: *Parser, name: []const u8, required: bool) ?[:0]const u8 {
         const arg = self.peek_arg() orelse {
             if (required)
                 exit(@src(), "expect a value for option '%.*s'", .{ cc.to_int(name.len), name.ptr });
@@ -451,20 +469,22 @@ const Parser = struct {
         return null;
     }
 
-    fn handle(self: *Parser, name: []const u8, in_value: ?[:0]const u8) void {
+    noinline fn handle(self: *Parser, name: []const u8, in_value: ?[:0]const u8) void {
+        const src = @src();
+
         const optdef = get_optdef(name) orelse
-            exit(@src(), "unknown option: '%.*s'", .{ cc.to_int(name.len), name.ptr });
+            exit(src, "unknown option: '%.*s'", .{ cc.to_int(name.len), name.ptr });
 
         const value = switch (optdef.value) {
             .required => if (in_value) |v| v else self.take_value(name, true),
             .optional => if (in_value) |v| v else self.take_value(name, false),
             .no_value => if (in_value == null) null else {
-                exit(@src(), "option '%.*s' does not accept any values: '%s'", .{ cc.to_int(name.len), name.ptr, in_value.?.ptr });
+                exit(src, "option '%.*s' does not accept any values: '%s'", .{ cc.to_int(name.len), name.ptr, in_value.?.ptr });
             },
         };
 
         if (value != null and value.?.len <= 0)
-            exit(@src(), "option '%.*s' does not accept empty string", .{ cc.to_int(name.len), name.ptr });
+            exit(src, "option '%.*s' does not accept empty string", .{ cc.to_int(name.len), name.ptr });
 
         optdef.optfn(value);
     }

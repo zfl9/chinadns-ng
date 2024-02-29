@@ -115,39 +115,41 @@ pub fn main() u8 {
 
     net.init();
 
+    const src = @src();
+
     for (g.bind_ips.items) |ip|
-        log.info(@src(), "local listen addr: %s#%u", .{ ip.?, cc.to_uint(g.bind_port) });
+        log.info(src, "local listen addr: %s#%u", .{ ip.?, cc.to_uint(g.bind_port) });
 
     for (g.china_group.items()) |*v| {
         if (v.proto == .udp_in) continue; // avoid duplicate printing
-        log.info(@src(), "china upstream: %s", .{v.url.ptr});
+        log.info(src, "china upstream: %s", .{v.url.ptr});
     }
 
     for (g.trust_group.items()) |*v| {
         if (v.proto == .udp_in) continue; // avoid duplicate printing
-        log.info(@src(), "trust upstream: %s", .{v.url.ptr});
+        log.info(src, "trust upstream: %s", .{v.url.ptr});
     }
 
     dnl.init();
 
-    log.info(@src(), "default domain name tag: %s", .{g.default_tag.desc()});
+    log.info(src, "default domain name tag: %s", .{g.default_tag.desc()});
 
     ipset.init();
 
     g.noaaaa_query.display();
 
-    log.info(@src(), "response timeout of upstream: %u", .{cc.to_uint(g.upstream_timeout)});
+    log.info(src, "response timeout of upstream: %u", .{cc.to_uint(g.upstream_timeout)});
 
     if (g.trustdns_packet_n > 1)
-        log.info(@src(), "num of packets to trustdns: %u", .{cc.to_uint(g.trustdns_packet_n)});
+        log.info(src, "num of packets to trustdns: %u", .{cc.to_uint(g.trustdns_packet_n)});
 
-    log.info(@src(), "%s no-ip reply from chinadns", .{cc.b2s(g.noip_as_chnip, "accept", "filter")});
+    log.info(src, "%s no-ip reply from chinadns", .{cc.b2s(g.noip_as_chnip, "accept", "filter")});
 
     if (g.reuse_port)
-        log.info(@src(), "SO_REUSEPORT for listening socket", .{});
+        log.info(src, "SO_REUSEPORT for listening socket", .{});
 
     if (g.verbose)
-        log.info(@src(), "printing the verbose runtime log", .{});
+        log.info(src, "printing the verbose runtime log", .{});
 
     // ============================================================================
 

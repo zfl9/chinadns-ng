@@ -146,10 +146,11 @@ fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
         return;
     };
 
+    const src = @src();
     if (e.msg) |msg|
-        log.err(@src(), "%s(%d, '%s') failed: %s", .{ e.op, fd, self.url.ptr, msg })
+        log.err(src, "%s(%d, '%s') failed: %s", .{ e.op, fd, self.url.ptr, msg })
     else
-        log.err(@src(), "%s(%d, '%s') failed: (%d) %m", .{ e.op, fd, self.url.ptr, cc.errno() });
+        log.err(src, "%s(%d, '%s') failed: (%d) %m", .{ e.op, fd, self.url.ptr, cc.errno() });
 }
 
 fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
@@ -350,6 +351,11 @@ pub const Group = struct {
         return self.items().len == 0;
     }
 
+    noinline fn parse_failed(msg: [:0]const u8, value: []const u8) ?void {
+        opt.err_print(@src(), msg, value);
+        return null;
+    }
+
     /// "[proto://][host@]ip[#port][path]"
     pub noinline fn add(self: *Group, in_value: []const u8) ?void {
         @setCold(true);
@@ -361,10 +367,8 @@ pub const Group = struct {
             if (std.mem.indexOf(u8, value, "://")) |i| {
                 const proto = value[0 .. i + 3];
                 value = value[i + 3 ..];
-                break :b Proto.from_str(proto) orelse {
-                    opt.err_print(@src(), "invalid proto", proto);
-                    return null;
-                };
+                break :b Proto.from_str(proto) orelse
+                    return parse_failed("invalid proto", proto);
             }
             break :b Proto.tcp_or_udp;
         };
@@ -374,14 +378,10 @@ pub const Group = struct {
             if (std.mem.indexOf(u8, value, "@")) |i| {
                 const host = value[0..i];
                 value = value[i + 1 ..];
-                if (host.len == 0) {
-                    opt.err_print(@src(), "invalid host", host);
-                    return null;
-                }
-                if (!proto.require_host()) {
-                    opt.err_print(@src(), "no host required", host);
-                    return null;
-                }
+                if (host.len == 0)
+                    return parse_failed("invalid host", host);
+                if (!proto.require_host())
+                    return parse_failed("no host required", host);
                 break :b host;
             }
             break :b "";
@@ -392,10 +392,8 @@ pub const Group = struct {
             if (std.mem.indexOfScalar(u8, value, '/')) |i| {
                 const path = value[i..];
                 value = value[0..i];
-                if (!proto.require_path()) {
-                    opt.err_print(@src(), "no path required", path);
-                    return null;
-                }
+                if (!proto.require_path())
+                    return parse_failed("no path required", path);
                 break :b path;
             }
             break :b "";

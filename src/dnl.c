@@ -508,12 +508,11 @@ void dnl_init(const char *noalias gfwlist[noalias], const char *noalias chnlist[
     dnl_set_notnull(calc_lcap(gfw_n + chn_n), 0);
 
     if (has_gfw && has_chn) {
+        log_info("%slist have higher priority", gfwlist_first ? "gfw" : "chn");
         if (gfwlist_first) {
-            log_info("gfwlist have higher priority");
             gfw_nitems = add_list(gfw_addr0, gfw_n);
             chn_nitems = add_list(chn_addr0, chn_n);
         } else {
-            log_info("chnlist have higher priority");
             chn_nitems = add_list(chn_addr0, chn_n);
             gfw_nitems = add_list(gfw_addr0, gfw_n);
         }

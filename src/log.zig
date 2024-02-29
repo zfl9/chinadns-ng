@@ -31,7 +31,7 @@ const Level = enum {
 };
 
 /// year, month, day, hour, min, sec
-fn time() [6]c_int {
+noinline fn time() [6]c_int {
     const tm = cc.localtime(cc.time()).?;
     return .{ tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec };
 }

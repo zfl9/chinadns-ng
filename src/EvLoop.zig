@@ -210,7 +210,7 @@ const Ev = opaque {
 
 // =============================================================
 
-pub fn init() EvLoop {
+pub noinline fn init() EvLoop {
     const epfd = cc.epoll_create1(c.EPOLL_CLOEXEC) orelse {
         log.err(@src(), "failed to create epoll: (%d) %m", .{cc.errno()});
         cc.exit(1);
@@ -219,7 +219,7 @@ pub fn init() EvLoop {
 }
 
 /// return true if ok (internal api)
-fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*Ev) bool {
+noinline fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*Ev) bool {
     cc.epoll_ctl(self.epfd, op, fd, ev) orelse {
         const op_name = switch (op) {
             c.EPOLL_CTL_ADD => "ADD",

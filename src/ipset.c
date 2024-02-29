@@ -403,12 +403,8 @@ static void init_req_ipset(bool v4, const char *noalias name, struct addctx *noa
     } else { \
         len_ = strlen(start); \
     } \
-    if (len_ < 1) { \
-        log_error("%s min length is 1: '%.*s'", #field, (int)len_, start); \
-        exit(1); \
-    } \
-    if (len_ + 1 > sizeof(field)) { \
-        log_error("%s max length is %zu: '%.*s'", #field, sizeof(field) - 1, (int)len_, start); \
+    if (len_ < 1 || len_ + 1 > sizeof(field)) { \
+        log_error("%s is too short or too long: '%.*s'", #field, (int)len_, start); \
         exit(1); \
     } \
     memcpy(field, start, len_); \
@@ -518,10 +514,11 @@ void ipset_init(const char *noalias tagnone_setname4,
 
     __typeof__(&init_req_ipset) init_req;
 
+    const char *backend;
     if (strchr(tagnone_setname4, '@') || strchr(tagnone_setname6, '@') ||
         strchr(tagchn_setname46, '@') || strchr(taggfw_setname46, '@'))
     {
-        log_info("current backend: nft");
+        backend = "nftset";
         init_req = init_req_nft;
         test_res = test_res_nft;
         add_ip = add_ip_nft;
@@ -530,19 +527,19 @@ void ipset_init(const char *noalias tagnone_setname4,
         init_nlnfhdr(&s_batch_begin, NFNL_MSG_BATCH_BEGIN, NLM_F_REQUEST, AF_UNSPEC, NFNL_SUBSYS_NFTABLES);
         init_nlnfhdr(&s_batch_end, NFNL_MSG_BATCH_END, NLM_F_REQUEST, AF_UNSPEC, NFNL_SUBSYS_NFTABLES);
     } else {
-        log_info("current backend: ipset");
+        backend = "ipset";
         init_req = init_req_ipset;
         test_res = test_res_ipset;
         add_ip = add_ip_ipset;
         end_add_ip = end_add_ip_ipset;
     }
+    log_info("current backend: %s", backend);
 
     /* tag:chn add */
     if (strlen(tagchn_setname46) > 0) {
         char name4[NAME_MAXLEN], name6[NAME_MAXLEN];
         parse_name46(tagchn_setname46, name4, name6);
-        log_info("tag:chn add: %s", name4);
-        log_info("tag:chn add: %s", name6);
+        log_info("tag:chn add: %s,%s", name4, name6);
         struct addctx *noalias ctx = a_ctx(true);
         a_testmsg(ctx, true) = (void *)t_nlmsg(true) + OFFSET_CHN(true);
         a_testmsg(ctx, false) = (void *)t_nlmsg(false) + OFFSET_CHN(false);
@@ -554,8 +551,7 @@ void ipset_init(const char *noalias tagnone_setname4,
     if (strlen(taggfw_setname46) > 0) {
         char name4[NAME_MAXLEN], name6[NAME_MAXLEN];
         parse_name46(taggfw_setname46, name4, name6);
-        log_info("tag:gfw add: %s", name4);
-        log_info("tag:gfw add: %s", name6);
+        log_info("tag:gfw add: %s,%s", name4, name6);
         struct addctx *noalias ctx = a_ctx(false);
         a_testmsg(ctx, true) = (void *)t_nlmsg(true) + OFFSET_GFW(true);
         a_testmsg(ctx, false) = (void *)t_nlmsg(false) + OFFSET_GFW(false);
@@ -565,8 +561,7 @@ void ipset_init(const char *noalias tagnone_setname4,
 
     /* tag:none test */
     if (default_tag == NAME_TAG_NONE) {
-        log_info("tag:none test: %s", tagnone_setname4);
-        log_info("tag:none test: %s", tagnone_setname6);
+        log_info("tag:none test: %s,%s", tagnone_setname4, tagnone_setname6);
         init_req(true, tagnone_setname4, NULL);
         init_req(false, tagnone_setname6, NULL);
     }

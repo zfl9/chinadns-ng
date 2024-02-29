@@ -68,12 +68,8 @@ static bool decode_name(char *noalias out, const char *noalias src, int len) {
     for (int first = 1; len >= 2;) {
         if (first) first = 0; else *out++ = '.';
         int label_len = *(const ubyte *)src++; --len;
-        unlikely_if (label_len < 1) {
-            log_error("label length is too short: %d", label_len);
-            return false;
-        }
-        unlikely_if (label_len > DNS_NAME_LABEL_MAXLEN) {
-            log_error("label length is too long: %d", label_len);
+        unlikely_if (label_len < 1 || label_len > DNS_NAME_LABEL_MAXLEN) {
+            log_error("label length is out of range: %d [1, %d]", label_len, DNS_NAME_LABEL_MAXLEN);
             return false;
         }
         unlikely_if (label_len > len) {
@@ -99,12 +95,8 @@ static bool check_msg(bool is_query,
     char *noalias ascii_name, int *noalias p_wire_namelen)
 {
     /* check msg length */
-    unlikely_if (len < (ssize_t)DNS_MSG_MINSIZE) {
-        log_error("dns msg is too short: %zd", len);
-        return false;
-    }
-    unlikely_if (len > DNS_MSG_MAXSIZE) {
-        log_error("dns msg is too long: %zd", len);
+    unlikely_if (len < (ssize_t)DNS_MSG_MINSIZE || len > DNS_MSG_MAXSIZE) {
+        log_error("msg length is out of range: %zd [%d, %d]", len, DNS_MSG_MINSIZE, DNS_MSG_MAXSIZE);
         return false;
     }
 
@@ -137,12 +129,8 @@ static bool check_msg(bool is_query,
 
     /* check name length */
     const int wire_namelen = p + 1 - msg;
-    unlikely_if (wire_namelen < DNS_NAME_WIRE_MINLEN) {
-        log_error("encoded domain name is too short: %d", wire_namelen);
-        return false;
-    }
-    unlikely_if (wire_namelen > DNS_NAME_WIRE_MAXLEN) {
-        log_error("encoded domain name is too long: %d", wire_namelen);
+    unlikely_if (wire_namelen < DNS_NAME_WIRE_MINLEN || wire_namelen > DNS_NAME_WIRE_MAXLEN) {
+        log_error("encoded domain namelen is out of range: %d [%d, %d]", wire_namelen, DNS_NAME_WIRE_MINLEN, DNS_NAME_WIRE_MAXLEN);
         return false;
     }
 

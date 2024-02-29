@@ -256,10 +256,11 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
 
     if (!g.verbose) src_addr.to_text(&ip, &port);
 
+    const src = @src();
     if (e.msg) |msg|
-        log.err(@src(), "%s(fd:%d, %s#%u) failed: %s", .{ e.op, fd, &ip, cc.to_uint(port), msg })
+        log.err(src, "%s(fd:%d, %s#%u) failed: %s", .{ e.op, fd, &ip, cc.to_uint(port), msg })
     else
-        log.err(@src(), "%s(fd:%d, %s#%u) failed: (%d) %m", .{ e.op, fd, &ip, cc.to_uint(port), cc.errno() });
+        log.err(src, "%s(fd:%d, %s#%u) failed: (%d) %m", .{ e.op, fd, &ip, cc.to_uint(port), cc.errno() });
 }
 
 fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {

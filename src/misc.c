@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "misc.h"
 #include <signal.h>
 
