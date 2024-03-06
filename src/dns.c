@@ -258,11 +258,21 @@ u16 dns_get_qtype(const void *noalias msg, int wire_namelen) {
 
 static bool get_bufsz(const struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
     (void)rdatalen;
+
     if (ntohs(record->rtype) == DNS_RECORD_TYPE_OPT) {
+        u16 sz = ntohs(record->rclass);
+
+        if (sz < DNS_EDNS_MINSIZE)
+            sz = DNS_EDNS_MINSIZE;
+        else if (sz > DNS_EDNS_MAXSIZE)
+            sz = DNS_EDNS_MAXSIZE;
+
         u16 *bufsz = ud;
-        *bufsz = ntohs(record->rclass);
+        *bufsz = sz;
+
         *is_break = true;
     }
+
     return true;
 }
 

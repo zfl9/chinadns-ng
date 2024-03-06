@@ -644,6 +644,7 @@ fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_t
         if (g.evloop.sendmsg(fdobj, &msghdr, 0) != null) return;
     } else {
         var reply_msg = msg;
+        // log.debug(@src(), "bufsz: %u", .{cc.to_uint(bufsz)});
         if (reply_msg.len > bufsz) {
             reply_msg.len = dns.truncate(reply_msg);
             // log.debug(@src(), "msg truncated: %zu -> %zu", .{ msg.len, reply_msg.len }); // test code
