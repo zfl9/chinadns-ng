@@ -67,6 +67,8 @@ add element inet global chnroute6 { 2001:df3:1480::/48 }
 add element inet global chnroute6 { 2001:df3:15c0::/48 }
 add element inet global chnroute6 { 2001:df3:2a80::/48 }
 add element inet global chnroute6 { 2001:df3:3a80::/48 }
+add element inet global chnroute6 { 2001:df3:7440::/48 }
+add element inet global chnroute6 { 2001:df3:77c0::/48 }
 add element inet global chnroute6 { 2001:df3:a680::/48 }
 add element inet global chnroute6 { 2001:df3:b380::/48 }
 add element inet global chnroute6 { 2001:df3:c380::/48 }
@@ -517,7 +519,10 @@ add element inet global chnroute6 { 2401:7660::/32 }
 add element inet global chnroute6 { 2401:7680::/32 }
 add element inet global chnroute6 { 2401:7700::/32 }
 add element inet global chnroute6 { 2401:7780::/32 }
+add element inet global chnroute6 { 2401:77e0::/32 }
+add element inet global chnroute6 { 2401:7820::/32 }
 add element inet global chnroute6 { 2401:7880::/32 }
+add element inet global chnroute6 { 2401:78e0::/32 }
 add element inet global chnroute6 { 2401:7980::/32 }
 add element inet global chnroute6 { 2401:7a00::/32 }
 add element inet global chnroute6 { 2401:7a80::/32 }
@@ -525,6 +530,7 @@ add element inet global chnroute6 { 2401:7b80::/32 }
 add element inet global chnroute6 { 2401:7bc0::/32 }
 add element inet global chnroute6 { 2401:7c80::/32 }
 add element inet global chnroute6 { 2401:7cc0::/32 }
+add element inet global chnroute6 { 2401:7ce0::/32 }
 add element inet global chnroute6 { 2401:7d40::/32 }
 add element inet global chnroute6 { 2401:7d80::/32 }
 add element inet global chnroute6 { 2401:7e00::/32 }
