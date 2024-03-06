@@ -59,7 +59,6 @@ fn on_eol(self: *Upstream) void {
 
     assert(fdobj.write_frame == null);
 
-    // test code
     // log.debug(
     //     @src(),
     //     "udp upstream socket(fd:%d, url:'%s', group:%s) is end-of-life ...",

@@ -626,6 +626,8 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
 }
 
 fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool, bufsz: u16) void {
+    // log.debug(@src(), "bufsz: %u", .{cc.to_uint(bufsz)});
+
     if (from_tcp) {
         var iov = [_]cc.iovec_t{
             .{
@@ -644,10 +646,9 @@ fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_t
         if (g.evloop.sendmsg(fdobj, &msghdr, 0) != null) return;
     } else {
         var reply_msg = msg;
-        // log.debug(@src(), "bufsz: %u", .{cc.to_uint(bufsz)});
         if (reply_msg.len > bufsz) {
             reply_msg.len = dns.truncate(reply_msg);
-            // log.debug(@src(), "msg truncated: %zu -> %zu", .{ msg.len, reply_msg.len }); // test code
+            // log.debug(@src(), "msg truncated: %zu -> %zu", .{ msg.len, reply_msg.len });
         }
         if (cc.sendto(fdobj.fd, reply_msg, 0, src_addr) != null) return;
     }
