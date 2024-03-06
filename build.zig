@@ -185,7 +185,7 @@ fn add_log(comptime format: []const u8, args: anytype) *Step {
 
 /// step: /bin/sh command
 fn add_sh_cmd(sh_cmd: []const u8) *Step {
-    const cmd = fmt("set -o nounset; set -o errexit; set -o pipefail; {s}", .{sh_cmd});
+    const cmd = fmt("set -o nounset; set -o errexit; {s}", .{sh_cmd});
     const run_step = _b.addSystemCommand(&.{ "sh", "-c", cmd });
     run_step.print = false; // disable print (use `set -x` instead)
     return &run_step.step;
