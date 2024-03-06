@@ -14,8 +14,20 @@ pub inline fn get_qtype(msg: []const u8, wire_namelen: c_int) u16 {
     return c.dns_get_qtype(msg.ptr, wire_namelen);
 }
 
+pub inline fn get_bufsz(msg: []const u8, wire_namelen: c_int) u16 {
+    return c.dns_get_bufsz(msg.ptr, cc.to_isize(msg.len), wire_namelen);
+}
+
+pub inline fn is_tc(msg: []const u8) bool {
+    return c.dns_is_tc(msg.ptr);
+}
+
+pub inline fn truncate(msg: []u8) u16 {
+    return c.dns_truncate(msg.ptr, cc.to_isize(msg.len));
+}
+
 /// return the updated msg length
-pub inline fn empty_reply(msg: []u8, wire_namelen: c_int) usize {
+pub inline fn empty_reply(msg: []u8, wire_namelen: c_int) u16 {
     return c.dns_empty_reply(msg.ptr, wire_namelen);
 }
 

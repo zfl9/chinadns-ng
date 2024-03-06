@@ -85,7 +85,7 @@ static u32 alloc(u32 sz, u32 align) {
         else
             s_base = mremap(s_base, oldcap, s_cap, MREMAP_MAYMOVE);
         unlikely_if (s_base == MAP_FAILED)
-            log_fatal("mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %s", (ulong)oldcap, (ulong)s_cap, errno, strerror(errno));
+            log_fatal("mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %m", (ulong)oldcap, (ulong)s_cap, errno);
     }
 
     return s_end - sz;
@@ -395,7 +395,7 @@ static bool load_list(u8 tag, const char *noalias filenames[noalias], u32 *noali
         } else {
             fp = fopen(fname, "rb");
             unlikely_if (!fp) {
-                log_error("failed to open '%s': (%d) %s", fname, errno, strerror(errno));
+                log_error("failed to open '%s': (%d) %m", fname, errno);
                 continue;
             }
         }

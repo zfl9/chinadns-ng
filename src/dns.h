@@ -7,7 +7,10 @@
 /* dns message size */
 #define DNS_MSG_MINSIZE (12 /* sizeof(struct dns_header) */ + DNS_NAME_WIRE_MINLEN + 4 /* sizeof(struct dns_question) */)
 #define DNS_MSG_MAXSIZE 65535
+
 #define DNS_QMSG_MAXSIZE 512
+
+#define DNS_EDNS_MINSIZE 512
 #define DNS_EDNS_MAXSIZE 4096
 
 /* ASCII name length (not included \0) */
@@ -22,13 +25,13 @@
 
 #define DNS_QR_QUERY 0
 #define DNS_QR_REPLY 1
-#define DNS_OPCODE_QUERY 0
+
 #define DNS_RCODE_NOERROR 0
-#define DNS_CLASS_INTERNET 1
 
 /* qtype(rtype) */
 #define DNS_RECORD_TYPE_A 1 /* ipv4 address */
 #define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
+#define DNS_RECORD_TYPE_OPT 41 /* EDNS pseudo-RR */
 
 u16 dns_get_id(const void *noalias msg);
 
@@ -36,8 +39,19 @@ void dns_set_id(void *noalias msg, u16 id);
 
 u16 dns_get_qtype(const void *noalias msg, int wire_namelen);
 
+/* get the peer's udp receive buffer size from the `OPT RR` */
+u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int wire_namelen);
+
+bool dns_is_tc(const void *noalias msg);
+
+/*
+* the msg has been checked by `check_reply()`
+* return the length of the truncated reply-msg
+*/
+u16 dns_truncate(void *noalias msg, ssize_t len);
+
 /* keep only the HEADER and QUESTION section */
-size_t dns_empty_reply(void *noalias msg, int wire_namelen);
+u16 dns_empty_reply(void *noalias msg, int wire_namelen);
 
 /* "\0" => 0 */
 /* "\1x\0" => 1 */

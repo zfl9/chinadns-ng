@@ -36,17 +36,19 @@ const QueryCtx = struct {
     // alignment: 2
     qid: u16,
     id: c.be16, // original id
+    bufsz: u16, // udp requester's receive bufsz
 
     // alignment: 1
     name_tag: dnl.Tag,
     from_tcp: bool,
     china_got: bool = false,
 
-    fn new(qid: u16, id: c.be16, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool, name_tag: dnl.Tag) *QueryCtx {
+    fn new(qid: u16, id: c.be16, bufsz: u16, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool, name_tag: dnl.Tag) *QueryCtx {
         const self = g.allocator.create(QueryCtx) catch unreachable;
         self.* = .{
             .qid = qid,
             .id = id,
+            .bufsz = bufsz,
             .fdobj = fdobj.ref(),
             .src_addr = src_addr.*,
             .from_tcp = from_tcp,
@@ -117,6 +119,7 @@ const QueryCtx = struct {
         pub fn add(
             self: *List,
             msg: []u8,
+            wire_namelen: c_int,
             fdobj: *EvLoop.Fd,
             src_addr: *const cc.SockAddr,
             from_tcp: bool,
@@ -136,7 +139,12 @@ const QueryCtx = struct {
             const id = dns.get_id(msg);
             dns.set_id(msg, qid);
 
-            const qctx = QueryCtx.new(qid, id, fdobj, src_addr, from_tcp, name_tag);
+            const bufsz = if (from_tcp)
+                cc.to_u16(c.DNS_MSG_MAXSIZE)
+            else
+                dns.get_bufsz(msg, wire_namelen);
+
+            const qctx = QueryCtx.new(qid, id, bufsz, fdobj, src_addr, from_tcp, name_tag);
 
             self.map.putNoClobber(g.allocator, qid, qctx) catch unreachable;
             self.link(qctx);
@@ -329,7 +337,7 @@ const QueryLog = struct {
     pub noinline fn forward(self: *const QueryLog, qctx: *const QueryCtx, group: cc.ConstStr) void {
         log.info(
             @src(),
-            "forward query(qid:%u, from:%s, '%s') to %s",
+            "forward query(qid:%u, from:%s, '%s') to %s group",
             .{ cc.to_uint(qctx.qid), cc.b2s(qctx.from_tcp, "tcp", "udp"), self.name, group },
         );
     }
@@ -373,7 +381,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
             if (g.verbose) querylog.noaaaa(by_rule);
             var reply_msg = msg;
             reply_msg.len = dns.empty_reply(reply_msg, wire_namelen);
-            return send_reply(reply_msg, fdobj, src_addr, from_tcp);
+            return send_reply(reply_msg, fdobj, src_addr, from_tcp, c.DNS_MSG_MAXSIZE);
         }
 
         // tag:none
@@ -386,7 +394,16 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
     }
 
     var first_query: bool = undefined;
-    const qctx = _qctx_list.add(msg, fdobj, src_addr, from_tcp, name_tag, &first_query) orelse return;
+
+    const qctx = _qctx_list.add(
+        msg,
+        wire_namelen,
+        fdobj,
+        src_addr,
+        from_tcp,
+        name_tag,
+        &first_query,
+    ) orelse return;
 
     if (name_tag == .chn or (name_tag == .none and tagnone_to_china)) {
         if (g.verbose) querylog.forward(qctx, "china");
@@ -475,7 +492,7 @@ fn use_china_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog)
         .not_chnip => {
             if (only_china) {
                 if (g.verbose) replylog.noaaaa("china_ipchk");
-                rmsg.len = cc.to_u16(dns.empty_reply(msg, wire_namelen)); // `.len` updated
+                rmsg.len = dns.empty_reply(msg, wire_namelen); // `.len` updated
                 return true;
             }
             return false;
@@ -511,7 +528,7 @@ fn use_trust_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog)
         const res = dns.test_ip(msg, wire_namelen);
         if (res == .not_chnip or res == .not_found) {
             if (g.verbose) replylog.noaaaa("trust_ipchk");
-            if (res == .not_chnip) rmsg.len = cc.to_u16(dns.empty_reply(msg, wire_namelen)); // `.len` updated
+            if (res == .not_chnip) rmsg.len = dns.empty_reply(msg, wire_namelen); // `.len` updated
         }
     }
 
@@ -542,7 +559,8 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
         return;
     };
 
-    replylog.tag = qctx.name_tag;
+    if (g.verbose)
+        replylog.tag = qctx.name_tag;
 
     // determines whether to end the current query context
     nosuspend switch (upstream.group.tag) {
@@ -602,12 +620,12 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     _qctx_list.del_nofree(qctx);
 
     // may be suspended
-    send_reply(rmsg.msg(), qctx.fdobj, &qctx.src_addr, qctx.from_tcp);
+    send_reply(rmsg.msg(), qctx.fdobj, &qctx.src_addr, qctx.from_tcp, qctx.bufsz);
 
     qctx.free();
 }
 
-fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool) void {
+fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool, bufsz: u16) void {
     if (from_tcp) {
         var iov = [_]cc.iovec_t{
             .{
@@ -625,8 +643,12 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
         };
         if (g.evloop.sendmsg(fdobj, &msghdr, 0) != null) return;
     } else {
-        // TODO: check the message length and set the `TC` flag if necessary
-        if (cc.sendto(fdobj.fd, msg, 0, src_addr) != null) return;
+        var reply_msg = msg;
+        if (reply_msg.len > bufsz) {
+            reply_msg.len = dns.truncate(reply_msg);
+            // log.debug(@src(), "msg truncated: %zu -> %zu", .{ msg.len, reply_msg.len }); // test code
+        }
+        if (cc.sendto(fdobj.fd, reply_msg, 0, src_addr) != null) return;
     }
 
     // error handling
@@ -650,10 +672,12 @@ fn on_timeout(qctx: *QueryCtx) void {
         var port: u16 = undefined;
         qctx.src_addr.to_text(&ip, &port);
 
-        log.info(
+        const proto = cc.b2s(qctx.from_tcp, "tcp", "udp");
+
+        log.warn(
             @src(),
-            "query(qid:%u, id:%u, tag:%s) from %s#%u timeout",
-            .{ cc.to_uint(qctx.qid), cc.to_uint(qctx.id), qctx.name_tag.desc(), &ip, cc.to_uint(port) },
+            "query(qid:%u, id:%u, tag:%s) from %s://%s#%u [timeout]",
+            .{ cc.to_uint(qctx.qid), cc.to_uint(qctx.id), qctx.name_tag.desc(), proto, &ip, cc.to_uint(port) },
         );
     }
 

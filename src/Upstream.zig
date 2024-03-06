@@ -50,9 +50,9 @@ fn eql(self: *const Upstream, proto: Proto, addr: *const cc.SockAddr, host: []co
     // zig fmt: on
 }
 
-/// for `udp` and `udp_in` upstream
+/// for udpin upstream
 fn on_eol(self: *Upstream) void {
-    assert(self.proto == .udp or self.proto == .udp_in);
+    assert(self.proto == .udpin);
 
     const fdobj = self.fdobj orelse return;
     self.fdobj = null; // set to null
@@ -73,7 +73,7 @@ fn on_eol(self: *Upstream) void {
     }
 }
 
-/// for `udp` and `udp_in` upstream
+/// for `udp` and `udpin` upstream
 fn is_eol(self: *const Upstream, in_fdobj: *EvLoop.Fd) bool {
     return self.fdobj != in_fdobj;
 }
@@ -81,8 +81,8 @@ fn is_eol(self: *const Upstream, in_fdobj: *EvLoop.Fd) bool {
 /// [nosuspend] send query to upstream
 fn send(self: *Upstream, qmsg: *RcMsg) void {
     switch (self.proto) {
-        .tcp_in, .tcp => self.send_tcp(qmsg),
-        .udp_in, .udp => self.send_udp(qmsg),
+        .tcpin, .tcp => self.send_tcp(qmsg),
+        .udpin => self.send_udp(qmsg),
         .https => self.send_https(qmsg),
         else => unreachable,
     }
@@ -243,11 +243,11 @@ fn send_https(self: *Upstream, qmsg: *RcMsg) void {
 // ======================================================
 
 pub const Proto = enum {
-    tcp_or_udp, // only exists in the parsing stage
-    tcp_in, // "1.1.1.1" (enabled when the query msg is received over tcp)
-    udp_in, // "1.1.1.1" (enabled when the query msg is received over udp)
+    raw, // "1.1.1.1" (tcpin + udpin) only exists in the parsing stage
+    tcpin, // "tcpin://1.1.1.1" (enabled when the query msg is received over tcp)
+    udpin, // "udpin://1.1.1.1" (enabled when the query msg is received over udp)
+
     tcp, // "tcp://1.1.1.1"
-    udp, // "udp://1.1.1.1"
     https, // "https://1.1.1.1"
 
     /// "tcp://"
@@ -255,7 +255,6 @@ pub const Proto = enum {
         // zig fmt: off
         const map = .{
             .{ .str = "tcp://",   .proto = .tcp   },
-            .{ .str = "udp://",   .proto = .udp   },
             .{ .str = "https://", .proto = .https },
         };
         // zig fmt: on
@@ -269,9 +268,9 @@ pub const Proto = enum {
     /// "tcp://" (string literal)
     pub fn to_str(self: Proto) [:0]const u8 {
         return switch (self) {
-            .tcp_in, .udp_in => "",
+            .tcpin => "tcpin://",
+            .udpin => "udpin://",
             .tcp => "tcp://",
-            .udp => "udp://",
             .https => "https://",
             else => unreachable,
         };
@@ -301,13 +300,10 @@ pub const Proto = enum {
 
 pub const Group = struct {
     list: std.ArrayListUnmanaged(Upstream) = .{},
-
     udp_life: Life = .{},
-    udpin_life: Life = .{},
-
     tag: Tag,
 
-    /// for udp/udp_in upstream
+    /// for udpin upstream
     const Life = struct {
         create_time: c.time_t = 0,
         query_count: u8 = 0,
@@ -370,7 +366,7 @@ pub const Group = struct {
                 break :b Proto.from_str(proto) orelse
                     return parse_failed("invalid proto", proto);
             }
-            break :b Proto.tcp_or_udp;
+            break :b Proto.raw;
         };
 
         // host, only DoH needs it
@@ -413,9 +409,9 @@ pub const Group = struct {
         const ip = value;
         opt.check_ip(ip) orelse return null;
 
-        if (proto == .tcp_or_udp) {
-            self.do_add(.tcp_in, host, ip, port, path);
-            self.do_add(.udp_in, host, ip, port, path);
+        if (proto == .raw) {
+            self.do_add(.tcpin, host, ip, port, path);
+            self.do_add(.udpin, host, ip, port, path);
         } else {
             self.do_add(proto, host, ip, port, path);
         }
@@ -475,23 +471,20 @@ pub const Group = struct {
 
     /// nosuspend
     pub fn send(self: *Group, qmsg: *RcMsg, from_tcp: bool, first_query: bool) void {
-        const in_proto: Proto = if (from_tcp) .tcp_in else .udp_in;
+        const in_proto: Proto = if (from_tcp) .tcpin else .udpin;
 
         const verbose_info = if (g.verbose) .{
             .qid = dns.get_id(qmsg.msg()),
             .from = cc.b2s(from_tcp, "tcp", "udp"),
         } else undefined;
 
-        const now_time = cc.time();
+        const now_time = if (first_query) cc.time() else undefined;
 
         var udp_eol: ?bool = null;
-        var udpin_eol: ?bool = null;
-
         var udp_touched = false;
-        var udpin_touched = false;
 
         for (self.items()) |*upstream| {
-            if (upstream.proto == .tcp_in or upstream.proto == .udp_in)
+            if (upstream.proto == .tcpin or upstream.proto == .udpin)
                 if (in_proto != upstream.proto) continue;
 
             if (g.verbose)
@@ -501,40 +494,26 @@ pub const Group = struct {
                     .{ cc.to_uint(verbose_info.qid), verbose_info.from, upstream.url.ptr },
                 );
 
-            if (first_query) {
-                const eol = switch (upstream.proto) {
-                    .udp => udp_eol orelse b: {
+            if (upstream.proto == .udpin) {
+                udp_touched = true;
+
+                if (first_query) {
+                    const eol = udp_eol orelse b: {
                         const eol = self.udp_life.check_eol(now_time);
                         udp_eol = eol;
                         break :b eol;
-                    },
-                    .udp_in => udpin_eol orelse b: {
-                        const eol = self.udpin_life.check_eol(now_time);
-                        udpin_eol = eol;
-                        break :b eol;
-                    },
-                    else => false,
-                };
-                if (eol)
-                    upstream.on_eol();
-            }
-
-            switch (upstream.proto) {
-                .udp => udp_touched = true,
-                .udp_in => udpin_touched = true,
-                else => {},
+                    };
+                    if (eol) upstream.on_eol();
+                }
             }
 
             upstream.send(qmsg);
         }
 
-        const add_count = if (self.tag == .trust) g.trustdns_packet_n else 1;
-
-        if (udp_touched)
+        if (udp_touched) {
+            const add_count = if (self.tag == .trust) g.trustdns_packet_n else 1;
             self.udp_life.on_query(add_count);
-
-        if (udpin_touched)
-            self.udpin_life.on_query(add_count);
+        }
     }
 };
 

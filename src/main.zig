@@ -120,15 +120,11 @@ pub fn main() u8 {
     for (g.bind_ips.items) |ip|
         log.info(src, "local listen addr: %s#%u", .{ ip.?, cc.to_uint(g.bind_port) });
 
-    for (g.china_group.items()) |*v| {
-        if (v.proto == .udp_in) continue; // avoid duplicate printing
+    for (g.china_group.items()) |*v|
         log.info(src, "china upstream: %s", .{v.url.ptr});
-    }
 
-    for (g.trust_group.items()) |*v| {
-        if (v.proto == .udp_in) continue; // avoid duplicate printing
+    for (g.trust_group.items()) |*v|
         log.info(src, "trust upstream: %s", .{v.url.ptr});
-    }
 
     dnl.init();
 

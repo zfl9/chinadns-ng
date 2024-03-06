@@ -103,15 +103,15 @@ static bool check_msg(bool is_query,
     /* check header */
     const struct dns_header *header = msg;
     unlikely_if (header->qr != (is_query ? DNS_QR_QUERY : DNS_QR_REPLY)) {
-        log_error("this is a %s msg, but header->qr is %u", is_query ? "query" : "reply", (uint)header->qr);
-        return false;
-    }
-    unlikely_if (header->opcode != DNS_OPCODE_QUERY) {
-        log_error("this is not a standard query, opcode: %u", (uint)header->opcode);
+        log_error("this is a %s msg, but header->qr = %u", is_query ? "query" : "reply", (uint)header->qr);
         return false;
     }
     unlikely_if (ntohs(header->question_count) != 1) {
         log_error("there should be one and only one question: %u", (uint)ntohs(header->question_count));
+        return false;
+    }
+    unlikely_if (is_query && header->tc) {
+        log_error("query msg should not have the TC flag set");
         return false;
     }
 
@@ -149,13 +149,6 @@ static bool check_msg(bool is_query,
     /* check remaining length */
     unlikely_if (len < (ssize_t)sizeof(struct dns_question)) {
         log_error("remaining length is less than sizeof(dns_question): %zd < %zu", len, sizeof(struct dns_question));
-        return false;
-    }
-
-    /* check query class */
-    const struct dns_question *question = msg;
-    unlikely_if (ntohs(question->qclass) != DNS_CLASS_INTERNET) {
-        log_error("only supports standard internet query class: %u", (uint)ntohs(question->qclass));
         return false;
     }
 
@@ -199,58 +192,56 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
     return true;
 }
 
-/* return false if msg is bad, if `f()` return true then break foreach */
-static bool foreach_ip(const void *noalias msg, ssize_t len, int wire_namelen,
-    bool (*f)(const void *noalias ip, bool v4, void *ud), void *ud)
+#define skip_record(p_ptr, p_len, count) \
+    foreach_record(p_ptr, p_len, count, NULL, NULL)
+
+static bool foreach_record(const void *noalias *noalias p_ptr, ssize_t *noalias p_len, int count, 
+    bool (*f)(const struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break), void *ud) 
 {
-    const struct dns_header *h = msg;
-    u16 answer_count = ntohs(h->answer_count);
+    if (count <= 0)
+        return true;
 
-    /* move to answer section */
-    msg += sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_question);
-    len -= sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_question);
+    const void *ptr = *p_ptr;
+    ssize_t len = *p_len;
 
-    /* foreach `A/AAAA` record */
-    for (u16 i = 0; i < answer_count; ++i) {
-        unlikely_if (!skip_name(&msg, &len))
+    for (int i = 0; i < count; ++i) {
+        unlikely_if (!skip_name(&ptr, &len))
             return false;
 
-        const struct dns_record *record = msg;
-        unlikely_if (ntohs(record->rclass) != DNS_CLASS_INTERNET) {
-            log_error("only supports standard internet query class: %u", (uint)ntohs(record->rclass));
-            return false;
-        }
-
-        u16 rdatalen = ntohs(record->rdatalen);
+        const struct dns_record *record = ptr;
+        ssize_t rdatalen = ntohs(record->rdatalen);
         ssize_t recordlen = sizeof(struct dns_record) + rdatalen;
+
         unlikely_if (len < recordlen) {
             log_error("remaining length is less than sizeof(record): %zd < %zd", len, recordlen);
             return false;
         }
 
-        switch (ntohs(record->rtype)) {
-            case DNS_RECORD_TYPE_A:
-                unlikely_if (rdatalen != IPV4_BINADDR_LEN) {
-                    log_error("rdatalen is not equal to sizeof(ipv4): %u != %d", (uint)rdatalen, IPV4_BINADDR_LEN);
-                    return false;
-                }
-                if (f(record->rdata, true, ud)) return true; /* break foreach */
-                break;
-            case DNS_RECORD_TYPE_AAAA:
-                unlikely_if (rdatalen != IPV6_BINADDR_LEN) {
-                    log_error("rdatalen is not equal to sizeof(ipv6): %u != %d", (uint)rdatalen, IPV6_BINADDR_LEN);
-                    return false;
-                }
-                if (f(record->rdata, false, ud)) return true; /* break foreach */
-                break;
+        if (f) {
+            bool is_break = false;
+            unlikely_if (!f(record, rdatalen, ud, &is_break)) return false;
+            if (is_break) break;
         }
 
-        msg += recordlen;
+        ptr += recordlen;
         len -= recordlen;
     }
 
+    *p_ptr = ptr;
+    *p_len = len;
+
     return true;
 }
+
+/* header + question */
+#define msg_minlen(wire_namelen) \
+    (sizeof(struct dns_header) + (wire_namelen) + sizeof(struct dns_question))
+
+/* move to answer section */
+#define move_to_answer(ptr, len, wire_namelen) ({ \
+    (ptr) += msg_minlen(wire_namelen); \
+    (len) -= msg_minlen(wire_namelen); \
+})
 
 u16 dns_get_id(const void *noalias msg) {
     return cast(const struct dns_header *, msg)->id;
@@ -265,14 +256,60 @@ u16 dns_get_qtype(const void *noalias msg, int wire_namelen) {
     return ntohs(q->qtype);
 }
 
-size_t dns_empty_reply(void *noalias msg, int wire_namelen) {
+static bool get_bufsz(const struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
+    (void)rdatalen;
+    if (ntohs(record->rtype) == DNS_RECORD_TYPE_OPT) {
+        u16 *bufsz = ud;
+        *bufsz = ntohs(record->rclass);
+        *is_break = true;
+    }
+    return true;
+}
+
+u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int wire_namelen) {
+    u16 bufsz = DNS_EDNS_MINSIZE;
+    const struct dns_header *h = msg;
+
+    if (ntohs(h->additional_count) <= 0)
+        return bufsz;
+
+    /* move to answer section */
+    move_to_answer(msg, len, wire_namelen);
+
+    /* skip answer && authority section */
+    unlikely_if (!skip_record(&msg, &len, ntohs(h->answer_count)) || !skip_record(&msg, &len, ntohs(h->authority_count)))
+        return bufsz;
+
+    foreach_record(&msg, &len, ntohs(h->additional_count), get_bufsz, &bufsz);
+    return bufsz;
+}
+
+bool dns_is_tc(const void *noalias msg) {
+    return cast(const struct dns_header *, msg)->tc;
+}
+
+static int get_wire_namelen(const void *noalias msg, ssize_t len) {
+    msg += sizeof(struct dns_header);
+    len -= sizeof(struct dns_header);
+    assert(len > 0);
+    const void *p = memchr(msg, 0, len);
+    assert(p);
+    return p + 1 - msg;
+}
+
+u16 dns_truncate(void *noalias msg, ssize_t len) {
+    cast(struct dns_header *, msg)->tc = 1;
+    return dns_empty_reply(msg, get_wire_namelen(msg, len));
+}
+
+u16 dns_empty_reply(void *noalias msg, int wire_namelen) {
     struct dns_header *h = msg;
     h->qr = DNS_QR_REPLY;
     h->rcode = DNS_RCODE_NOERROR;
     h->answer_count = 0;
     h->authority_count = 0;
     h->additional_count = 0;
-    return sizeof(struct dns_header) + wire_namelen + sizeof(struct dns_question);
+    return msg_minlen(wire_namelen);
 }
 
 bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_wire_namelen) {
@@ -283,25 +320,67 @@ bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_n
     return check_msg(false, msg, len, ascii_name, p_wire_namelen);
 }
 
-static bool test_ip(const void *noalias ip, bool v4, void *ud) {
-    int *res = ud;
-    *res = ipset_test_ip(ip, v4) ? DNS_TEST_IP_IS_CHNIP : DNS_TEST_IP_NOT_CHNIP;
-    return true; // break foreach
+static bool check_ip_datalen(u16 rtype, ssize_t rdatalen) {
+    int expect_len = (rtype == DNS_RECORD_TYPE_A) ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN;
+    unlikely_if (rdatalen != expect_len) {
+        char ipver = (rtype == DNS_RECORD_TYPE_A) ? '4' : '6';
+        log_error("rdatalen:%zd != sizeof(ipv%c):%d", rdatalen, ipver, expect_len);
+        return false;
+    }
+    return true;
 }
 
+static bool test_ip(const struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
+    u16 rtype = ntohs(record->rtype);
+
+    if (rtype == DNS_RECORD_TYPE_A || rtype == DNS_RECORD_TYPE_AAAA) {
+        unlikely_if (!check_ip_datalen(rtype, rdatalen))
+            return false;
+
+        int *res = ud;
+        bool v4 = rtype == DNS_RECORD_TYPE_A;
+        *res = ipset_test_ip(record->rdata, v4) ? DNS_TEST_IP_IS_CHNIP : DNS_TEST_IP_NOT_CHNIP;
+
+        *is_break = true;
+    }
+
+    return true;
+}
+
+static bool add_ip(const struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
+    (void)is_break;
+
+    u16 rtype = ntohs(record->rtype);
+
+    if (rtype == DNS_RECORD_TYPE_A || rtype == DNS_RECORD_TYPE_AAAA) {
+        unlikely_if (!check_ip_datalen(rtype, rdatalen))
+            return false;
+
+        bool v4 = rtype == DNS_RECORD_TYPE_A;
+        bool chn = (uintptr_t)ud;
+        ipset_add_ip(record->rdata, v4, chn);
+    }
+
+    return true;
+}
+
+#define answer_count(msg) \
+    ntohs(cast(const struct dns_header *, msg)->answer_count)
+
 int dns_test_ip(const void *noalias msg, ssize_t len, int wire_namelen) {
+    int count = answer_count(msg);
+    move_to_answer(msg, len, wire_namelen);
+
     int res = DNS_TEST_IP_NOT_FOUND;
-    unlikely_if (!foreach_ip(msg, len, wire_namelen, test_ip, &res))
-        return DNS_TEST_IP_BAD_MSG;
+    unlikely_if (!foreach_record(&msg, &len, count, test_ip, &res))
+        res = DNS_TEST_IP_BAD_MSG;
     return res;
 }
 
-static bool add_ip(const void *noalias ip, bool v4, void *ud) {
-    ipset_add_ip(ip, v4, (uintptr_t)ud);
-    return false; // not break foreach
-}
-
 void dns_add_ip(const void *noalias msg, ssize_t len, int wire_namelen, bool chn) {
-    foreach_ip(msg, len, wire_namelen, add_ip, (void *)(uintptr_t)chn);
+    int count = answer_count(msg);
+    move_to_answer(msg, len, wire_namelen);
+
+    foreach_record(&msg, &len, count, add_ip, (void *)(uintptr_t)chn);
     ipset_end_add_ip(chn);
 }

@@ -576,7 +576,7 @@ static int send_req(int n_msg) {
     int n_sent = sendall(SENDMMSG, s_sock, s_msgv, n_msg, 0);
     assert(n_sent != 0);
     unlikely_if (n_sent != n_msg)
-        log_error("failed to send nlmsg: %d != %d, (%d) %s", n_sent, n_msg, errno, strerror(errno));
+        log_error("failed to send nlmsg: %d != %d, (%d) %m", n_sent, n_msg, errno);
     return n_sent;
 }
 
@@ -590,7 +590,7 @@ static int recv_res(int n_msg, bool err_if_nomsg) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             n_recv = 0;
         unlikely_if (err_if_nomsg || n_recv < 0)
-            log_error("failed to recv nlmsg: (%d) %s", errno, strerror(errno));
+            log_error("failed to recv nlmsg: (%d) %m", errno);
     }
     return n_recv;
 }
