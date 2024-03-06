@@ -538,9 +538,10 @@ fn use_trust_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog)
 pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     var rmsg = in_rmsg;
 
-    var ascii_name: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
+    var ascii_namebuf: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
+    const p_ascii_namebuf: ?[*]u8 = if (g.verbose) &ascii_namebuf else null;
     var wire_namelen: c_int = undefined;
-    if (!dns.check_reply(rmsg.msg(), &ascii_name, &wire_namelen)) {
+    if (!dns.check_reply(rmsg.msg(), p_ascii_namebuf, &wire_namelen)) {
         log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url.ptr});
         return;
     }
@@ -549,7 +550,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
         .qid = dns.get_id(rmsg.msg()),
         .tag = null,
         .qtype = dns.get_qtype(rmsg.msg(), wire_namelen),
-        .name = &ascii_name,
+        .name = &ascii_namebuf,
         .url = upstream.url,
     } else undefined;
 
@@ -635,7 +636,7 @@ fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_t
                 .iov_len = @sizeOf(u16),
             },
             .{
-                .iov_base = cc.remove_const(msg.ptr),
+                .iov_base = msg.ptr,
                 .iov_len = msg.len,
             },
         };
