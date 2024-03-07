@@ -2,12 +2,12 @@
 
 [ChinaDNS](https://github.com/shadowsocks/ChinaDNS) 的个人重构版本，功能简述：
 
-- 使用 epoll 和 ipset(netlink) 实现，性能更强。
+- 基于 epoll、netlink(ipset/nftset) 实现，性能更强。
 - 完整支持 IPv4 和 IPv6 协议，兼容 EDNS 请求和响应。
 - 手动指定国内 DNS 和可信 DNS，而非自动识别，更加可控。
 - 修复原版对保留地址的处理问题，去除过时特性，只留核心功能。
 - 修复原版对可信 DNS 先于国内 DNS 返回而导致判断失效的问题。
-- 支持 `gfwlist/chnlist` 黑/白名单模式，并对 **时空效率** 进行了优化。
+- 支持 `gfwlist/chnlist` 域名列表，并深度优化了性能以及内存占用。
 - 支持纯域名分流：要么走china上游，要么走trust上游，不进行ip测试。
 - 可动态添加大陆域名结果IP至`ipset/nftset`，实现完美chnroute分流。
 - 可动态添加gfw域名结果IP至`ipset/nftset`，用于实现gfwlist透明代理。
@@ -16,7 +16,7 @@
 
 ---
 
-**正在开发 2.0 版本，预计支持 DNS 缓存、TCP/UDP 监听、TCP/UDP/DoH 上游，详见 [#144](https://github.com/zfl9/chinadns-ng/issues/144)**
+**正在开发 2.0 版本，计划支持 DNS 缓存、DoH 上游，以及其他常用特性。详见 [#144](https://github.com/zfl9/chinadns-ng/issues/144)**
 
 ---
 
@@ -42,71 +42,86 @@
 
 ## 编译
 
-> 不想编译或无法编译的（如低版本gcc），请前往 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的可执行文件（静态链接musl）。
+> 不想编译或无法编译的，请前往 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载预编译的可执行文件（静态链接 musl）。
+
+---
+
+**zig 工具链**
+
+- 从 2024.03.07 版本起，程序使用 Zig + C 语言编写，`zig` 是唯一需要的工具链。
+- 从 [ziglang.org](https://ziglang.org/download/) 下载 zig 0.10.1，请根据当前（编译）主机的架构来选择合适的版本。
+- 将解压后的目录加入 PATH 环境变量，执行 `zig version`，检查是否有输出 `0.10.1`。
+- 注意，目前必须使用 zig 0.10.1 版本，因为 0.11、master 版本暂时不支持 async 特性。
+
+---
 
 ```bash
 git clone https://github.com/zfl9/chinadns-ng
 cd chinadns-ng
-make && sudo make install
+
+# 为**本机**构建最优二进制
+zig build # [默认]链接到glibc
+zig build -Dtarget=native-native-musl # 静态链接到musl
+
+# x86_64
+zig build -Dtarget=x86_64-linux-musl -Dcpu=x86_64 # v1
+zig build -Dtarget=x86_64-linux-musl -Dcpu=x86_64_v2
+zig build -Dtarget=x86_64-linux-musl -Dcpu=x86_64_v3
+zig build -Dtarget=x86_64-linux-musl -Dcpu=x86_64_v4
+
+# arm
+zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v5t+soft_float
+zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v5te+soft_float
+zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v6+soft_float
+zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v6t2+soft_float
+zig build -Dtarget=arm-linux-musleabihf -Dcpu=generic+v7a # hard_float
+
+# aarch64
+zig build -Dtarget=aarch64-linux-musl -Dcpu=generic+v8a
+zig build -Dtarget=aarch64-linux-musl -Dcpu=generic+v9a
+
+# mips[大端] + soft_float
+# 请先阅读 https://www.zfl9.com/zig-mips.html
+ARCH=mips32 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH+soft_float
+ARCH=mips32r2 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH+soft_float
+ARCH=mips32r3 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH+soft_float
+ARCH=mips32r5 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH+soft_float
+
+# mipsel[小端] + soft_float
+# 请先阅读 https://www.zfl9.com/zig-mips.html
+ARCH=mips32 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH+soft_float
+ARCH=mips32r2 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH+soft_float
+ARCH=mips32r3 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH+soft_float
+ARCH=mips32r5 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH+soft_float
+
+# mips[大端] + hard_float
+# 请先阅读 https://www.zfl9.com/zig-mips.html
+ARCH=mips32 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH
+ARCH=mips32r2 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH
+ARCH=mips32r3 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH
+ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH
+
+# mipsel[小端] + hard_float
+# 请先阅读 https://www.zfl9.com/zig-mips.html
+ARCH=mips32 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
+ARCH=mips32r2 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
+ARCH=mips32r3 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
+ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
 ```
 
-相关`make`变量：
+如果遇到编译错误，请先执行 `zig build clean-all`，然后重新执行上述构建命令。
 
-- `CC`：指定编译器，默认是`gcc`，如交叉编译 `make clean all CC=/path/to/aarch64-linux-gnu-gcc`
-- `DEBUG`：编译`debug`版本（`gdb`调试信息），如 `make clean all DEBUG=1`
-- `STATIC`：生成静态链接（包括`libc`）的可执行文件，如 `make clean all STATIC=1`
-- `LDDIRS`：库文件搜索路径，通常用不到，格式 `make clean all LDDIRS=-L/path/to/libs`
-- `MAIN`：可执行文件名，默认是`chinadns-ng`
-- `DESTDIR`：指定安装目录，默认是`/usr/local/bin`
-
-> 如果是版本升级（或者为不同架构交叉编译），建议先 `make clean`，避免出现奇怪的问题。
-
-## 交叉编译
-
-这里推荐两种方法，支持静态链接(musl)，方便部署，避免glibc版本兼容问题：
-
-- <https://ziglang.org>：将 zig 作为 C 编译器来使用，即 `zig cc`（基于`clang/llvm`）
-- <https://musl.cc>：提供了预先构建好`gcc`工具链（linux x86 hosted），下载解压即可使用
-
-> musl 性能表现在**低端设备/嵌入式环境**下通常比 glibc 更优，但在 x86 架构（aarch64 不确定）可能不如 glibc。
-
-这里以`musl.cc`为例（`releases`的二进制就是用它编译的），为`aarch64`编译静态链接的`chinadns-ng`：
-
-```shell
-cd /opt
-
-# 获取下载地址
-curl https://musl.cc # 所有(native + cross)
-curl https://musl.cc | grep cross | grep aarch64 # aarch64
-
-# 下载工具链
-wget https://musl.cc/aarch64-linux-musl-cross.tgz
-
-# 解压工具链
-tar xvf aarch64-linux-musl-cross.tgz
-
-# 编译静态版本
-cd /path/to/chinadns-ng
-make clean all CC='/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc' STATIC=1
-
-# 然后使用 file 命令检查 chinadns-ng 可执行文件
-file ./chinadns-ng
-chinadns-ng: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
-
-# 可以使用 qemu-user-static 工具包来检查是否可运行
-pacman -S qemu-user-static # archlinux
-qemu-aarch64-static ./chinadns-ng --version
-```
+可执行文件在 ./zig-out/bin 目录，将文件安装（复制）到目标主机 PATH 路径下即可。
 
 ## Docker
 
 由于运行时会访问内核 ipset/nft 子系统，所以 docker run 时请带上 `--privileged`。
 
-建议去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载编译好的musl静态链接二进制，这样就不需要 build 了。
+建议去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载预编译好的 musl 静态链接二进制，这样就不需要 build 了。
 
 ## OpenWrt
 
-- 由 pexcn 维护：https://github.com/pexcn/openwrt-chinadns-ng
+- pexcn：https://github.com/pexcn/openwrt-chinadns-ng
 - 部分科学上网插件自带了 chinadns-ng，你也可以直接使用它们
 
 ## 命令选项
@@ -114,16 +129,17 @@ qemu-aarch64-static ./chinadns-ng --version
 ```console
 $ chinadns-ng --help
 usage: chinadns-ng <options...>. the existing options are as follows:
- -b, --bind-addr <ip-address>         listen address, default: 127.0.0.1
- -l, --bind-port <port-number>        listen port number, default: 65353
- -c, --china-dns <ip[#port],...>      china dns server, default: <114DNS>
- -t, --trust-dns <ip[#port],...>      trust dns server, default: <GoogleDNS>
+ -C, --config <path>                  format similar to the long option
+ -b, --bind-addr <ip>                 listen address, default: 127.0.0.1
+ -l, --bind-port <port>               listen port number, default: 65353
+ -c, --china-dns <upstream,...>       china dns server, default: <114 DNS>
+ -t, --trust-dns <upstream,...>       trust dns server, default: <Google DNS>
  -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin
  -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin
  -M, --chnlist-first                  match chnlist first, default gfwlist first
- -d, --default-tag <name-tag>         domain default tag: chn,gfw,none(default)
+ -d, --default-tag <tag>              domain default tag: chn,gfw,none(default)
  -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nft
-                                      use '--ipset-name4/6' set-name if no arg
+                                      use '--ipset-name4/6' setname if no value
  -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft
  -4, --ipset-name4 <set4>             ip test for tag:none, default: chnroute
  -6, --ipset-name6 <set6>             ip test for tag:none, default: chnroute6
@@ -131,16 +147,16 @@ usage: chinadns-ng <options...>. the existing options are as follows:
                                       format: family_name@table_name@set_name
  -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:
                                       rule a: filter all domain name (default)
-                                      rule m: filter the name with tag chn
-                                      rule g: filter the name with tag gfw
-                                      rule n: filter the name with tag none
+                                      rule m: filter the domain with tag chn
+                                      rule g: filter the domain with tag gfw
+                                      rule n: filter the domain with tag none
                                       rule c: do not forward to china upstream
                                       rule t: do not forward to trust upstream
                                       rule C: check answer ip of china upstream
                                       rule T: check answer ip of trust upstream
                                       if no rules is given, it defaults to 'a'
- -o, --timeout-sec <query-timeout>    timeout of the upstream dns, default: 5
- -p, --repeat-times <repeat-times>    only used for trustdns, default:1, max:5
+ -o, --timeout-sec <sec>              response timeout of upstream, default: 5
+ -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
  -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
  -f, --fair-mode                      enable fair mode (nop, only fair mode now)
  -r, --reuse-port                     enable SO_REUSEPORT, default: <disabled>
@@ -152,25 +168,42 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ---
 
-- `bind-addr` 用于指定监听地址（IPv4 or IPv6），默认为 127.0.0.1。
-- `bind-port` 用于指定监听端口（UDP 端口），默认为 65353。
-- 若监听地址为 `::`，则允许来自 IPv4/IPv6 的 DNS 查询（2023.10.28 版本起）。
+- 2023.03.06 版本起，开始支持 `-C/--config <path>` 选项。
+- `config` 配置文件，一行一个，空行和`#`开头的行被忽略。
+  - 格式 `optname [value]`，`optname` 是不带 `--` 的长命令行选项名。
+  - 例如 `bind-addr 127.0.0.1`、`bind-port 65353`、`noip-as-chnip`。
+  - 不支持行尾注释（如 `verbose # foo`），请使用单独的`#`开头行。
+  - 配置文件内可使用 `config path/to/config` 实现文件包含的效果。
+  - 命令行选项中也可以指定多个 `-C/--config` 来使用多个配置文件。
 
 ---
 
-- `china-dns` 选项指定国内上游 DNS 服务器，最多两个，逗号隔开。
-- `trust-dns` 选项指定可信上游 DNS 服务器，最多两个，逗号隔开。
-- 国内上游默认为 `114.114.114.114#53`，可信上游默认为 `8.8.8.8#53`。
+- `bind-addr` 用于指定监听地址，默认为 127.0.0.1。
+- `bind-port` 用于指定监听端口，默认为 65353。
+- 2023.10.28 版本起，若监听地址为 `::`，则允许来自 IPv4/IPv6 的 DNS 查询。
+- 2024.03.07 版本起，`bind-addr` 允许指定多次，以便监听多个不同的 ip 地址。
+- 2024.03.07 版本起，将会同时监听 TCP 和 UDP 端口，之前只监听了 UDP 端口。
+
+---
+
+- `china-dns` 选项指定国内上游 DNS 服务器，多个用逗号隔开。
+- `trust-dns` 选项指定可信上游 DNS 服务器，多个用逗号隔开。
+- 国内上游默认为 `114.114.114.114`，可信上游默认为 `8.8.8.8`。
 - 组内的多个上游服务器是并发查询的模式，采纳最先返回的那个结果。
 - 上游服务器的地址格式是 `IP#端口`，如果只给出 IP，则端口默认为 53。
+- 2024.03.07 版本起，允许多次指定 `china-dns`、`trust-dns` 选项/配置。
+- 2024.03.07 版本起，每组上游的服务器数量不受限制（之前最多两个）。
+- 2024.03.07 版本起，可在上游地址前加上 `tcp://` 来强制使用 TCP DNS。
+- 2024.03.07 版本起，支持 UDP + TCP 上游（根据查询方的传入协议决定）。
 
 ---
 
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
-- 可指定多个文件路径，使用英文逗号隔开，如 `-g a.txt,b.txt,c.txt`。
 - `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
 - 注意，只有 chnlist 和 gfwlist 文件都提供时，`*-first` 才有实际意义。
+- 2023.04.01 版本起，可指定多个路径，逗号隔开，如 `-g a.txt,b.txt`。
+- 2024.03.07 版本起，可多次指定 `chnlist-file`、`gfwlist-file` 选项。
 
 ---
 
@@ -202,40 +235,39 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ---
 
 - `no-ipv6` 用于过滤 AAAA 查询（查询域名的 IPv6 地址），默认不设置此选项。
-  - `2023.02.27`版本开始，允许指定一个可选的"规则串"，有如下规则：
+  - 2023.02.27 版本起，允许指定一个可选的"规则串"，有如下规则：
   - `a`：过滤 所有 域名的 AAAA 查询，同之前
   - `m`：过滤 tag:chn 域名的 AAAA 查询
   - `g`：过滤 tag:gfw 域名的 AAAA 查询
   - `n`：过滤 tag:none 域名的 AAAA 查询
   - `c`：禁止向 china 上游转发 AAAA 查询
   - `t`：禁止向 trust 上游转发 AAAA 查询
-  - `C`：当 tag:none 域名的 AAAA 查询只存在 china 上游路径时，过滤 china 上游的 非大陆ip 响应
-  - `T`：当 tag:none 域名的 AAAA 查询只存在 trust 上游路径时，过滤 trust 上游的 非大陆ip 响应
+  - `C`：当 tag:none 域名的 AAAA 查询只存在 china 上游路径时，过滤 非大陆ip 响应
+  - `T`：当 tag:none 域名的 AAAA 查询只存在 trust 上游路径时，过滤 非大陆ip 响应
   - 如`-N gt`/`--no-ipv6 gt`：过滤 tag:gfw 域名的 AAAA 查询、禁止向 trust 上游转发 AAAA 查询
 
 ---
 
-- `timeout-sec` 选项用于指定上游的响应超时时长，单位秒，默认 5 秒。
-- `repeat-times` 用于给可信 DNS [重复发包](#trust上游存在一定的丢包怎么缓解)，默认值为 1，最大值为 5。
-- `noip-as-chnip` 表示接收来自 china 上游的没有 IP 的响应，[详细说明](#--noip-as-chnip-选项的作用)。
+- `timeout-sec` 用于指定上游的响应超时时长，单位秒，默认 5 秒。
+- `repeat-times` 针对可信 DNS (UDP) [重复发包](#trust上游存在一定的丢包怎么缓解)，默认为 1，最大为 5。
+- `noip-as-chnip` 接受来自 china 上游的没有 IP 地址的响应，[详细说明](#--noip-as-chnip-选项的作用)。
 - `fair-mode` 从`2023.03.06`版本开始，只有公平模式，指不指定都一样。
 - `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 ## 域名列表
 
-- 域名列表文件格式是按行分隔的**域名后缀**，如`baidu.com`、`www.google.com`、`www.google.com.hk`，不要以`.`开头或结尾，出于性能考虑，域名`label`数量做了人为限制，最多只能`4`个，过长的会被截断，如`test.www.google.com.hk`截断为`www.google.com.hk`。如果需要，也可以修改源码的`LABEL_MAXCNT`常量来调整最大`label`数。
+- 域名列表的文件格式是按行分隔的**域名后缀**，如`baidu.com`、`www.google.com`、`www.google.com.hk`，不要以`.`开头或结尾，出于性能考虑，域名`label`数量做了人为限制，最多只能`4`个，过长的会被截断，如`test.www.google.com.hk`截断为`www.google.com.hk`。
 
 - 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
 
-- 从 2023.04.17 版本开始，在匹配一个域名时，将优先考虑子域名模式而不是父域名模式，使匹配逻辑更加合理。举个例子，假设 gfwlist 中有 tw.iqiyi.com 模式，chnlist 中有 iqiyi.com 模式；则不论黑白名单哪个优先，查询 tw.iqiyi.com 和 *.tw.iqiyi.com 都是命中 gfwlist 列表。因此 gfwlist优先/chnlist优先 在新版本中只对完全相同的域名模式有影响。
+- 2023.04.17 版本起，在匹配一个域名时，将优先考虑子域名模式而不是父域名模式。举个例子，假设 gfwlist 中有 `tw.iqiyi.com`，chnlist 中有 `iqiyi.com`；则不论黑白名单哪个优先，查询 `tw.iqiyi.com` 和 `*.tw.iqiyi.com` 都是命中 gfwlist 列表。因此 `gfwlist优先、chnlist优先` 在新版本中只对两个列表中 **完全相同** 的域名模式有影响。
 
-- 建议同时启用黑名单和白名单，不必担心查询效率，条目数量只会影响一点内存占用，对查询速度没影响，也不必担心内存占用，我在`Linux x86-64 (CentOS 7)`上的实测数据如下：
+- 建议同时启用黑名单和白名单，不必担心查询效率，条目数量只会影响一点儿内存占用，对查询速度没影响，也不必担心内存占用，我在`Linux x86-64 (CentOS 7)`上的实测数据如下：
   - 没有黑白名单时，内存为`140`KB；
   - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
   - 加载 5700+ 条`gfwlist`以及 73300+ 条`chnlist`时，内存为`2424`KB；
-  - 注：这些内存占用未计算`libc.so`，因为这些共享库实际上是所有进程共享一份内存；另外也没有计算stack的虚拟内存占用，因为linux默认stack大小为8MB，但实际上根本用不了这么多。
-  - 如果确实内存吃紧，可以只加载`gfwlist`，或者使用更加精简的chnlist替代源。
+  - 如果确实内存吃紧，可以使用更加精简的chnlist替代源（不建议只使用gfwlist列表）。
   - 2023.04.11 版本针对域名列表的内存占用做了进一步优化，因此占用会更少，测试数据就不贴了。
 
 ## 简单测试
@@ -262,7 +294,7 @@ chinadns-ng -g gfwlist.txt -m chnlist.txt -a # 使用 ipset
 chinadns-ng -g gfwlist.txt -m chnlist.txt -a -4 inet@global@chnroute -6 inet@global@chnroute6 # 使用 nft
 ```
 
-chinadns-ng 默认监听 `127.0.0.1:65353/udp`，可以给 chinadns-ng 带上 -v 参数，使用 dig 测试，观察其日志。
+chinadns-ng 默认监听 `127.0.0.1:65353`，可以给 chinadns-ng 带上 -v 参数，使用 dig 测试，观察其日志。
 
 ## 常见问题
 
@@ -330,7 +362,14 @@ chinadns-ng -g gfwlist.txt -m chnlist.txt 其他参数... # 重新运行 chinadn
 
 ### 如何使用 TCP 协议与 DNS 上游进行通信
 
-原生只支持 UDP 协议，如果想使用 TCP 访问上游，可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具，作为 chinadns-ng 的上游。其他协议也是一样的道理，比如 DoH/DoT/DoQ，可以借助 https://github.com/AdguardTeam/dnsproxy 等实用工具。
+从 2024.03.07 版本开始，有以下更改：
+
+- 假设上游地址为 `1.1.1.1`，则根据**查询方的传入协议**来选择与上游的通信协议：
+  - 若查询方的传入协议为 UDP，则 chinadns-ng 与该上游的通信协议是 UDP。
+  - 若查询方的传入协议为 TCP，则 chinadns-ng 与该上游的通信协议是 TCP。
+- 假设上游地址为 `tcp://1.1.1.1`，则 chinadns-ng 与该上游的通信方式总是 TCP。
+
+对于之前的版本，原生只支持 UDP 协议，如果想使用 TCP 访问上游，可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具，作为 chinadns-ng 的上游。其他协议也是一样的道理，比如 DoH/DoT/DoQ，可以借助 https://github.com/AdguardTeam/dnsproxy 等实用工具。
 
 ```bash
 # 运行 dns2tcp
@@ -344,13 +383,19 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 为什么不内置 TCP、DoH、DoT 等协议的支持
 
-并不是所有人都使用 DoH/DoT，如果要支持这些协议，必然要引入 openssl 等依赖，增加二进制体积（如果静态链接），但这不是主要原因，真正原因是代码复杂度，我想让代码保持简单，只做真正必要的事情，其他事情让专业的工具去干。简而言之，保持简单和愚蠢，只做一件事，并认真做好这件事。
+> 2023.03.06 版本起，已内置完整的 TCP 支持（传入、传出）；DoH 也许会在 2.0 中实现。
+
+我想让代码保持简单，只做真正必要的事情，其他事情让专业的工具去干。
+
+换句话说，保持简单和愚蠢，只做一件事，并认真做好这件事。
 
 ---
 
 ### chinadns-ng 并不读取 chnroute.ipset、chnroute6.ipset
 
-启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 套接字询问 ipset 模块，指定 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段除了性能好之外，还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。~~TODO：支持`nftables sets`~~（已支持）。
+> 只有 tag:none 域名存在 ipset/nftset 判断&&过滤，tag:gfw 和 tag:chn 域名不会走 ip test 逻辑。
+
+启动时也不会检查这些 ipset 集合是否存在，它只是在收到 dns 响应时通过 netlink 询问 ipset 模块，给定的 ip 是否存在。这种机制使得我们可以在 chinadns-ng 运行时直接更新 chnroute、chnroute6 列表，它会立即生效，不需要重启 chinadns-ng。使用 ipset 存储地址段还能与 iptables 规则更好的契合，因为不需要维护两份独立的 chnroute 列表。~~TODO：支持`nftables sets`~~（已支持）。
 
 ---
 
@@ -358,7 +403,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 将对应的保留地址(段)加入到 `chnroute`、`chnroute6` 集合即可。chinadns-ng 判断是否为"大陆IP"的核心就是查询 chnroute、chnroute6 集合，程序内部并没有其他隐含的判断规则。
 
-注意：只有 tag:none 域名需要这么做；对于 tag:chn 域名，chinadns-ng 只是单纯转发，不涉及 ipset/nftset 判定；所以你也可以将相关域名加入 chnlist.txt（支持从多个文件加载域名列表）。
+注意：**只有 tag:none 域名需要这么做**；对于 tag:chn 域名，chinadns-ng 只是单纯转发，不涉及 ipset/nftset 判定；所以你也可以将相关域名加入 chnlist.txt（支持从多个文件加载域名列表）。
 
 为什么没有默认将保留地址加入 `chnroute*.ipset/nftset`？因为我担心 gfw 会给受污染域名返回保留地址，所以没放到 chnroute 去。不过现在受污染域名都走 gfwlist.txt 机制了，只会走 trust 上游，加进去应该没问题。
 
@@ -366,25 +411,26 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### received an error code from kernel: (-2) No such file or directory
 
+> 只有 tag:none 域名存在 ipset/nftset 判断&&过滤，tag:gfw 和 tag:chn 域名不会走 ip test 逻辑。
+
 意思是指定的 ipset 集合不存在；如果是 `[ipset_addr4_is_exists]` 提示此错误，说明没有导入 `chnroute` ipset（IPv4）；如果是 `[ipset_addr6_is_exists]` 提示此错误，说明没有导入 `chnroute6` ipset（IPv6）。要解决此问题，请导入项目根目录下 `chnroute.ipset`、`chnroute6.ipset` 文件。
 
 需要提示的是：chinadns-ng 在查询 ipset 集合时，如果遇到类似的 ipset 错误，都会将给定 IP 视为国外 IP。因此如果你因为各种原因不想导入 `chnroute6.ipset`，那么产生的效果就是：当客户端查询 IPv6 域名时（即 AAAA 查询），会导致所有国内 DNS 返回的解析结果都被过滤，然后采用可信 DNS 的解析结果。
-
-> 只有 tag:none 域名存在 ipset/nftset 判断&&过滤，tag:gfw 和 tag:chn 域名不会走 ip test 逻辑。
 
 ---
 
 ### trust上游存在一定的丢包，怎么缓解
 
-如果 trust 上游存在丢包的情况（特别是 udp-based 类型的代理隧道），可以使用 `--repeat-times` 选项进行一定的缓解。比如设置为 3，表示：chinadns-ng 从客户端收到一个 query 包后，会同时向 trust 上游转发 3 个相同的 query 包（默认是发 1 个包）。其实就是 **多倍发包**、**重复发包**，并没有其它魔力。
+- 方法1：**重复发包**，也即 `--repeat-times N` 选项，这里的 `N` 默认为 1，可以改为 3，表示在给一个 trust 上游（UDP）转发查询消息时，同时发送 3 个相同的查询消息。
+- 方法2：**TCP查询**，对于新版本（>= 2024.03.07），在 trust 上游的地址前加上 `tcp://`；对于老版本，可以加一层 [dns2tcp](https://github.com/zfl9/dns2tcp)，来将 chinadns-ng 发出的 UDP 查询转为 TCP 查询。
 
-或者换个思路，将发往 trust 上游的 dns 查询从 udp 转为 tcp；因为对于天朝网络，由于 QoS 等因素，tcp 流量的优先级通常比 udp 高，而且 tcp 传输协议本身就提供丢包重传，比重复发包策略更可靠。另外，有些代理处理 udp 流量的效率要低于 tcp，可能会出现 tcp 查询耗时低于 udp 的情况。
+这里推荐方法2，因为 QoS 等因素，TCP 流量的优先级通常比 UDP 高，且 TCP 本身就提供了丢包重传等机制，比重复发包策略更可靠。另外，很多代理程序的 UDP 实现效率较低，很有可能出现 TCP 查询总体耗时低于 UDP 查询的情况。
 
 ---
 
-### 为何选择 ipset 来处理 chnroute 查询
+### 为何选择 ipset/nftset 来处理 chnroute 查询
 
-有多种原因，一是因为使用 ipset 可以与 iptables 规则共用一份 chnroute；二是因为目前无法自己实现高效率的`ip(cidr)`查询，所以借助`ipset`内核模块。
+因为使用 ipset/nftset 可以与 iptables/nftables 规则共用一份 chnroute；达到联动的效果。
 
 ---
 
@@ -396,19 +442,13 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 是否打算支持 geoip.dat 等格式的 chnroute
 
-目前没有这个计划，因为如果要自己实现 chnroute 集合，那就要实现高性能的数据结构和算法，这有点超出了我的能力范围。但主要还是因为 chinadns-ng 通常与 iptables/nftables 一起使用（配合透明代理），若使用非 ipset/nftset 实现，会导致两份重复的 chnroute。
+目前没有这个计划，因为如果要自己实现 chnroute 集合，那就要实现高性能的数据结构和算法，这有点超出了我的能力范围。但更重要的是因为 chinadns-ng 通常与 iptables/nftables 一起使用（配合透明代理），若使用非 ipset/nftset 实现，会导致两份重复的 chnroute，且无法与 iptables/nftables 规则实现联动。
 
 ---
 
 ### 是否打算支持 geosite.dat 等格式的 gfwlist/chnlist
 
 目前也没有这个计划，这些二进制格式需要引入 protobuf 等库，我不是很想引入依赖，而且 geosite.dat 本身也大。
-
----
-
-### chinadns-ng 原则上只为替代原版 chinadns，复杂功能或者非核心功能不打算实现
-
-目前个人用法：dnsmasq 做 DNS 缓存、ipset（处理某些特殊需求的域名，将其解析出来的 IP 动态添加至 ipset，便于 iptables 操作）、以及其他附加服务（如 DHCP）；chinadns-ng 则作为 dnsmasq 的上游服务器，配合 ss-tproxy 透明代理，提供无污染的 DNS 解析服务。
 
 ---
 
