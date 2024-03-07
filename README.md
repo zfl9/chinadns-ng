@@ -78,6 +78,7 @@ zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v5t+soft_float
 zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v5te+soft_float
 zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v6+soft_float
 zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v6t2+soft_float
+zig build -Dtarget=arm-linux-musleabi -Dcpu=generic+v7a # soft_float
 zig build -Dtarget=arm-linux-musleabihf -Dcpu=generic+v7a # hard_float
 
 # aarch64
