@@ -63,6 +63,10 @@ cd chinadns-ng
 zig build # [默认]链接到glibc
 zig build -Dtarget=native-native-musl # 静态链接到musl
 
+# x86
+zig build -Dtarget=i386-linux-musl -Dcpu=i686
+zig build -Dtarget=i386-linux-musl -Dcpu=pentium4
+
 # x86_64
 zig build -Dtarget=x86_64-linux-musl -Dcpu=x86_64 # v1
 zig build -Dtarget=x86_64-linux-musl -Dcpu=x86_64_v2
@@ -107,6 +111,8 @@ ARCH=mips32 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARC
 ARCH=mips32r2 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
 ARCH=mips32r3 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
 ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
+
+# mips64、mips64el 暂不支持，需要等 zig 这边的版本更新
 ```
 
 如果遇到编译错误，请先执行 `zig build clean-all`，然后重新执行上述构建命令。
