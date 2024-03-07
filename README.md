@@ -181,6 +181,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 不支持行尾注释（如 `verbose # foo`），请使用单独的`#`开头行。
   - 配置文件内可使用 `config path/to/config` 实现文件包含的效果。
   - 命令行选项中也可以指定多个 `-C/--config` 来使用多个配置文件。
+- `-C/--config/config` 只是从文件读取“命令行选项”并处理，无其他特别之处。
+- `-C/--config` 与其他命令行选项可随意混用，不可重复的选项以最后一个为准。
 
 ---
 
