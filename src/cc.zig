@@ -588,8 +588,8 @@ pub const SockAddr = extern union {
     pub fn eql(self: *const SockAddr, other: *const SockAddr) bool {
         const af = self.family();
         return af == other.family() and switch (af) {
-            c.AF_INET => std.mem.eql(u8, std.mem.asBytes(&self.sin), std.mem.asBytes(&self.sin)),
-            c.AF_INET6 => std.mem.eql(u8, std.mem.asBytes(&self.sin6), std.mem.asBytes(&self.sin6)),
+            c.AF_INET => std.mem.eql(u8, std.mem.asBytes(&self.sin), std.mem.asBytes(&other.sin)),
+            c.AF_INET6 => std.mem.eql(u8, std.mem.asBytes(&self.sin6), std.mem.asBytes(&other.sin6)),
             else => false,
         };
     }
