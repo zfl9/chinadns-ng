@@ -378,7 +378,7 @@ chinadns-ng -g gfwlist.txt -m chnlist.txt 其他参数... # 重新运行 chinadn
   - 若查询方的传入协议为 TCP，则 chinadns-ng 与该上游的通信协议是 TCP。
 - 假设上游地址为 `tcp://1.1.1.1`，则 chinadns-ng 与该上游的通信方式总是 TCP。
 
-对于之前的版本，原生只支持 UDP 协议，如果想使用 TCP 访问上游，可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具，作为 chinadns-ng 的上游。其他协议也是一样的道理，比如 DoH/DoT/DoQ，可以借助 https://github.com/AdguardTeam/dnsproxy 等实用工具。
+对于之前的版本，原生只支持 UDP 协议，如果想使用 TCP 访问上游，可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具，作为 chinadns-ng 的上游。其他协议也是一样的道理，比如 DoH/DoT/DoQ，可以借助 [dnsproxy](https://github.com/AdguardTeam/dnsproxy) 等实用工具。
 
 ```bash
 # 运行 dns2tcp
@@ -433,7 +433,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 - 方法1：**重复发包**，也即 `--repeat-times N` 选项，这里的 `N` 默认为 1，可以改为 3，表示在给一个 trust 上游（UDP）转发查询消息时，同时发送 3 个相同的查询消息。
 - 方法2：**TCP查询**，对于新版本（>= 2024.03.07），在 trust 上游的地址前加上 `tcp://`；对于老版本，可以加一层 [dns2tcp](https://github.com/zfl9/dns2tcp)，来将 chinadns-ng 发出的 UDP 查询转为 TCP 查询。
 
-这里推荐方法2，因为 QoS 等因素，TCP 流量的优先级通常比 UDP 高，且 TCP 本身就提供了丢包重传等机制，比重复发包策略更可靠。另外，很多代理程序的 UDP 实现效率较低，很有可能出现 TCP 查询总体耗时低于 UDP 查询的情况。
+推荐方法2，因为 QoS 等因素，TCP 流量的优先级通常比 UDP 高，且 TCP 本身就提供丢包重传等机制，比重复发包策略更可靠。另外，很多代理程序的 UDP 实现效率较低，很有可能出现 TCP 查询总体耗时低于 UDP 查询的情况。
 
 ---
 
