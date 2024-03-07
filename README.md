@@ -84,28 +84,28 @@ zig build -Dtarget=arm-linux-musleabihf -Dcpu=generic+v7a # hard_float
 zig build -Dtarget=aarch64-linux-musl -Dcpu=generic+v8a
 zig build -Dtarget=aarch64-linux-musl -Dcpu=generic+v9a
 
-# mips[大端] + soft_float
+# mips + soft_float
 # 请先阅读 https://www.zfl9.com/zig-mips.html
 ARCH=mips32 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH+soft_float
 ARCH=mips32r2 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH+soft_float
 ARCH=mips32r3 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH+soft_float
 ARCH=mips32r5 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH+soft_float
 
-# mipsel[小端] + soft_float
+# mipsel + soft_float
 # 请先阅读 https://www.zfl9.com/zig-mips.html
 ARCH=mips32 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH+soft_float
 ARCH=mips32r2 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH+soft_float
 ARCH=mips32r3 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH+soft_float
 ARCH=mips32r5 && MIPS_M_ARCH=$ARCH MIPS_SOFT_FP=1 zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH+soft_float
 
-# mips[大端] + hard_float
+# mips + hard_float
 # 请先阅读 https://www.zfl9.com/zig-mips.html
 ARCH=mips32 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH
 ARCH=mips32r2 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH
 ARCH=mips32r3 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH
 ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mips-linux-musl -Dcpu=$ARCH
 
-# mipsel[小端] + hard_float
+# mipsel + hard_float
 # 请先阅读 https://www.zfl9.com/zig-mips.html
 ARCH=mips32 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
 ARCH=mips32r2 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
@@ -174,7 +174,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ---
 
-- 2023.03.06 版本起，开始支持 `-C/--config <path>` 选项。
+- 2024.03.07 版本起，开始支持 `-C/--config <path>` 选项。
 - `config` 配置文件，一行一个，空行和`#`开头的行被忽略。
   - 格式 `optname [value]`，`optname` 是不带 `--` 的长命令行选项名。
   - 例如 `bind-addr 127.0.0.1`、`bind-port 65353`、`noip-as-chnip`。
@@ -389,7 +389,7 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 为什么不内置 TCP、DoH、DoT 等协议的支持
 
-> 2023.03.06 版本起，已内置完整的 TCP 支持（传入、传出）；DoH 也许会在 2.0 中实现。
+> 2024.03.07 版本起，已内置完整的 TCP 支持（传入、传出）；DoH 也许会在 2.0 中实现。
 
 我想让代码保持简单，只做真正必要的事情，其他事情让专业的工具去干。
 
