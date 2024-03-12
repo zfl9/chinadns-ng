@@ -28,10 +28,10 @@
 
 #define DNS_RCODE_NOERROR 0
 
-/* qtype(rtype) */
-#define DNS_RECORD_TYPE_A 1 /* ipv4 address */
-#define DNS_RECORD_TYPE_AAAA 28 /* ipv6 address */
-#define DNS_RECORD_TYPE_OPT 41 /* EDNS pseudo-RR */
+/* qtype, rtype */
+#define DNS_TYPE_A 1 /* ipv4 address */
+#define DNS_TYPE_AAAA 28 /* ipv6 address */
+#define DNS_TYPE_OPT 41 /* EDNS pseudo-RR */
 
 u16 dns_get_id(const void *noalias msg);
 

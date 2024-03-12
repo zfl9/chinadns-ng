@@ -160,7 +160,7 @@ static const char *ipset_strerror(int errcode) {
 #define MSG_N (IP_N * 2)
 
 #define iplen(v4) \
-    ((v4) ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN)
+    ((v4) ? IPV4_LEN : IPV6_LEN)
 
 #define BUFSZ_TEST_IPSET(v4) ( \
     sizeof(struct nlnfhdr) + \

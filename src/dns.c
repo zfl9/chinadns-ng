@@ -195,7 +195,7 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
 #define skip_record(p_ptr, p_len, count) \
     foreach_record(p_ptr, p_len, count, NULL, NULL)
 
-static bool foreach_record(const void *noalias *noalias p_ptr, ssize_t *noalias p_len, int count, 
+static bool foreach_record(const void *noalias *noalias p_ptr, ssize_t *noalias p_len, int count,
     bool (*f)(const struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break), void *ud) 
 {
     if (count <= 0)
@@ -259,7 +259,7 @@ u16 dns_get_qtype(const void *noalias msg, int wire_namelen) {
 static bool get_bufsz(const struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
     (void)rdatalen;
 
-    if (ntohs(record->rtype) == DNS_RECORD_TYPE_OPT) {
+    if (ntohs(record->rtype) == DNS_TYPE_OPT) {
         u16 sz = ntohs(record->rclass);
 
         if (sz < DNS_EDNS_MINSIZE)
@@ -287,7 +287,7 @@ u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int wire_namelen) {
     move_to_answer(msg, len, wire_namelen);
 
     /* skip answer && authority section */
-    unlikely_if (!skip_record(&msg, &len, ntohs(h->answer_count)) || !skip_record(&msg, &len, ntohs(h->authority_count)))
+    unlikely_if (!skip_record(&msg, &len, ntohs(h->answer_count) + ntohs(h->authority_count)))
         return bufsz;
 
     foreach_record(&msg, &len, ntohs(h->additional_count), get_bufsz, &bufsz);
@@ -315,6 +315,7 @@ u16 dns_truncate(void *noalias msg, ssize_t len) {
 u16 dns_empty_reply(void *noalias msg, int wire_namelen) {
     struct dns_header *h = msg;
     h->qr = DNS_QR_REPLY;
+    h->ra = 1;
     h->rcode = DNS_RCODE_NOERROR;
     h->answer_count = 0;
     h->authority_count = 0;
@@ -331,9 +332,9 @@ bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_n
 }
 
 static bool check_ip_datalen(u16 rtype, ssize_t rdatalen) {
-    int expect_len = (rtype == DNS_RECORD_TYPE_A) ? IPV4_BINADDR_LEN : IPV6_BINADDR_LEN;
+    int expect_len = (rtype == DNS_TYPE_A) ? IPV4_LEN : IPV6_LEN;
     unlikely_if (rdatalen != expect_len) {
-        char ipver = (rtype == DNS_RECORD_TYPE_A) ? '4' : '6';
+        char ipver = (rtype == DNS_TYPE_A) ? '4' : '6';
         log_error("rdatalen:%zd != sizeof(ipv%c):%d", rdatalen, ipver, expect_len);
         return false;
     }
@@ -343,12 +344,12 @@ static bool check_ip_datalen(u16 rtype, ssize_t rdatalen) {
 static bool test_ip(const struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
     u16 rtype = ntohs(record->rtype);
 
-    if (rtype == DNS_RECORD_TYPE_A || rtype == DNS_RECORD_TYPE_AAAA) {
+    if (rtype == DNS_TYPE_A || rtype == DNS_TYPE_AAAA) {
         unlikely_if (!check_ip_datalen(rtype, rdatalen))
             return false;
 
         int *res = ud;
-        bool v4 = rtype == DNS_RECORD_TYPE_A;
+        bool v4 = rtype == DNS_TYPE_A;
         *res = ipset_test_ip(record->rdata, v4) ? DNS_TEST_IP_IS_CHNIP : DNS_TEST_IP_NOT_CHNIP;
 
         *is_break = true;
@@ -362,11 +363,11 @@ static bool add_ip(const struct dns_record *noalias record, ssize_t rdatalen, vo
 
     u16 rtype = ntohs(record->rtype);
 
-    if (rtype == DNS_RECORD_TYPE_A || rtype == DNS_RECORD_TYPE_AAAA) {
+    if (rtype == DNS_TYPE_A || rtype == DNS_TYPE_AAAA) {
         unlikely_if (!check_ip_datalen(rtype, rdatalen))
             return false;
 
-        bool v4 = rtype == DNS_RECORD_TYPE_A;
+        bool v4 = rtype == DNS_TYPE_A;
         bool chn = (uintptr_t)ud;
         ipset_add_ip(record->rdata, v4, chn);
     }

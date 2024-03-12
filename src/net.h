@@ -11,8 +11,8 @@
 #include <sys/epoll.h>
 
 /* ipv4/ipv6 address length (binary) */
-#define IPV4_BINADDR_LEN 4  /* 4byte, 32bit */
-#define IPV6_BINADDR_LEN 16 /* 16byte, 128bit */
+#define IPV4_LEN 4  /* 4byte, 32bit */
+#define IPV6_LEN 16 /* 16byte, 128bit */
 
 /* https://git.musl-libc.org/cgit/musl/tree/src/network/sendmmsg.c */
 /* https://man7.org/linux/man-pages/man2/sendmsg.2.html */

@@ -376,7 +376,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
     var tagnone_to_trust = true;
 
     // no-AAAA filter
-    if (qtype == c.DNS_RECORD_TYPE_AAAA and !g.noaaaa_query.is_empty()) {
+    if (qtype == c.DNS_TYPE_AAAA and !g.noaaaa_query.is_empty()) {
         if (g.noaaaa_query.filter(name_tag)) |by_rule| {
             if (g.verbose) querylog.noaaaa(by_rule);
             var reply_msg = msg;
@@ -477,11 +477,11 @@ fn use_china_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog)
     const qtype = dns.get_qtype(msg, wire_namelen);
 
     // only filter A/AAAA
-    if (qtype != c.DNS_RECORD_TYPE_A and qtype != c.DNS_RECORD_TYPE_AAAA)
+    if (qtype != c.DNS_TYPE_A and qtype != c.DNS_TYPE_AAAA)
         return true;
 
     // no-aaaa filter
-    const only_china = qtype == c.DNS_RECORD_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.TRUST_DNS);
+    const only_china = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.TRUST_DNS);
     if (only_china and !g.noaaaa_query.has(NoAAAA.CHINA_IPCHK))
         return true;
 
@@ -517,7 +517,7 @@ fn use_trust_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog)
     const qtype = dns.get_qtype(msg, wire_namelen);
 
     // no-aaaa filter
-    const only_trust = qtype == c.DNS_RECORD_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.CHINA_DNS);
+    const only_trust = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.CHINA_DNS);
     if (!only_trust)
         return false; // waiting for chinadns
 

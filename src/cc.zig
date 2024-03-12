@@ -546,7 +546,7 @@ inline fn SIG_ERR() sighandler_t {
 pub const IpStrBuf = [c.INET6_ADDRSTRLEN - 1:0]u8;
 
 pub fn get_ipstr_family(ip: ConstStr) ?c.sa_family_t {
-    var net_ip: [c.IPV6_BINADDR_LEN]u8 = undefined;
+    var net_ip: [c.IPV6_LEN]u8 = undefined;
 
     if (inet_pton(c.AF_INET, ip, &net_ip))
         return c.AF_INET;
