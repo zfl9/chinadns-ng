@@ -484,7 +484,7 @@ chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 
 ### --noip-as-chnip 选项的作用
 
-> 此选项只作用于 tag:none 域名的 china 上游，trust 上游不存在过滤。
+> 此选项只作用于 `tag:none 域名` && `qtype=A/AAAA` && `china 上游`，trust 上游不存在过滤。
 
 首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。
 
