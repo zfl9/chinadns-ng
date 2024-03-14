@@ -327,7 +327,7 @@ pub fn check(comptime format: [:0]const u8, args: anytype) void {
     comptime do_check(format, @TypeOf(args));
 }
 
-pub fn @"test: printf format checker"() !void {
+pub fn @"test: fmtchk"() !void {
     // integer
     var schar: c.schar = 10;
     var uchar: c.uchar = 10;

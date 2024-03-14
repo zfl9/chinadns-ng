@@ -85,7 +85,7 @@ pub fn msg(self: anytype) Bytes(@TypeOf(self), .slice) {
 
 // =============================================================
 
-pub fn @"test: RcMsg api"() !void {
+pub fn @"test: RcMsg"() !void {
     const var_rcmsg: *RcMsg = RcMsg.new(512);
     const const_rcmsg: *const RcMsg = var_rcmsg;
     const msg1 = var_rcmsg.msg();
@@ -97,5 +97,6 @@ pub fn @"test: RcMsg api"() !void {
     try std.testing.expectEqual(var_rcmsg, msg3);
 
     const msg4 = var_rcmsg.realloc(5120);
+    defer msg4.free();
     try std.testing.expectEqual(@as(u16, 5120), msg4.cap);
 }

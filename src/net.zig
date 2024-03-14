@@ -91,7 +91,7 @@ pub fn setup_tcp_conn_sock(fd: c_int) void {
 
 // ===============================================================
 
-pub fn @"test: net api"() !void {
+pub fn @"test: net"() !void {
     // _ = Addr.family;
     // _ = Addr.len;
     // _ = Addr.is_sin;

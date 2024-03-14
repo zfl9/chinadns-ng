@@ -85,7 +85,7 @@ pub fn fatal(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: any
     cc.abort();
 }
 
-pub fn @"test: logging"() !void {
+pub fn @"test: log"() !void {
     if (cc.getenv("TEST_LOGGING") == null) return;
     test_logging();
 }

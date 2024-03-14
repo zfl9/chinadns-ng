@@ -768,7 +768,7 @@ pub fn @"test: strslice_c"() !void {
     try testing.expectEqual([:0]const u8, @TypeOf(strslice_c(&var_buf_z)));
 }
 
-pub fn @"test: set_errno errno"() !void {
+pub fn @"test: errno"() !void {
     set_errno(c.EAGAIN);
     try testing.expectEqual(c.EAGAIN, errno());
 }
@@ -806,7 +806,7 @@ pub fn @"test: fopen fclose"() !void {
     }
 }
 
-pub fn @"test: snprintf normal"() !void {
+pub fn @"test: snprintf"() !void {
     var buffer: [11]u8 = undefined;
     const helloworld = "helloworld";
     const str = snprintf(&buffer, "%s", .{helloworld});

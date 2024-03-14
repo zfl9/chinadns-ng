@@ -38,8 +38,16 @@ pub inline fn get_name_tag(name: [*]const u8, namelen: c_int) Tag {
         g.default_tag;
 }
 
-pub fn @"test: get tag desc"() !void {
+pub fn @"test: dnl"() !void {
     try testing.expectEqualStrings("gfw", cc.strslice(Tag.gfw.desc()));
     try testing.expectEqualStrings("chn", cc.strslice(Tag.chn.desc()));
     try testing.expectEqualStrings("none", cc.strslice(Tag.none.desc()));
+
+    if (cc.getenv("DNL_TEST") != null) {
+        g.chnlist_filenames.add("res/chnlist.txt");
+        g.gfwlist_filenames.add("res/gfwlist.txt");
+        // g.gfwlist_first = true;
+        g.gfwlist_first = false;
+        init();
+    }
 }

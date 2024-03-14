@@ -517,6 +517,6 @@ pub fn parse() void {
         g.trust_group.add("8.8.8.8") orelse unreachable;
 }
 
-pub fn @"test: parse option and config"() !void {
+pub fn @"test: opt"() !void {
     _ = parse;
 }

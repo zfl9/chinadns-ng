@@ -24,6 +24,7 @@ const EvLoop = @import("EvLoop.zig");
 const co = @import("co.zig");
 const Rc = @import("Rc.zig");
 const RcMsg = @import("RcMsg.zig");
+const List = @import("List.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -31,9 +32,10 @@ const RcMsg = @import("RcMsg.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c,       cc,     g,        log,    opt,     net,
-    dnl,     dns,    ipset,    fmtchk, str2int, DynStr,
-    StrList, server, Upstream, EvLoop, Rc,      RcMsg,
+    c,       cc,     g,       log,    opt,
+    net,     dnl,    dns,     ipset,  fmtchk,
+    str2int, DynStr, StrList, server, Upstream,
+    EvLoop,  Rc,     RcMsg,   List,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
@@ -97,6 +99,11 @@ pub fn main() u8 {
         break :b _gpa.allocator();
     } else std.heap.c_allocator;
 
+    defer {
+        if (_debug)
+            _ = _gpa.deinit();
+    }
+
     // ============================================================================
 
     _ = cc.signal(c.SIGPIPE, cc.SIG_IGN());
@@ -105,6 +112,8 @@ pub fn main() u8 {
 
     // setting default values for TZ
     _ = cc.setenv("TZ", ":/etc/localtime", false);
+
+    // ============================================================================
 
     if (build_opts.is_test)
         return tests.main();

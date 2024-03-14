@@ -518,6 +518,6 @@ pub const Group = struct {
 
 // ======================================================
 
-pub fn @"test: Upstream api"() !void {
+pub fn @"test: Upstream"() !void {
     // _ =
 }
