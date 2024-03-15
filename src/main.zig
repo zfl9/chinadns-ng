@@ -24,7 +24,7 @@ const EvLoop = @import("EvLoop.zig");
 const co = @import("co.zig");
 const Rc = @import("Rc.zig");
 const RcMsg = @import("RcMsg.zig");
-const List = @import("List.zig");
+const ListNode = @import("ListNode.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -32,10 +32,10 @@ const List = @import("List.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c,       cc,     g,       log,    opt,
-    net,     dnl,    dns,     ipset,  fmtchk,
-    str2int, DynStr, StrList, server, Upstream,
-    EvLoop,  Rc,     RcMsg,   List,
+    c,       cc,     g,       log,      opt,
+    net,     dnl,    dns,     ipset,    fmtchk,
+    str2int, DynStr, StrList, server,   Upstream,
+    EvLoop,  Rc,     RcMsg,   ListNode,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.

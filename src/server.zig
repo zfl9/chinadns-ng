@@ -12,6 +12,7 @@ const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
 const NoAAAA = @import("NoAAAA.zig");
+const ListNode = @import("ListNode.zig");
 const co = @import("co.zig");
 
 comptime {
@@ -22,8 +23,7 @@ comptime {
 
 const QueryCtx = struct {
     // linked list
-    prev: ?*QueryCtx = null,
-    next: ?*QueryCtx = null,
+    list_node: ListNode = undefined,
 
     // alignment: 8/4
     fdobj: *EvLoop.Fd, // requester's fdobj
@@ -67,14 +67,23 @@ const QueryCtx = struct {
         g.allocator.destroy(self);
     }
 
-    pub const List = struct {
-        map: std.AutoHashMapUnmanaged(u16, *QueryCtx) = .{},
+    pub fn from_list_node(node: *ListNode) *QueryCtx {
+        return @fieldParentPtr(QueryCtx, "list_node", node);
+    }
 
-        // linked list
-        head: ?*QueryCtx = null,
-        tail: ?*QueryCtx = null,
+    pub const List = struct {
+        map: std.AutoHashMapUnmanaged(u16, *QueryCtx),
+        list: ListNode,
 
         var _last_qid: u16 = 0;
+
+        pub fn init(self: *List) void {
+            self.* = .{
+                .map = .{},
+                .list = undefined,
+            };
+            self.list.init();
+        }
 
         pub fn len(self: *const List) usize {
             return self.map.count();
@@ -82,37 +91,6 @@ const QueryCtx = struct {
 
         pub fn is_empty(self: *const List) bool {
             return self.len() == 0;
-        }
-
-        fn link(self: *List, qctx: *QueryCtx) void {
-            qctx.prev = self.tail;
-            qctx.next = null;
-
-            if (self.tail) |tail| {
-                assert(self.head != null);
-                tail.next = qctx;
-                self.tail = qctx;
-            } else {
-                assert(self.head == null);
-                self.head = qctx;
-                self.tail = qctx;
-            }
-        }
-
-        fn unlink(self: *List, qctx: *const QueryCtx) void {
-            if (qctx.prev) |prev| {
-                prev.next = qctx.next;
-            } else {
-                assert(qctx == self.head);
-                self.head = qctx.next;
-            }
-
-            if (qctx.next) |next| {
-                next.prev = qctx.prev;
-            } else {
-                assert(qctx == self.tail);
-                self.tail = qctx.prev;
-            }
         }
 
         /// [on_query] msg.id => qid
@@ -147,7 +125,7 @@ const QueryCtx = struct {
             const qctx = QueryCtx.new(qid, id, bufsz, fdobj, src_addr, from_tcp, name_tag);
 
             self.map.putNoClobber(g.allocator, qid, qctx) catch unreachable;
-            self.link(qctx);
+            self.list.link_tail(&qctx.list_node);
 
             return qctx;
         }
@@ -168,29 +146,14 @@ const QueryCtx = struct {
 
         /// remove from list
         pub fn del_nofree(self: *List, qctx: *const QueryCtx) void {
-            self.unlink(qctx);
+            qctx.list_node.unlink();
             assert(self.map.remove(qctx.qid));
         }
-
-        /// in insertion order, it is safe to `del` the current element
-        pub fn iterator(self: *const List) Iterator {
-            return .{ .elem = self.head };
-        }
-
-        pub const Iterator = struct {
-            elem: ?*QueryCtx,
-
-            pub fn next(it: *Iterator) ?*QueryCtx {
-                const elem = it.elem orelse return null;
-                defer it.elem = elem.next;
-                return elem;
-            }
-        };
     };
 };
 
 /// qid => *query_ctx
-var _qctx_list: QueryCtx.List = .{};
+var _qctx_list: QueryCtx.List = undefined;
 
 // =======================================================================================================
 
@@ -669,7 +632,7 @@ fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_t
 // =========================================================================
 
 /// qctx will be free()
-fn on_timeout(qctx: *QueryCtx) void {
+fn on_timeout(qctx: *const QueryCtx) void {
     if (g.verbose) {
         var ip: cc.IpStrBuf = undefined;
         var port: u16 = undefined;
@@ -689,8 +652,9 @@ fn on_timeout(qctx: *QueryCtx) void {
 
 pub fn check_timeout() c_int {
     const now = cc.time();
-    var it = _qctx_list.iterator();
-    while (it.next()) |qctx| {
+    var it = _qctx_list.list.iterator();
+    while (it.next()) |qctx_node| {
+        const qctx = QueryCtx.from_list_node(qctx_node);
         const deadline = qctx.req_time + g.upstream_timeout;
         if (now >= deadline) {
             nosuspend on_timeout(qctx);
@@ -729,6 +693,8 @@ fn create_socks(ip: cc.ConstStr, port: u16) [2]c_int {
 }
 
 pub fn start() void {
+    _qctx_list.init();
+
     for (g.bind_ips.items) |ip| {
         const fds = create_socks(ip.?, g.bind_port);
         co.create(listen_tcp, .{ fds[0], ip.? });

@@ -3,35 +3,35 @@ const std = @import("std");
 const testing = std.testing;
 const assert = std.debug.assert;
 
-const Node = @This();
+const ListNode = @This();
 
-prev: *Node,
-next: *Node,
+prev: *ListNode,
+next: *ListNode,
 
 // =================== `list_head(sentinel)` ===================
 
 /// empty list
-pub fn init(list: *Node) void {
+pub fn init(list: *ListNode) void {
     list.prev = list;
     list.next = list;
 }
 
 /// first node
-pub inline fn head(list: *const Node) *Node {
+pub inline fn head(list: *const ListNode) *ListNode {
     return list.next;
 }
 
 /// last node
-pub inline fn tail(list: *const Node) *Node {
+pub inline fn tail(list: *const ListNode) *ListNode {
     return list.prev;
 }
 
-pub inline fn is_empty(list: *const Node) bool {
+pub inline fn is_empty(list: *const ListNode) bool {
     return list.head() == list;
 }
 
 /// `unlink(node)` and/or `free(node)` is safe
-pub fn iterator(list: *const Node) Iterator {
+pub fn iterator(list: *const ListNode) Iterator {
     return .{
         .sentinel = list,
         .node = list.head(),
@@ -39,7 +39,7 @@ pub fn iterator(list: *const Node) Iterator {
 }
 
 /// `unlink(node)` and/or `free(node)` is safe
-pub fn reverse_iterator(list: *const Node) ReverseIterator {
+pub fn reverse_iterator(list: *const ListNode) ReverseIterator {
     return .{
         .sentinel = list,
         .node = list.tail(),
@@ -47,10 +47,10 @@ pub fn reverse_iterator(list: *const Node) ReverseIterator {
 }
 
 pub const Iterator = struct {
-    sentinel: *const Node,
-    node: *Node,
+    sentinel: *const ListNode,
+    node: *ListNode,
 
-    pub fn next(it: *Iterator) ?*Node {
+    pub fn next(it: *Iterator) ?*ListNode {
         const node = it.node;
         if (node != it.sentinel) {
             it.node = node.next;
@@ -61,10 +61,10 @@ pub const Iterator = struct {
 };
 
 pub const ReverseIterator = struct {
-    sentinel: *const Node,
-    node: *Node,
+    sentinel: *const ListNode,
+    node: *ListNode,
 
-    pub fn next(it: *ReverseIterator) ?*Node {
+    pub fn next(it: *ReverseIterator) ?*ListNode {
         const node = it.node;
         if (node != it.sentinel) {
             it.node = node.prev;
@@ -76,15 +76,15 @@ pub const ReverseIterator = struct {
 
 // =================== `node` ===================
 
-pub fn link_head(list: *Node, node: *Node) void {
+pub fn link_head(list: *ListNode, node: *ListNode) void {
     return node.link(list, list.head());
 }
 
-pub fn link_tail(list: *Node, node: *Node) void {
+pub fn link_tail(list: *ListNode, node: *ListNode) void {
     return node.link(list.tail(), list);
 }
 
-fn link(node: *Node, prev: *Node, next: *Node) void {
+fn link(node: *ListNode, prev: *ListNode, next: *ListNode) void {
     prev.next = node;
     node.prev = prev;
     node.next = next;
@@ -93,7 +93,7 @@ fn link(node: *Node, prev: *Node, next: *Node) void {
 
 /// `node.prev` and `node.next` are unmodified, use `node.init()` if needed.
 /// `list_head.unlink()` is not allowed unless `list_head` is an empty list.
-pub fn unlink(node: *Node) void {
+pub fn unlink(node: *const ListNode) void {
     node.prev.next = node.next;
     node.next.prev = node.prev;
 }
@@ -102,15 +102,15 @@ pub fn unlink(node: *Node) void {
 
 const Object = struct {
     id: u32,
-    node: Node,
+    node: ListNode,
 
-    pub fn from_node(node: *Node) *Object {
+    pub fn from_node(node: *ListNode) *Object {
         return @fieldParentPtr(Object, "node", node);
     }
 };
 
 pub fn @"test: List"() !void {
-    var list: Node = undefined;
+    var list: ListNode = undefined;
     list.init();
 
     defer {
@@ -176,7 +176,7 @@ pub fn @"test: List"() !void {
     }
 
     // link_head
-    var l: Node = undefined;
+    var l: ListNode = undefined;
     l.init();
 
     defer {
