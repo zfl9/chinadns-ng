@@ -91,8 +91,8 @@ fn link(node: *Node, prev: *Node, next: *Node) void {
     next.prev = node;
 }
 
-/// `node.prev` and `node.next` are unmodified.
-/// `list_head.unlink()` is safe and has no effect.
+/// `node.prev` and `node.next` are unmodified, use `node.init()` if needed.
+/// `list_head.unlink()` is not allowed unless `list_head` is an empty list.
 pub fn unlink(node: *Node) void {
     node.prev.next = node.next;
     node.next.prev = node.prev;
