@@ -8,7 +8,7 @@ const Node = @This();
 prev: *Node,
 next: *Node,
 
-// =================== `list` ===================
+// =================== `list_head(sentinel)` ===================
 
 /// empty list
 pub fn init(list: *Node) void {
@@ -24,6 +24,10 @@ pub inline fn head(list: *const Node) *Node {
 /// last node
 pub inline fn tail(list: *const Node) *Node {
     return list.prev;
+}
+
+pub inline fn is_empty(list: *const Node) bool {
+    return list.head() == list;
 }
 
 /// `unlink(node)` and/or `free(node)` is safe
@@ -48,9 +52,11 @@ pub const Iterator = struct {
 
     pub fn next(it: *Iterator) ?*Node {
         const node = it.node;
-        if (node == it.sentinel) return null;
-        defer it.node = node.next;
-        return node;
+        if (node != it.sentinel) {
+            it.node = node.next;
+            return node;
+        }
+        return null;
     }
 };
 
@@ -60,9 +66,11 @@ pub const ReverseIterator = struct {
 
     pub fn next(it: *ReverseIterator) ?*Node {
         const node = it.node;
-        if (node == it.sentinel) return null;
-        defer it.node = node.prev;
-        return node;
+        if (node != it.sentinel) {
+            it.node = node.prev;
+            return node;
+        }
+        return null;
     }
 };
 
@@ -83,7 +91,8 @@ fn link(node: *Node, prev: *Node, next: *Node) void {
     next.prev = node;
 }
 
-/// `node` is in undefined state
+/// `node.prev` and `node.next` are unmodified.
+/// `list_head.unlink()` is safe and has no effect.
 pub fn unlink(node: *Node) void {
     node.prev.next = node.next;
     node.next.prev = node.prev;
@@ -112,15 +121,18 @@ pub fn @"test: List"() !void {
             // break;
         }
 
-        var it2 = list.iterator();
-        assert(it2.next() == null);
+        assert(list.is_empty());
+
+        list.unlink();
+        list.unlink();
+        assert(list.is_empty());
     }
 
-    if (true) {
-        var i: u32 = 0;
-        while (i < 5) : (i += 1) {
+    {
+        var i: u32 = 1;
+        while (i <= 5) : (i += 1) {
             const obj = try g.allocator.create(Object);
-            obj.id = i + 1;
+            obj.id = i;
             list.link_tail(&obj.node);
         }
     }
@@ -137,6 +149,71 @@ pub fn @"test: List"() !void {
     {
         var it = list.reverse_iterator();
         var id: u32 = 5;
+        while (it.next()) |node| : (id -= 1) {
+            const obj = Object.from_node(node);
+            try testing.expectEqual(id, obj.id);
+        }
+    }
+
+    {
+        // [1,2,3,4,5] => [1,3,4]
+        var it = list.iterator();
+        while (it.next()) |node| {
+            const obj = Object.from_node(node);
+            if (obj.id == 2 or obj.id == 5) {
+                node.unlink();
+                g.allocator.destroy(obj);
+            }
+        }
+
+        var i: u32 = 0;
+        const ids = [_]u32{ 1, 3, 4 };
+        var it2 = list.iterator();
+        while (it2.next()) |node| : (i += 1) {
+            const obj = Object.from_node(node);
+            try testing.expectEqual(ids[i], obj.id);
+        }
+    }
+
+    // link_head
+    var l: Node = undefined;
+    l.init();
+
+    defer {
+        var it = l.iterator();
+        while (it.next()) |node| {
+            node.unlink();
+            const obj = Object.from_node(node);
+            g.allocator.destroy(obj);
+        }
+
+        assert(l.is_empty());
+
+        l.unlink();
+        assert(l.is_empty());
+    }
+
+    {
+        var i: u32 = 3;
+        while (i > 0) : (i -= 1) {
+            const obj = try g.allocator.create(Object);
+            obj.id = i;
+            l.link_head(&obj.node);
+        }
+    }
+
+    {
+        var id: u32 = 1;
+        var it = l.iterator();
+        while (it.next()) |node| : (id += 1) {
+            const obj = Object.from_node(node);
+            try testing.expectEqual(id, obj.id);
+        }
+    }
+
+    {
+        var id: u32 = 3;
+        var it = l.reverse_iterator();
         while (it.next()) |node| : (id -= 1) {
             const obj = Object.from_node(node);
             try testing.expectEqual(id, obj.id);
