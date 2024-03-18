@@ -96,7 +96,7 @@ const QueryCtx = struct {
         pub fn add(
             self: *List,
             msg: []u8,
-            wire_namelen: c_int,
+            qnamelen: c_int,
             fdobj: *EvLoop.Fd,
             src_addr: *const cc.SockAddr,
             from_tcp: bool,
@@ -119,7 +119,7 @@ const QueryCtx = struct {
             const bufsz = if (from_tcp)
                 cc.to_u16(c.DNS_MSG_MAXSIZE)
             else
-                dns.get_bufsz(msg, wire_namelen);
+                dns.get_bufsz(msg, qnamelen);
 
             const qctx = QueryCtx.new(qid, id, bufsz, fdobj, src_addr, from_tcp, name_tag);
 
@@ -310,14 +310,14 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
 
     var ascii_namebuf: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
     const p_ascii_namebuf: ?[*]u8 = if (g.verbose or !dnl.is_empty()) &ascii_namebuf else null;
-    var wire_namelen: c_int = undefined;
-    if (!dns.check_query(msg, p_ascii_namebuf, &wire_namelen)) {
+    var qnamelen: c_int = undefined;
+    if (!dns.check_query(msg, p_ascii_namebuf, &qnamelen)) {
         log.err(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
         return;
     }
 
-    const name_tag = dnl.get_name_tag(&ascii_namebuf, dns.to_ascii_namelen(wire_namelen));
-    const qtype = dns.get_qtype(msg, wire_namelen);
+    const name_tag = dnl.get_name_tag(&ascii_namebuf, dns.to_ascii_namelen(qnamelen));
+    const qtype = dns.get_qtype(msg, qnamelen);
 
     var querylog: QueryLog = if (g.verbose) .{
         .src_ip = undefined,
@@ -342,7 +342,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
         if (g.noaaaa_query.filter(name_tag)) |by_rule| {
             if (g.verbose) querylog.noaaaa(by_rule);
             var reply_msg = msg;
-            reply_msg.len = dns.empty_reply(reply_msg, wire_namelen);
+            reply_msg.len = dns.empty_reply(reply_msg, qnamelen);
             return send_reply(reply_msg, fdobj, src_addr, from_tcp, c.DNS_MSG_MAXSIZE);
         }
 
@@ -359,7 +359,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
 
     const qctx = _qctx_list.add(
         msg,
-        wire_namelen,
+        qnamelen,
         fdobj,
         src_addr,
         from_tcp,
@@ -434,9 +434,9 @@ const ReplyLog = struct {
 };
 
 /// tag:none
-fn use_china_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog) bool {
+fn use_china_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) bool {
     const msg = rmsg.msg();
-    const qtype = dns.get_qtype(msg, wire_namelen);
+    const qtype = dns.get_qtype(msg, qnamelen);
 
     // only filter A/AAAA
     if (qtype != c.DNS_TYPE_A and qtype != c.DNS_TYPE_AAAA)
@@ -448,13 +448,13 @@ fn use_china_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog)
         return true;
 
     // test the answer ip
-    switch (dns.test_ip(msg, wire_namelen)) {
+    switch (dns.test_ip(msg, qnamelen)) {
         .is_chnip => return true,
 
         .not_chnip => {
             if (only_china) {
                 if (g.verbose) replylog.noaaaa("china_ipchk");
-                rmsg.len = dns.empty_reply(msg, wire_namelen); // `.len` updated
+                rmsg.len = dns.empty_reply(msg, qnamelen); // `.len` updated
                 return true;
             }
             return false;
@@ -474,9 +474,9 @@ fn use_china_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog)
 }
 
 /// tag:none && !china_got
-fn use_trust_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog) bool {
+fn use_trust_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) bool {
     const msg = rmsg.msg();
-    const qtype = dns.get_qtype(msg, wire_namelen);
+    const qtype = dns.get_qtype(msg, qnamelen);
 
     // no-aaaa filter
     const only_trust = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.CHINA_DNS);
@@ -487,10 +487,10 @@ fn use_trust_reply(rmsg: *RcMsg, wire_namelen: c_int, replylog: *const ReplyLog)
 
     // no-aaaa ipchk
     if (g.noaaaa_query.has(NoAAAA.TRUST_IPCHK)) {
-        const res = dns.test_ip(msg, wire_namelen);
+        const res = dns.test_ip(msg, qnamelen);
         if (res == .not_chnip or res == .not_found) {
             if (g.verbose) replylog.noaaaa("trust_ipchk");
-            if (res == .not_chnip) rmsg.len = dns.empty_reply(msg, wire_namelen); // `.len` updated
+            if (res == .not_chnip) rmsg.len = dns.empty_reply(msg, qnamelen); // `.len` updated
         }
     }
 
@@ -502,8 +502,8 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
 
     var ascii_namebuf: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
     const p_ascii_namebuf: ?[*]u8 = if (g.verbose) &ascii_namebuf else null;
-    var wire_namelen: c_int = undefined;
-    if (!dns.check_reply(rmsg.msg(), p_ascii_namebuf, &wire_namelen)) {
+    var qnamelen: c_int = undefined;
+    if (!dns.check_reply(rmsg.msg(), p_ascii_namebuf, &qnamelen)) {
         log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url.ptr});
         return;
     }
@@ -511,7 +511,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     var replylog: ReplyLog = if (g.verbose) .{
         .qid = dns.get_id(rmsg.msg()),
         .tag = null,
-        .qtype = dns.get_qtype(rmsg.msg(), wire_namelen),
+        .qtype = dns.get_qtype(rmsg.msg(), qnamelen),
         .name = &ascii_namebuf,
         .url = upstream.url,
     } else undefined;
@@ -528,7 +528,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     // determines whether to end the current query context
     nosuspend switch (upstream.group.tag) {
         .china => {
-            if (qctx.name_tag == .chn or use_china_reply(rmsg, wire_namelen, &replylog)) {
+            if (qctx.name_tag == .chn or use_china_reply(rmsg, qnamelen, &replylog)) {
                 if (g.verbose) {
                     replylog.reply("accept", null);
 
@@ -539,7 +539,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
                 if (qctx.name_tag == .chn and !g.chnip_setnames.is_empty()) {
                     if (g.verbose)
                         replylog.add_ip(g.chnip_setnames.str);
-                    dns.add_ip(rmsg.msg(), wire_namelen, true);
+                    dns.add_ip(rmsg.msg(), qnamelen, true);
                 }
             } else {
                 if (g.verbose)
@@ -557,14 +557,14 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
             }
         },
         .trust => {
-            if (qctx.name_tag == .gfw or qctx.china_got or use_trust_reply(rmsg, wire_namelen, &replylog)) {
+            if (qctx.name_tag == .gfw or qctx.china_got or use_trust_reply(rmsg, qnamelen, &replylog)) {
                 if (g.verbose)
                     replylog.reply("accept", null);
 
                 if (qctx.name_tag == .gfw and !g.gfwip_setnames.is_empty()) {
                     if (g.verbose)
                         replylog.add_ip(g.gfwip_setnames.str);
-                    dns.add_ip(rmsg.msg(), wire_namelen, false);
+                    dns.add_ip(rmsg.msg(), qnamelen, false);
                 }
             } else {
                 // waiting for chinadns

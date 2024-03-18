@@ -92,7 +92,7 @@ static bool decode_name(char *noalias out, const char *noalias src, int len) {
 /* check dns msg */
 static bool check_msg(bool is_query,
     const void *noalias msg, ssize_t len,
-    char *noalias ascii_name, int *noalias p_wire_namelen)
+    char *noalias ascii_name, int *noalias p_qnamelen)
 {
     /* check msg length */
     unlikely_if (len < (ssize_t)DNS_MSG_MINSIZE || len > DNS_MSG_MAXSIZE) {
@@ -128,23 +128,23 @@ static bool check_msg(bool is_query,
     }
 
     /* check name length */
-    const int wire_namelen = p + 1 - msg;
-    unlikely_if (wire_namelen < DNS_NAME_WIRE_MINLEN || wire_namelen > DNS_NAME_WIRE_MAXLEN) {
-        log_error("encoded domain namelen is out of range: %d [%d, %d]", wire_namelen, DNS_NAME_WIRE_MINLEN, DNS_NAME_WIRE_MAXLEN);
+    const int qnamelen = p + 1 - msg;
+    unlikely_if (qnamelen < DNS_NAME_WIRE_MINLEN || qnamelen > DNS_NAME_WIRE_MAXLEN) {
+        log_error("encoded domain namelen is out of range: %d [%d, %d]", qnamelen, DNS_NAME_WIRE_MINLEN, DNS_NAME_WIRE_MAXLEN);
         return false;
     }
 
     /* decode to ASCII format */
     if (ascii_name) {
-        unlikely_if (!decode_name(ascii_name, msg, wire_namelen))
+        unlikely_if (!decode_name(ascii_name, msg, qnamelen))
             return false;
     }
-    if (p_wire_namelen)
-        *p_wire_namelen = wire_namelen;
+    if (p_qnamelen)
+        *p_qnamelen = qnamelen;
 
     /* move to `struct dns_question` */
-    msg += wire_namelen;
-    len -= wire_namelen;
+    msg += qnamelen;
+    len -= qnamelen;
 
     /* check remaining length */
     unlikely_if (len < (ssize_t)sizeof(struct dns_question)) {
@@ -234,13 +234,13 @@ static bool foreach_record(const void *noalias *noalias p_ptr, ssize_t *noalias 
 }
 
 /* header + question */
-#define msg_minlen(wire_namelen) \
-    (sizeof(struct dns_header) + (wire_namelen) + sizeof(struct dns_question))
+#define msg_minlen(qnamelen) \
+    (sizeof(struct dns_header) + (qnamelen) + sizeof(struct dns_question))
 
 /* move to answer section */
-#define move_to_answer(ptr, len, wire_namelen) ({ \
-    (ptr) += msg_minlen(wire_namelen); \
-    (len) -= msg_minlen(wire_namelen); \
+#define move_to_answer(ptr, len, qnamelen) ({ \
+    (ptr) += msg_minlen(qnamelen); \
+    (len) -= msg_minlen(qnamelen); \
 })
 
 u16 dns_get_id(const void *noalias msg) {
@@ -251,8 +251,8 @@ void dns_set_id(void *noalias msg, u16 id) {
     cast(struct dns_header *, msg)->id = id;
 }
 
-u16 dns_get_qtype(const void *noalias msg, int wire_namelen) {
-    const struct dns_question *q = msg + sizeof(struct dns_header) + wire_namelen;
+u16 dns_get_qtype(const void *noalias msg, int qnamelen) {
+    const struct dns_question *q = msg + sizeof(struct dns_header) + qnamelen;
     return ntohs(q->qtype);
 }
 
@@ -276,7 +276,7 @@ static bool get_bufsz(const struct dns_record *noalias record, ssize_t rdatalen,
     return true;
 }
 
-u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int wire_namelen) {
+u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int qnamelen) {
     u16 bufsz = DNS_EDNS_MINSIZE;
     const struct dns_header *h = msg;
 
@@ -284,7 +284,7 @@ u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int wire_namelen) {
         return bufsz;
 
     /* move to answer section */
-    move_to_answer(msg, len, wire_namelen);
+    move_to_answer(msg, len, qnamelen);
 
     /* skip answer && authority section */
     unlikely_if (!skip_record(&msg, &len, ntohs(h->answer_count) + ntohs(h->authority_count)))
@@ -298,7 +298,7 @@ bool dns_is_tc(const void *noalias msg) {
     return cast(const struct dns_header *, msg)->tc;
 }
 
-static int get_wire_namelen(const void *noalias msg, ssize_t len) {
+static int get_qnamelen(const void *noalias msg, ssize_t len) {
     msg += sizeof(struct dns_header);
     len -= sizeof(struct dns_header);
     assert(len > 0);
@@ -309,10 +309,10 @@ static int get_wire_namelen(const void *noalias msg, ssize_t len) {
 
 u16 dns_truncate(void *noalias msg, ssize_t len) {
     cast(struct dns_header *, msg)->tc = 1;
-    return dns_empty_reply(msg, get_wire_namelen(msg, len));
+    return dns_empty_reply(msg, get_qnamelen(msg, len));
 }
 
-u16 dns_empty_reply(void *noalias msg, int wire_namelen) {
+u16 dns_empty_reply(void *noalias msg, int qnamelen) {
     struct dns_header *h = msg;
     h->qr = DNS_QR_REPLY;
     h->ra = 1;
@@ -320,15 +320,19 @@ u16 dns_empty_reply(void *noalias msg, int wire_namelen) {
     h->answer_count = 0;
     h->authority_count = 0;
     h->additional_count = 0;
-    return msg_minlen(wire_namelen);
+    return msg_minlen(qnamelen);
 }
 
-bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_wire_namelen) {
-    return check_msg(true, msg, len, ascii_name, p_wire_namelen);
+u16 dns_question_len(int qnamelen) {
+    return qnamelen + sizeof(struct dns_question);
 }
 
-bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_wire_namelen) {
-    return check_msg(false, msg, len, ascii_name, p_wire_namelen);
+bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen) {
+    return check_msg(true, msg, len, ascii_name, p_qnamelen);
+}
+
+bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen) {
+    return check_msg(false, msg, len, ascii_name, p_qnamelen);
 }
 
 static bool check_ip_datalen(u16 rtype, ssize_t rdatalen) {
@@ -378,9 +382,9 @@ static bool add_ip(const struct dns_record *noalias record, ssize_t rdatalen, vo
 #define answer_count(msg) \
     ntohs(cast(const struct dns_header *, msg)->answer_count)
 
-int dns_test_ip(const void *noalias msg, ssize_t len, int wire_namelen) {
+int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen) {
     int count = answer_count(msg);
-    move_to_answer(msg, len, wire_namelen);
+    move_to_answer(msg, len, qnamelen);
 
     int res = DNS_TEST_IP_NOT_FOUND;
     unlikely_if (!foreach_record(&msg, &len, count, test_ip, &res))
@@ -388,15 +392,15 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int wire_namelen) {
     return res;
 }
 
-void dns_add_ip(const void *noalias msg, ssize_t len, int wire_namelen, bool chn) {
+void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, bool chn) {
     int count = answer_count(msg);
-    move_to_answer(msg, len, wire_namelen);
+    move_to_answer(msg, len, qnamelen);
 
     foreach_record(&msg, &len, count, add_ip, (void *)(uintptr_t)chn);
     ipset_end_add_ip(chn);
 }
 
-bool dns_update_ttl(void *noalias rrs, ssize_t len, s32 elapsed_sec, bool *noalias expired) {
+bool dns_update_ttl(void *noalias rrs, ssize_t len, u32 elapsed_sec, bool *noalias expired) {
     while (len > 0) {
         unlikely_if (!skip_name((const void **)&rrs, &len))
             return false;
@@ -411,7 +415,7 @@ bool dns_update_ttl(void *noalias rrs, ssize_t len, s32 elapsed_sec, bool *noali
         if (ntohs(record->rtype) != DNS_TYPE_OPT) {
             /* It is hereby specified that a TTL value is an unsigned number,
                 with a minimum value of 0, and a maximum value of 2147483647. */
-            s32 new_ttl = (s32)ntohl(record->rttl) - elapsed_sec;
+            s32 new_ttl = (s32)ntohl(record->rttl) - (s32)elapsed_sec;
             if (new_ttl <= 0) {
                 new_ttl = 1;
                 *expired = true;

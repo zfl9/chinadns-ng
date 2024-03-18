@@ -37,10 +37,10 @@ u16 dns_get_id(const void *noalias msg);
 
 void dns_set_id(void *noalias msg, u16 id);
 
-u16 dns_get_qtype(const void *noalias msg, int wire_namelen);
+u16 dns_get_qtype(const void *noalias msg, int qnamelen);
 
 /* get the peer's udp receive buffer size from the `OPT RR` */
-u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int wire_namelen);
+u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int qnamelen);
 
 bool dns_is_tc(const void *noalias msg);
 
@@ -51,21 +51,23 @@ bool dns_is_tc(const void *noalias msg);
 u16 dns_truncate(void *noalias msg, ssize_t len);
 
 /* keep only the HEADER and QUESTION section */
-u16 dns_empty_reply(void *noalias msg, int wire_namelen);
+u16 dns_empty_reply(void *noalias msg, int qnamelen);
 
 /* "\0" => 0 */
 /* "\1x\0" => 1 */
 /* "\3foo\3com\0" => 7 */
-static inline int dns_ascii_namelen(int wire_namelen) {
-    int n = wire_namelen - 2;
+static inline int dns_ascii_namelen(int qnamelen) {
+    int n = qnamelen - 2;
     return n > 0 ? n : 0;
 }
 
+u16 dns_question_len(int qnamelen);
+
 /* check query msg, `ascii_name` used to get domain name */
-bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_wire_namelen);
+bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen);
 
 /* check reply msg, `ascii_name` used to get domain name */
-bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_wire_namelen);
+bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen);
 
 /* result of dns_test_ip() */
 #define DNS_TEST_IP_IS_CHNIP 0
@@ -74,10 +76,10 @@ bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_n
 #define DNS_TEST_IP_BAD_MSG 3
 
 /* check if the answer ip is chnip (check qtype before call) */
-int dns_test_ip(const void *noalias msg, ssize_t len, int wire_namelen);
+int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen);
 
 /* add the answer ip to ipset/nftset (tag:chn, tag:gfw) */
-void dns_add_ip(const void *noalias msg, ssize_t len, int wire_namelen, bool chn);
+void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, bool chn);
 
 /* return `ok` */
-bool dns_update_ttl(void *noalias rrs, ssize_t len, s32 elapsed_sec, bool *noalias expired);
+bool dns_update_ttl(void *noalias rrs, ssize_t len, u32 elapsed_sec, bool *noalias expired);
