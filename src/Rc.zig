@@ -1,9 +1,13 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+// ==========================================
+
 const Rc = @This();
 
 ref_count: u32 = 1,
+
+// ==========================================
 
 pub inline fn ref(self: *Rc) void {
     assert(self.ref_count > 0);

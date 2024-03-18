@@ -4,12 +4,16 @@
 const cc = @import("cc.zig");
 const g = @import("g.zig");
 
+// ==========================================
+
+const DynStr = @This();
+
 /// string content
 str: [:0]u8 = &[_:0]u8{},
 /// 0 means null, no memory allocated
 capacity: usize = 0,
 
-const DynStr = @This();
+// ==========================================
 
 /// copy string to buffer
 pub fn set(self: *DynStr, str: []const u8) void {

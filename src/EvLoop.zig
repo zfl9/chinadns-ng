@@ -1,14 +1,16 @@
+const std = @import("std");
+const root = @import("root");
+const g = @import("g.zig");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
+const co = @import("co.zig");
 const log = @import("log.zig");
 const net = @import("net.zig");
-const co = @import("co.zig");
 const Rc = @import("Rc.zig");
-const g = @import("g.zig");
-const root = @import("root");
-const std = @import("std");
-const trait = std.meta.trait;
 const assert = std.debug.assert;
+const Ptr = cc.Ptr;
+
+// =============================================================
 
 const EvLoop = @This();
 
@@ -184,11 +186,8 @@ const Ev = opaque {
         };
     }
 
-    pub inline fn from(ptr: anytype) if (trait.isConstPtr(@TypeOf(ptr))) *const Ev else *Ev {
-        return if (comptime trait.isConstPtr(@TypeOf(ptr)))
-            @ptrCast(*const Ev, ptr)
-        else
-            @ptrCast(*Ev, ptr);
+    pub inline fn from(ptr: anytype) Ptr(Ev, @TypeOf(ptr)) {
+        return @ptrCast(Ptr(Ev, @TypeOf(ptr)), ptr);
     }
 
     pub inline fn get_events(self: *const Ev) u32 {
@@ -342,10 +341,10 @@ const EVENTS = opaque {
 };
 
 /// check for timeout events and handles them, then return the next timeout interval (ms)
-fn check_timeout() c_int {
-    // if there are other timer requirements in the future,
-    // a general-purpose manager for timer objects is needed,
-    // featuring the ability to sort and store timer objects by timeout duration.
+fn check_timeout(self: *EvLoop) c_int {
+    _ = self;
+    // TODO: implement a general-purpose timer manager.
+    // there is currently only one timer, so do this.
     return root.check_timeout();
 }
 
@@ -354,7 +353,7 @@ pub fn run(self: *EvLoop) void {
 
     while (true) {
         // handling timeout events and get the next interval
-        const timeout = nosuspend check_timeout();
+        const timeout = nosuspend self.check_timeout();
 
         // empty the list before starting a new epoll_wait
         self.destroyed.clearRetainingCapacity();

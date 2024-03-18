@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_opts = @import("build_opts");
-const assert = std.debug.assert;
 
 const tests = @import("tests.zig");
 
@@ -32,10 +31,10 @@ const ListNode = @import("ListNode.zig");
 
 /// used in tests.zig for discover all test fns
 pub const project_modules = .{
-    c,       cc,     g,       log,      opt,
-    net,     dnl,    dns,     ipset,    fmtchk,
-    str2int, DynStr, StrList, server,   Upstream,
-    EvLoop,  Rc,     RcMsg,   ListNode,
+    c,       cc,     g,       log,    opt,
+    net,     dnl,    dns,     ipset,  fmtchk,
+    str2int, DynStr, StrList, server, Upstream,
+    EvLoop,  co,     Rc,      RcMsg,  ListNode,
 };
 
 /// the rewrite is to avoid generating unnecessary code in release mode.

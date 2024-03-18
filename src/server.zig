@@ -1,9 +1,8 @@
 const std = @import("std");
-const assert = std.debug.assert;
-
+const g = @import("g.zig");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
-const g = @import("g.zig");
+const co = @import("co.zig");
 const log = @import("log.zig");
 const net = @import("net.zig");
 const dnl = @import("dnl.zig");
@@ -13,7 +12,7 @@ const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
 const NoAAAA = @import("NoAAAA.zig");
 const ListNode = @import("ListNode.zig");
-const co = @import("co.zig");
+const assert = std.debug.assert;
 
 comptime {
     // @compileLog("sizeof(QueryCtx):", @sizeOf(QueryCtx), "alignof(QueryCtx):", @alignOf(QueryCtx));

@@ -1,5 +1,5 @@
-const c = @import("c.zig");
 const g = @import("g.zig");
+const c = @import("c.zig");
 const cc = @import("cc.zig");
 const log = @import("log.zig");
 

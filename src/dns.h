@@ -78,3 +78,6 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int wire_namelen);
 
 /* add the answer ip to ipset/nftset (tag:chn, tag:gfw) */
 void dns_add_ip(const void *noalias msg, ssize_t len, int wire_namelen, bool chn);
+
+/* return `ok` */
+bool dns_update_ttl(void *noalias rrs, ssize_t len, s32 elapsed_sec, bool *noalias expired);

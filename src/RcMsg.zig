@@ -1,9 +1,11 @@
 const std = @import("std");
 const g = @import("g.zig");
+const cc = @import("cc.zig");
 const Rc = @import("Rc.zig");
-
 const assert = std.debug.assert;
-const isConstPtr = std.meta.trait.isConstPtr;
+const Bytes = cc.Bytes;
+
+// ==================================================
 
 /// msg with ref_count
 const RcMsg = @This();
@@ -12,6 +14,8 @@ rc: Rc = .{},
 cap: u16, // capacity of the msg data
 len: u16, // msg len (0 means empty)
 // msg data (variable part)
+
+// ==================================================
 
 const alignment = @alignOf(RcMsg);
 const header_len = @sizeOf(RcMsg);
@@ -61,13 +65,6 @@ pub fn free(self: *RcMsg) void {
 /// ref count is 1
 pub fn is_unique(self: *const RcMsg) bool {
     return self.rc.ref_count == 1;
-}
-
-fn Bytes(comptime Self: type, t: enum { ptr, slice }) type {
-    if (isConstPtr(Self))
-        return if (t == .ptr) [*]const u8 else []const u8
-    else
-        return if (t == .ptr) [*]u8 else []u8;
 }
 
 fn mem(self: anytype) Bytes(@TypeOf(self), .slice) {

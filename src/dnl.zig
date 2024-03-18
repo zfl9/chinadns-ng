@@ -1,7 +1,7 @@
+const std = @import("std");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
 const g = @import("g.zig");
-const std = @import("std");
 const testing = std.testing;
 
 pub const Tag = enum(u8) {

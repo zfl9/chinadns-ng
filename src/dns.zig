@@ -68,3 +68,9 @@ pub inline fn test_ip(msg: []const u8, wire_namelen: c_int) TestIpResult {
 pub inline fn add_ip(msg: []const u8, wire_namelen: c_int, is_chn: bool) void {
     return c.dns_add_ip(msg.ptr, cc.to_isize(msg.len), wire_namelen, is_chn);
 }
+
+/// return `is_expired`, or `null` if failed
+pub inline fn update_ttl(rrs: []u8, elapsed_sec: i32) ?bool {
+    var expired = false;
+    return if (c.dns_update_ttl(rrs.ptr, cc.to_isize(rrs.len), elapsed_sec, &expired)) expired else null;
+}

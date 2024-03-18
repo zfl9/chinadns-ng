@@ -1,7 +1,9 @@
-const g = @import("g.zig");
 const std = @import("std");
+const g = @import("g.zig");
 const testing = std.testing;
 const assert = std.debug.assert;
+
+// =====================================================
 
 const ListNode = @This();
 
@@ -10,7 +12,7 @@ next: *ListNode,
 
 // =================== `list_head(sentinel)` ===================
 
-/// empty list
+/// empty list (sentinel node)
 pub fn init(list: *ListNode) void {
     list.prev = list;
     list.next = list;
@@ -26,6 +28,7 @@ pub inline fn tail(list: *const ListNode) *ListNode {
     return list.prev;
 }
 
+/// is sentinel node
 pub inline fn is_empty(list: *const ListNode) bool {
     return list.head() == list;
 }

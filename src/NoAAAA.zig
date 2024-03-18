@@ -3,12 +3,16 @@ const log = @import("log.zig");
 const dnl = @import("dnl.zig");
 const cc = @import("cc.zig");
 
-const NoAAAA = @This();
+// ================================================
 
-pub const Flags = u8;
+const NoAAAA = @This();
 
 // struct fields
 flags: Flags = 0,
+
+// ================================================
+
+pub const Flags = u8;
 
 pub const ALL: Flags = std.math.maxInt(Flags);
 pub const ALL_TAG = TAG_GFW | TAG_CHN | TAG_NONE;
@@ -25,6 +29,8 @@ pub const TRUST_DNS: Flags = 1 << 4;
 pub const CHINA_IPCHK: Flags = 1 << 5;
 /// [tag:none && only_trust_path] filter non-chn-ip reply
 pub const TRUST_IPCHK: Flags = 1 << 6;
+
+// ================================================
 
 pub fn is_empty(self: NoAAAA) bool {
     return self.flags == 0;

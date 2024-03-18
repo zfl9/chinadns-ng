@@ -1,16 +1,20 @@
 //! for simple short strings, such as the value of a command line option.
 //! not looking for performance, but it's better to keep the structure compact.
 
-const cc = @import("cc.zig");
-const g = @import("g.zig");
 const std = @import("std");
+const g = @import("g.zig");
+const cc = @import("cc.zig");
+
+// ==================================================
+
+const StrList = @This();
 
 /// string pointers
 items: [:null]?cc.ConstStr = &[_:null]?cc.ConstStr{},
 /// 0 means null, no memory allocated
 capacity: usize = 0,
 
-const StrList = @This();
+// ==================================================
 
 /// a copy of string `str` will be created (strdup)
 /// if the string already exists, it will not be added

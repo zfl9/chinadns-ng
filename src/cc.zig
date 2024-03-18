@@ -1,17 +1,15 @@
 //! - provide type-safety version of C functions
 //! - fix improperly translated C code/declarations
 
+const std = @import("std");
 const c = @import("c.zig");
 const g = @import("g.zig");
 const fmtchk = @import("fmtchk.zig");
-
-const std = @import("std");
 const meta = std.meta;
-const trait = meta.trait;
 const testing = std.testing;
-
 const assert = std.debug.assert;
-const isConstPtr = trait.isConstPtr;
+const isConstPtr = meta.trait.isConstPtr;
+const isManyItemPtr = meta.trait.isManyItemPtr;
 
 // ==============================================================
 
@@ -42,7 +40,7 @@ pub inline fn remove_const(ptr: anytype) RemoveConst(@TypeOf(ptr)) {
 
 /// remove const qualification of pointer type `T`
 pub fn RemoveConst(comptime T: type) type {
-    if (comptime trait.isConstPtr(T)) {
+    if (isConstPtr(T)) {
         var info = @typeInfo(T);
         info.Pointer.is_const = false;
         return @Type(info);
@@ -50,8 +48,22 @@ pub fn RemoveConst(comptime T: type) type {
     return T;
 }
 
+/// return the `bytes` type of the given `pointer` type, preserving the `const` attribute
+pub fn Bytes(comptime P: type, t: enum { ptr, slice }) type {
+    if (isConstPtr(P))
+        return if (t == .ptr) [*]const u8 else []const u8
+    else
+        return if (t == .ptr) [*]u8 else []u8;
+}
+
+/// return the `*const T` or `*T` (depends on the `P`)
+pub fn Ptr(comptime T: type, comptime P: type) type {
+    return if (isConstPtr(P)) *const T else *T;
+}
+
 // ==============================================================
 
+/// `@ptrCast(P, @alignCast(alignment, ptr))`
 pub inline fn ptrcast(comptime P: type, ptr: anytype) P {
     return @ptrCast(P, @alignCast(@alignOf(meta.Child(P)), ptr));
 }
@@ -104,7 +116,7 @@ pub inline fn is_cstr(comptime S: type) bool {
 /// string => []u8, []const u8, [:0]u8, [:0]const u8
 pub inline fn strslice(str: anytype) StrSlice(@TypeOf(str), false) {
     const S = @TypeOf(str);
-    if (comptime trait.isManyItemPtr(S)) {
+    if (comptime isManyItemPtr(S)) {
         comptime assert(meta.sentinel(S).? == 0);
         return std.mem.sliceTo(str, 0);
     }

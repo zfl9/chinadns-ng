@@ -395,3 +395,36 @@ void dns_add_ip(const void *noalias msg, ssize_t len, int wire_namelen, bool chn
     foreach_record(&msg, &len, count, add_ip, (void *)(uintptr_t)chn);
     ipset_end_add_ip(chn);
 }
+
+bool dns_update_ttl(void *noalias rrs, ssize_t len, s32 elapsed_sec, bool *noalias expired) {
+    while (len > 0) {
+        unlikely_if (!skip_name((const void **)&rrs, &len))
+            return false;
+
+        struct dns_record *record = rrs;
+        ssize_t recordlen = sizeof(struct dns_record) + ntohs(record->rdatalen);
+
+        unlikely_if (len < recordlen)
+            return false;
+
+        // count down
+        if (ntohs(record->rtype) != DNS_TYPE_OPT) {
+            /* It is hereby specified that a TTL value is an unsigned number,
+                with a minimum value of 0, and a maximum value of 2147483647. */
+            s32 new_ttl = (s32)ntohl(record->rttl) - elapsed_sec;
+            if (new_ttl <= 0) {
+                new_ttl = 1;
+                *expired = true;
+            }
+            record->rttl = htonl(new_ttl);
+        }
+
+        rrs += recordlen;
+        len -= recordlen;
+    }
+
+    unlikely_if (len != 0)
+        return false;
+
+    return true;
+}

@@ -9,7 +9,6 @@ const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const NoAAAA = @import("NoAAAA.zig");
 const Upstream = @import("Upstream.zig");
-const testing = std.testing;
 
 const help =
     \\usage: chinadns-ng <options...>. the existing options are as follows:
