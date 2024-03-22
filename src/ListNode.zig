@@ -79,12 +79,28 @@ pub const ReverseIterator = struct {
 
 // =================== `node` ===================
 
-pub fn link_head(list: *ListNode, node: *ListNode) void {
+pub fn link_to_head(list: *ListNode, node: *ListNode) void {
     return node.link(list, list.head());
 }
 
-pub fn link_tail(list: *ListNode, node: *ListNode) void {
+pub fn link_to_tail(list: *ListNode, node: *ListNode) void {
     return node.link(list.tail(), list);
+}
+
+/// assume that the `node` is linked to the `list`
+pub fn move_to_head(list: *ListNode, node: *ListNode) void {
+    if (node != list.head()) {
+        node.unlink();
+        list.link_to_head(node);
+    }
+}
+
+/// assume that the `node` is linked to the `list`
+pub fn move_to_tail(list: *ListNode, node: *ListNode) void {
+    if (node != list.tail()) {
+        node.unlink();
+        list.link_to_tail(node);
+    }
 }
 
 fn link(node: *ListNode, prev: *ListNode, next: *ListNode) void {
@@ -136,7 +152,7 @@ pub fn @"test: List"() !void {
         while (i <= 5) : (i += 1) {
             const obj = try g.allocator.create(Object);
             obj.id = i;
-            list.link_tail(&obj.node);
+            list.link_to_tail(&obj.node);
         }
     }
 
@@ -178,7 +194,7 @@ pub fn @"test: List"() !void {
         }
     }
 
-    // link_head
+    // link_to_head
     var l: ListNode = undefined;
     l.init();
 
@@ -201,7 +217,7 @@ pub fn @"test: List"() !void {
         while (i > 0) : (i -= 1) {
             const obj = try g.allocator.create(Object);
             obj.id = i;
-            l.link_head(&obj.node);
+            l.link_to_head(&obj.node);
         }
     }
 

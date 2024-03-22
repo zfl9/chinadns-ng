@@ -96,12 +96,15 @@ fn init(b: *Builder) void {
     _build_opts.addOption(bool, "is_test", _test);
     _build_opts.addOption(bool, "enable_openssl", _enable_openssl);
     _build_opts.addOption(bool, "enable_mimalloc", _enable_mimalloc);
-    _build_opts.addOption([:0]const u8, "version", chinadns_version);
-    _build_opts.addOption([:0]const u8, "openssl_version", dupeZ(_dep_openssl.version));
-    _build_opts.addOption([:0]const u8, "mimalloc_version", dupeZ(_dep_mimalloc.version));
-    _build_opts.addOption([:0]const u8, "target", dupeZ(desc_target()));
-    _build_opts.addOption([:0]const u8, "cpu", dupeZ(desc_cpu()));
-    _build_opts.addOption([:0]const u8, "mode", dupeZ(desc_mode(null)));
+    _build_opts.addOption([]const u8, "version", chinadns_version);
+    _build_opts.addOption([]const u8, "openssl_version", _dep_openssl.version);
+    _build_opts.addOption([]const u8, "mimalloc_version", _dep_mimalloc.version);
+    _build_opts.addOption([]const u8, "target", desc_target());
+    _build_opts.addOption([]const u8, "cpu", desc_cpu());
+    _build_opts.addOption([]const u8, "mode", desc_mode(null));
+
+    // generate a zig source file (@import all zig source files of this project)
+    gen_modules_zig();
 }
 
 fn init_dep(step: *Step, dep: DependLib) void {
@@ -432,6 +435,39 @@ fn get_target_mcpu() []const u8 {
         fmt("-target {s} -mcpu={s}", .{ target, cpu })
     else
         fmt("-target {s}", .{target});
+}
+
+fn gen_modules_zig() void {
+    var f = std.fs.cwd().createFile("src/modules.zig", .{}) catch unreachable;
+    defer f.close();
+
+    var dir = std.fs.cwd().openIterableDir("src", .{}) catch unreachable;
+    defer dir.close();
+
+    var list = std.ArrayList([]const u8).init(_b.allocator);
+    defer list.deinit();
+
+    var it = dir.iterate();
+    while (it.next() catch unreachable) |file| {
+        if (file.kind != .File)
+            continue;
+        if (!std.mem.endsWith(u8, file.name, ".zig"))
+            continue;
+        list.append(_b.dupe(file.name[0 .. file.name.len - 4])) catch unreachable;
+    }
+
+    std.sort.sort([]const u8, list.items, {}, struct {
+        fn cmp(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b).compare(.lt);
+        }
+    }.cmp);
+
+    for (list.items) |name| {
+        f.writeAll(fmt(
+            "pub const {s} = @import(\"{s}.zig\");\n",
+            .{ name, name },
+        )) catch unreachable;
+    }
 }
 
 // =========================================================================

@@ -7,11 +7,12 @@ const log = @import("log.zig");
 const net = @import("net.zig");
 const dnl = @import("dnl.zig");
 const dns = @import("dns.zig");
+const cache = @import("cache.zig");
 const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
-const NoAAAA = @import("NoAAAA.zig");
 const ListNode = @import("ListNode.zig");
+const flags_op = @import("flags_op.zig");
 const assert = std.debug.assert;
 
 comptime {
@@ -35,34 +36,48 @@ const QueryCtx = struct {
     // alignment: 2
     qid: u16,
     id: c.be16, // original id
-    bufsz: u16, // udp requester's receive bufsz
+    bufsz: u16, // requester's receive bufsz
 
     // alignment: 1
     name_tag: dnl.Tag,
-    from_tcp: bool,
-    china_got: bool = false,
+    flags: Flags,
 
-    fn new(qid: u16, id: c.be16, bufsz: u16, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool, name_tag: dnl.Tag) *QueryCtx {
+    pub const Flags = enum(u8) {
+        from_local = 1 << 0, // {fdobj, src_addr} have undefined values (priority over other `.from_*`)
+        from_tcp = 1 << 1,
+        china_got = 1 << 2,
+        _, // non-exhaustive enum
+        usingnamespace flags_op.get(Flags);
+    };
+
+    fn new(qid: u16, id: c.be16, bufsz: u16, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, name_tag: dnl.Tag, flags: Flags) *QueryCtx {
+        const from_local = flags.has(.from_local);
+
         const self = g.allocator.create(QueryCtx) catch unreachable;
+
         self.* = .{
             .qid = qid,
             .id = id,
             .bufsz = bufsz,
-            .fdobj = fdobj.ref(),
-            .src_addr = src_addr.*,
-            .from_tcp = from_tcp,
+            .fdobj = if (!from_local) fdobj.ref() else undefined,
+            .src_addr = if (!from_local) src_addr.* else undefined,
             .name_tag = name_tag,
+            .flags = flags,
             .req_time = cc.time(),
         };
+
         return self;
     }
 
     fn free(self: *const QueryCtx) void {
-        self.fdobj.unref();
+        if (!self.flags.has(.from_local))
+            self.fdobj.unref();
+
         if (self.trust_msg) |msg| {
             assert(msg.is_unique());
             msg.unref();
         }
+
         g.allocator.destroy(self);
     }
 
@@ -99,8 +114,9 @@ const QueryCtx = struct {
             qnamelen: c_int,
             fdobj: *EvLoop.Fd,
             src_addr: *const cc.SockAddr,
-            from_tcp: bool,
             name_tag: dnl.Tag,
+            flags: Flags,
+            /// out param
             first_query: *bool,
         ) ?*QueryCtx {
             if (self.len() >= std.math.maxInt(u16) + 1) {
@@ -116,15 +132,15 @@ const QueryCtx = struct {
             const id = dns.get_id(msg);
             dns.set_id(msg, qid);
 
-            const bufsz = if (from_tcp)
+            const bufsz = if (flags.has_any(Flags.from(.{ .from_local, .from_tcp })))
                 cc.to_u16(c.DNS_MSG_MAXSIZE)
-            else
+            else // from udp
                 dns.get_bufsz(msg, qnamelen);
 
-            const qctx = QueryCtx.new(qid, id, bufsz, fdobj, src_addr, from_tcp, name_tag);
+            const qctx = QueryCtx.new(qid, id, bufsz, fdobj, src_addr, name_tag, flags);
 
             self.map.putNoClobber(g.allocator, qid, qctx) catch unreachable;
-            self.list.link_tail(&qctx.list_node);
+            self.list.link_to_tail(&qctx.list_node);
 
             return qctx;
         }
@@ -220,7 +236,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
             g.evloop.recv_exactly(fdobj, qmsg.msg(), 0) orelse
                 break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
 
-            on_query(qmsg, fdobj, &src_addr, true);
+            on_query(qmsg, fdobj, &src_addr, .from_tcp);
         }
     };
 
@@ -260,7 +276,7 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
         };
         qmsg.len = cc.to_u16(len);
 
-        on_query(qmsg, fdobj, &src_addr, false);
+        on_query(qmsg, fdobj, &src_addr, QueryCtx.Flags.empty());
     }
 }
 
@@ -296,33 +312,57 @@ const QueryLog = struct {
         );
     }
 
+    pub noinline fn cache(self: *const QueryLog, cache_msg: []const u8) void {
+        _ = cache_msg;
+        _ = self;
+        // TODO
+        // log.info(@src(), "cache() hit", args: anytype)
+    }
+
+    pub noinline fn refresh(self: *const QueryLog, cache_msg: []const u8) void {
+        _ = cache_msg;
+        _ = self;
+        // TODO
+        // log.info(@src(), "cache() hit", args: anytype)
+    }
+
     pub noinline fn forward(self: *const QueryLog, qctx: *const QueryCtx, group: cc.ConstStr) void {
+        const from: cc.ConstStr = if (qctx.flags.has(.from_local))
+            "self"
+        else if (qctx.flags.has(.from_tcp))
+            "tcp"
+        else
+            "udp";
+
         log.info(
             @src(),
             "forward query(qid:%u, from:%s, '%s') to %s group",
-            .{ cc.to_uint(qctx.qid), cc.b2s(qctx.from_tcp, "tcp", "udp"), self.name, group },
+            .{ cc.to_uint(qctx.qid), from, self.name, group },
         );
     }
 };
 
-fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool) void {
+fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qflags: QueryCtx.Flags) void {
     const msg = qmsg.msg();
+    var qflags = in_qflags;
 
     var ascii_namebuf: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
     const p_ascii_namebuf: ?[*]u8 = if (g.verbose or !dnl.is_empty()) &ascii_namebuf else null;
     var qnamelen: c_int = undefined;
+
     if (!dns.check_query(msg, p_ascii_namebuf, &qnamelen)) {
         log.err(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
         return;
     }
 
-    const name_tag = dnl.get_name_tag(&ascii_namebuf, dns.to_ascii_namelen(qnamelen));
+    const id = dns.get_id(msg);
+    const name_tag = dnl.get_name_tag(&ascii_namebuf, dns.ascii_namelen(qnamelen));
     const qtype = dns.get_qtype(msg, qnamelen);
 
     var querylog: QueryLog = if (g.verbose) .{
         .src_ip = undefined,
         .src_port = undefined,
-        .id = dns.get_id(msg),
+        .id = id,
         .qtype = qtype,
         .tag = name_tag,
         .name = &ascii_namebuf,
@@ -334,25 +374,45 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
         querylog.query();
     }
 
-    var tagnone_to_china = true;
-    var tagnone_to_trust = true;
+    var tagnone_china = true;
+    var tagnone_trust = true;
 
     // no-AAAA filter
-    if (qtype == c.DNS_TYPE_AAAA and !g.noaaaa_query.is_empty()) {
-        if (g.noaaaa_query.filter(name_tag)) |by_rule| {
-            if (g.verbose) querylog.noaaaa(by_rule);
-            var reply_msg = msg;
-            reply_msg.len = dns.empty_reply(reply_msg, qnamelen);
-            return send_reply(reply_msg, fdobj, src_addr, from_tcp, c.DNS_MSG_MAXSIZE);
-        }
+    if (qtype == c.DNS_TYPE_AAAA)
+        if (g.noaaaa_query.filter(name_tag, &tagnone_china, &tagnone_trust)) |by_rule| {
+            var rmsg = msg;
+            rmsg.len = dns.empty_reply(rmsg, qnamelen);
 
-        // tag:none
-        if (g.noaaaa_query.has_any(NoAAAA.ALL_DNS) and name_tag == .none) {
-            if (g.noaaaa_query.has(NoAAAA.CHINA_DNS))
-                tagnone_to_china = false
-            else // if (g.noaaaa_query.has(NoAAAA.TRUST_DNS))
-                tagnone_to_trust = false;
-        }
+            if (g.verbose) querylog.noaaaa(by_rule);
+            return send_reply(rmsg, fdobj, src_addr, c.DNS_MSG_MAXSIZE, id, qflags);
+        };
+
+    // for upstream_group.send()
+    var in_proto: Upstream.Proto = if (qflags.has(.from_tcp)) .tcpin else .udpin;
+
+    // check the cache
+    var ttl: i32 = undefined;
+    if (cache.get(msg, qnamelen, &ttl)) |cache_msg| {
+        // because send_reply is async func
+        cache.ref(cache_msg);
+        defer cache.unref(cache_msg);
+
+        if (g.verbose) querylog.cache(cache_msg);
+        send_reply(cache_msg, fdobj, src_addr, c.DNS_MSG_MAXSIZE, id, qflags);
+
+        if (ttl > g.cache_refresh)
+            return;
+
+        // refresh cache in the background
+        if (g.verbose)
+            querylog.refresh(cache_msg);
+
+        // avoid receiving truncated response
+        if (in_proto == .udpin and cache_msg.len > c.DNS_EDNS_MINSIZE - 30)
+            in_proto = .tcpin;
+
+        // mark the qctx
+        qflags.add(.from_local);
     }
 
     var first_query: bool = undefined;
@@ -362,19 +422,19 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_
         qnamelen,
         fdobj,
         src_addr,
-        from_tcp,
         name_tag,
+        qflags,
         &first_query,
     ) orelse return;
 
-    if (name_tag == .chn or (name_tag == .none and tagnone_to_china)) {
+    if (name_tag == .chn or (name_tag == .none and tagnone_china)) {
         if (g.verbose) querylog.forward(qctx, "china");
-        nosuspend g.china_group.send(qmsg, from_tcp, first_query);
+        nosuspend g.china_group.send(qmsg, in_proto, first_query);
     }
 
-    if (name_tag == .gfw or (name_tag == .none and tagnone_to_trust)) {
+    if (name_tag == .gfw or (name_tag == .none and tagnone_trust)) {
         if (g.verbose) querylog.forward(qctx, "trust");
-        nosuspend g.trust_group.send(qmsg, from_tcp, first_query);
+        nosuspend g.trust_group.send(qmsg, in_proto, first_query);
     }
 }
 
@@ -431,6 +491,12 @@ const ReplyLog = struct {
             .{ cc.to_uint(self.qid), self.tag_desc(), cc.to_uint(self.qtype), self.name, action },
         );
     }
+
+    pub noinline fn cache(self: *const ReplyLog, msg: []const u8) void {
+        _ = msg;
+        _ = self;
+        // TODO
+    }
 };
 
 /// tag:none
@@ -443,8 +509,8 @@ fn use_china_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) boo
         return true;
 
     // no-aaaa filter
-    const only_china = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.TRUST_DNS);
-    if (only_china and !g.noaaaa_query.has(NoAAAA.CHINA_IPCHK))
+    const only_china = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(.trust_dns);
+    if (only_china and !g.noaaaa_query.has(.china_ipchk))
         return true;
 
     // test the answer ip
@@ -479,14 +545,14 @@ fn use_trust_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) boo
     const qtype = dns.get_qtype(msg, qnamelen);
 
     // no-aaaa filter
-    const only_trust = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(NoAAAA.CHINA_DNS);
+    const only_trust = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(.china_dns);
     if (!only_trust)
         return false; // waiting for chinadns
 
     // [only_trust]
 
     // no-aaaa ipchk
-    if (g.noaaaa_query.has(NoAAAA.TRUST_IPCHK)) {
+    if (g.noaaaa_query.has(.trust_ipchk)) {
         const res = dns.test_ip(msg, qnamelen);
         if (res == .not_chnip or res == .not_found) {
             if (g.verbose) replylog.noaaaa("trust_ipchk");
@@ -503,6 +569,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     var ascii_namebuf: [c.DNS_NAME_MAXLEN:0]u8 = undefined;
     const p_ascii_namebuf: ?[*]u8 = if (g.verbose) &ascii_namebuf else null;
     var qnamelen: c_int = undefined;
+
     if (!dns.check_reply(rmsg.msg(), p_ascii_namebuf, &qnamelen)) {
         log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url.ptr});
         return;
@@ -551,13 +618,13 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
                     rmsg = trust_msg;
                 } else {
                     // waiting for trustdns
-                    qctx.china_got = true;
+                    qctx.flags.add(.china_got);
                     return;
                 }
             }
         },
         .trust => {
-            if (qctx.name_tag == .gfw or qctx.china_got or use_trust_reply(rmsg, qnamelen, &replylog)) {
+            if (qctx.name_tag == .gfw or qctx.flags.has(.china_got) or use_trust_reply(rmsg, qnamelen, &replylog)) {
                 if (g.verbose)
                     replylog.reply("accept", null);
 
@@ -582,25 +649,38 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     // see check_timeout()
     _qctx_list.del_nofree(qctx);
 
-    // may be suspended
-    send_reply(rmsg.msg(), qctx.fdobj, &qctx.src_addr, qctx.from_tcp, qctx.bufsz);
+    if (!qctx.flags.has(.from_local)) {
+        // request from tcp/udp client
+        // may suspend the current coroutine
+        send_reply(rmsg.msg(), qctx.fdobj, &qctx.src_addr, qctx.bufsz, qctx.id, qctx.flags);
+    }
+
+    // add to cache
+    if (cache.enabled() and !dns.is_tc(rmsg.msg()) and dns.get_rcode(rmsg.msg()) == c.DNS_RCODE_NOERROR) {
+        if (g.verbose) replylog.cache(rmsg.msg());
+        cache.add(rmsg.msg(), qnamelen);
+    }
 
     qctx.free();
 }
 
-fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_tcp: bool, bufsz: u16) void {
-    // log.debug(@src(), "bufsz: %u", .{cc.to_uint(bufsz)});
+fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, bufsz: u16, id: c.be16, qflags: QueryCtx.Flags) void {
+    var iov = [_]cc.iovec_t{
+        undefined, // for tcp
+        .{
+            .iov_base = std.mem.asBytes(&cc.to_u16(id)),
+            .iov_len = 2,
+        },
+        .{
+            .iov_base = cc.remove_const(msg[2..].ptr),
+            .iov_len = msg[2..].len,
+        },
+    };
 
-    if (from_tcp) {
-        var iov = [_]cc.iovec_t{
-            .{
-                .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
-                .iov_len = @sizeOf(u16),
-            },
-            .{
-                .iov_base = msg.ptr,
-                .iov_len = msg.len,
-            },
+    if (qflags.has(.from_tcp)) {
+        iov[0] = .{
+            .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
+            .iov_len = 2,
         };
         const msghdr = cc.msghdr_t{
             .msg_iov = &iov,
@@ -608,15 +688,27 @@ fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_t
         };
         if (g.evloop.sendmsg(fdobj, &msghdr, 0) != null) return;
     } else {
-        var reply_msg = msg;
-        if (reply_msg.len > bufsz) {
-            reply_msg.len = dns.truncate(reply_msg);
-            // log.debug(@src(), "msg truncated: %zu -> %zu", .{ msg.len, reply_msg.len });
+        // from udp
+        if (msg.len > bufsz) {
+            const tc_msg = dns.truncate(msg); // ptr to static buffer
+            iov[2] = .{
+                .iov_base = tc_msg[2..].ptr,
+                .iov_len = tc_msg[2..].len,
+            };
         }
-        if (cc.sendto(fdobj.fd, reply_msg, 0, src_addr) != null) return;
+        const msghdr = cc.msghdr_t{
+            .msg_name = cc.remove_const(src_addr),
+            .msg_namelen = src_addr.len(),
+            .msg_iov = iov[1..],
+            .msg_iovlen = iov[1..].len,
+        };
+        if (cc.sendmsg(fdobj.fd, &msghdr, 0) != null) return;
     }
 
     // error handling
+
+    const proto: cc.ConstStr = if (qflags.has(.from_tcp)) "tcp" else "udp";
+
     var ip: cc.IpStrBuf = undefined;
     var port: u16 = undefined;
     src_addr.to_text(&ip, &port);
@@ -624,7 +716,7 @@ fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_t
     log.err(
         @src(),
         "reply(id:%u, sz:%zu) to %s://%s#%u failed: (%d) %m",
-        .{ cc.to_uint(dns.get_id(msg)), msg.len, cc.b2s(from_tcp, "tcp", "udp"), &ip, cc.to_uint(port), cc.errno() },
+        .{ cc.to_uint(dns.get_id(msg)), msg.len, proto, &ip, cc.to_uint(port), cc.errno() },
     );
 }
 
@@ -633,11 +725,11 @@ fn send_reply(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, from_t
 /// qctx will be free()
 fn on_timeout(qctx: *const QueryCtx) void {
     if (g.verbose) {
+        const proto = cc.b2s(qctx.flags.has(.from_tcp), "tcp", "udp");
+
         var ip: cc.IpStrBuf = undefined;
         var port: u16 = undefined;
         qctx.src_addr.to_text(&ip, &port);
-
-        const proto = cc.b2s(qctx.from_tcp, "tcp", "udp");
 
         log.warn(
             @src(),
@@ -666,28 +758,29 @@ pub fn check_timeout() c_int {
 
 // =========================================================================
 
-/// listen socket (tcp + udp)
-fn create_socks(ip: cc.ConstStr, port: u16) [2]c_int {
-    const e: struct { op: cc.ConstStr, t: cc.ConstStr } = e: {
-        const addr = cc.SockAddr.from_text(ip, port);
-
-        const tcp = net.new_listen_sock(addr.family(), .tcp) orelse cc.exit(1);
-        const udp = net.new_listen_sock(addr.family(), .udp) orelse cc.exit(1);
-
-        cc.bind(tcp, &addr) orelse
-            break :e .{ .op = "bind", .t = "tcp" };
-
-        cc.bind(udp, &addr) orelse
-            break :e .{ .op = "bind", .t = "udp" };
-
-        // mark the socket as a listener
-        cc.listen(tcp, 256) orelse
-            break :e .{ .op = "listen", .t = "tcp" };
-
-        return .{ tcp, udp };
+noinline fn do_start(ip: cc.ConstStr, socktype: net.SockType) void {
+    const err_op: cc.ConstStr = e: {
+        const addr = cc.SockAddr.from_text(ip, g.bind_port);
+        const fd = net.new_listen_sock(addr.family(), socktype) orelse break :e "socket";
+        cc.bind(fd, &addr) orelse break :e "bind";
+        switch (socktype) {
+            .tcp => {
+                cc.listen(fd, 256) orelse break :e "listen";
+                co.create(listen_tcp, .{ fd, ip });
+            },
+            .udp => {
+                co.create(listen_udp, .{ fd, ip });
+            },
+        }
+        return;
     };
 
-    log.err(@src(), "%s(%s, %s#%u) failed: (%d) %m", .{ e.op, e.t, ip, cc.to_uint(port), cc.errno() });
+    // error handling
+    log.err(
+        @src(),
+        "%s(%s, %s#%u) failed: (%d) %m",
+        .{ err_op, socktype.str(), ip, cc.to_uint(g.bind_port), cc.errno() },
+    );
     cc.exit(1);
 }
 
@@ -695,8 +788,9 @@ pub fn start() void {
     _qctx_list.init();
 
     for (g.bind_ips.items) |ip| {
-        const fds = create_socks(ip.?, g.bind_port);
-        co.create(listen_tcp, .{ fds[0], ip.? });
-        co.create(listen_udp, .{ fds[1], ip.? });
+        if (g.bind_tcp)
+            do_start(ip.?, .tcp);
+        if (g.bind_udp)
+            do_start(ip.?, .udp);
     }
 }

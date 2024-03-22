@@ -10,6 +10,7 @@ const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
+const flags_op = @import("flags_op.zig");
 
 pub const VERSION: cc.ConstStr = b: {
     var target: [:0]const u8 = @tagName(builtin.cpu.arch) ++ "-" ++ @tagName(builtin.os.tag) ++ "-" ++ @tagName(builtin.abi);
@@ -83,6 +84,9 @@ pub var bind_ips: StrList = .{};
 
 pub var bind_port: u16 = 65353;
 
+pub var bind_tcp: bool = true;
+pub var bind_udp: bool = true;
+
 pub var china_group = Upstream.Group.init(.china);
 
 pub var trust_group = Upstream.Group.init(.trust);
@@ -95,6 +99,17 @@ pub var trustdns_packet_n: u8 = 1;
 
 /// in seconds
 pub var upstream_timeout: u8 = 5;
+
+/// dns cache (0 means disable)
+pub var cache_size: u16 = 0;
+
+/// allow stale cache
+/// - `0`: disable stale mode
+/// - `N`: stale cache is allowed if `-ttl <= N`
+pub var cache_stale: u16 = 0;
+
+/// if the current hit cache has a `ttl <= N`, refresh it
+pub var cache_refresh: u16 = 0;
 
 pub var evloop: EvLoop = undefined;
 

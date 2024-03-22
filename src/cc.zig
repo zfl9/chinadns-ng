@@ -63,6 +63,19 @@ pub fn Ptr(comptime T: type, comptime P: type) type {
 
 // ==============================================================
 
+/// return `p1 - p2` (same semantics as C)
+/// https://github.com/ziglang/zig/issues/1738
+pub inline fn ptrdiff(comptime T: type, p1: [*]const T, p2: [*]const T) isize {
+    const addr1 = to_isize(@ptrToInt(p1));
+    const addr2 = to_isize(@ptrToInt(p2));
+    return @divExact(addr1 - addr2, @sizeOf(T));
+}
+
+/// return `p1 - p2`, assume the result is non-negative
+pub inline fn ptrdiff_u(comptime T: type, p1: [*]const T, p2: [*]const T) usize {
+    return to_usize(ptrdiff(T, p1, p2));
+}
+
 /// `@ptrCast(P, @alignCast(alignment, ptr))`
 pub inline fn ptrcast(comptime P: type, ptr: anytype) P {
     return @ptrCast(P, @alignCast(@alignOf(meta.Child(P)), ptr));

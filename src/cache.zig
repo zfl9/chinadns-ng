@@ -3,69 +3,101 @@ const g = @import("g.zig");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
 const dns = @import("dns.zig");
+const ListNode = @import("ListNode.zig");
+const CacheMsg = @import("CacheMsg.zig");
+const cache_ignore = @import("cache_ignore.zig");
+const assert = std.debug.assert;
 const Bytes = cc.Bytes;
 
-const ReplyData = struct {
-    last_access: c.time_t, // last access time
-    question_len: u16,
-    data_len: u16,
-    // data: [data_len]u8, // {question, answer, authority, additional}
+/// question => CacheMsg
+var _map: std.StringHashMapUnmanaged(*CacheMsg) = .{};
+var _list: ListNode = undefined;
 
-    const alignment = @alignOf(ReplyData);
-    const header_len = @sizeOf(ReplyData);
+pub fn module_init() void {
+    _list.init();
+}
 
-    fn header(bytes: []align(alignment) u8) *ReplyData {
-        return std.mem.bytesAsValue(ReplyData, bytes[0..header_len]);
+pub fn enabled() bool {
+    return g.cache_size > 0;
+}
+
+/// return the cached reply msg
+pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32) ?[]const u8 {
+    if (!enabled())
+        return null;
+
+    const entry = _map.getEntry(dns.question(qmsg, qnamelen)) orelse return null;
+    const cache_msg = entry.value_ptr.*;
+
+    // update ttl
+    const ttl = cache_msg.update_ttl();
+    p_ttl.* = ttl;
+
+    if (ttl > 0 or (g.cache_stale > 0 and -ttl <= g.cache_stale)) {
+        // not expired, or stale cache
+        _list.move_to_head(&cache_msg.list_node);
+        return cache_msg.msg();
+    } else {
+        // expired
+        on_expired(entry.key_ptr, cache_msg);
+        return null;
+    }
+}
+
+fn on_expired(key_ptr: *[]const u8, cache_msg: *CacheMsg) void {
+    _map.removeByPtr(key_ptr);
+    cache_msg.list_node.unlink();
+    cache_msg.free();
+}
+
+/// call before using the cache msg
+pub fn ref(msg: []const u8) void {
+    return CacheMsg.from_msg(msg).ref();
+}
+
+/// call after using the cache msg (defer)
+pub fn unref(msg: []const u8) void {
+    return CacheMsg.from_msg(msg).unref();
+}
+
+/// the `msg` should be checked by the `dns.check_reply()` first
+pub fn add(msg: []const u8, qnamelen: c_int) void {
+    if (!enabled())
+        return;
+
+    if (cache_ignore.has(msg, qnamelen))
+        return;
+
+    const ttl = dns.get_ttl(msg, qnamelen) orelse return;
+
+    const res = _map.getOrPut(g.allocator, dns.question(msg, qnamelen)) catch unreachable;
+    if (res.found_existing) {
+        // check ttl, avoid duplicate add
+        const old_ttl = res.value_ptr.*.get_ttl();
+        if (std.math.absCast(ttl - old_ttl) <= 2) return;
     }
 
-    /// the data will be copied
-    pub fn new(in_data: []const u8, qnamelen: c_int) *ReplyData {
-        const bytes = g.allocator.alignedAlloc(u8, alignment, header_len + in_data.len) catch unreachable;
-        const self = header(bytes);
-        self.* = .{
-            .last_access = cc.time(),
-            .question_len = dns.to_question_len(qnamelen),
-            .data_len = cc.to_u16(in_data.len),
-        };
-        @memcpy(self.data(), in_data.ptr, in_data.len);
-        return self;
-    }
+    // create cache msg
+    const cache_msg = b: {
+        if (res.found_existing) {
+            const old = res.value_ptr.*;
+            old.list_node.unlink(); // unlink from list
+            break :b old.reuse_or_new(msg, qnamelen, ttl);
+        } else if (_map.count() <= g.cache_size) {
+            break :b CacheMsg.new(msg, qnamelen, ttl);
+        } else {
+            const old = CacheMsg.from_list_node(_list.tail());
+            assert(_map.remove(old.question())); // remove from map
+            assert(_map.count() == g.cache_size);
+            old.list_node.unlink(); // unlink from list
+            break :b old.reuse_or_new(msg, qnamelen, ttl);
+        }
+    };
 
-    pub fn free(self: *ReplyData) void {
-        g.allocator.free(self.mem());
-    }
+    // update key/value
+    res.key_ptr.* = cache_msg.question(); // ptr to `cache_msg`
+    res.value_ptr.* = cache_msg;
 
-    fn mem(self: anytype) Bytes(@TypeOf(self), .slice) {
-        const P = Bytes(@TypeOf(self), .ptr);
-        return @ptrCast(P, self)[0 .. header_len + self.data_len];
-    }
-
-    pub fn data(self: anytype) Bytes(@TypeOf(self), .slice) {
-        return self.mem()[header_len..];
-    }
-
-    pub fn question(self: anytype) Bytes(@TypeOf(self), .slice) {
-        return self.data()[0..self.question_len];
-    }
-
-    /// answer + authority + additional
-    pub fn records(self: anytype) Bytes(@TypeOf(self), .slice) {
-        return self.data()[self.question_len..];
-    }
-
-    /// return `is_expired`, or `null` if failed
-    pub fn update_ttl(self: *ReplyData) ?bool {
-        const elapsed_sec = std.math.sub(c.time_t, cc.time(), self.last_access) catch 0;
-        return dns.update_ttl(self.records(), @truncate(u32, elapsed_sec));
-    }
-};
-
-/// question => ReplyData
-var _cache: std.StringHashMapUnmanaged(*ReplyData) = .{};
-
-/// the `rmsg` should be checked by the `dns.check_reply()` first
-pub fn add(rmsg: []const u8, qnamelen: c_int) void {
-    _ = qnamelen;
-    _ = rmsg;
-    // TODO
+    // link to list
+    _list.link_to_head(&cache_msg.list_node);
 }

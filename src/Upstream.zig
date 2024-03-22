@@ -468,13 +468,12 @@ pub const Group = struct {
         self.list.append(g.allocator, item) catch unreachable;
     }
 
-    /// nosuspend
-    pub fn send(self: *Group, qmsg: *RcMsg, from_tcp: bool, first_query: bool) void {
-        const in_proto: Proto = if (from_tcp) .tcpin else .udpin;
-
+    /// [nosuspend]
+    /// @in_proto: `.tcpin` or `.udpin`
+    pub fn send(self: *Group, qmsg: *RcMsg, in_proto: Proto, first_query: bool) void {
         const verbose_info = if (g.verbose) .{
             .qid = dns.get_id(qmsg.msg()),
-            .from = cc.b2s(from_tcp, "tcp", "udp"),
+            .from = cc.b2s(in_proto == .tcpin, "tcp", "udp"),
         } else undefined;
 
         const now_time = if (first_query) cc.time() else undefined;

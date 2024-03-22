@@ -7,8 +7,8 @@ const net = @import("net.zig");
 const str2int = @import("str2int.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
-const NoAAAA = @import("NoAAAA.zig");
 const Upstream = @import("Upstream.zig");
+const cache_ignore = @import("cache_ignore.zig");
 
 const help =
     \\usage: chinadns-ng <options...>. the existing options are as follows:
@@ -38,6 +38,10 @@ const help =
     \\                                      rule C: check answer ip of china upstream
     \\                                      rule T: check answer ip of trust upstream
     \\                                      if no rules is given, it defaults to 'a'
+    \\ --cache <size>                       enable cache, size is the number of caches
+    \\ --cache-stale <N>                    allow use the cached data with a TTL >= -N
+    \\ --cache-refresh <N>                  pre-refresh the cached data if the TTL <= N
+    \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
     \\ -o, --timeout-sec <sec>              response timeout of upstream, default: 5
     \\ -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
     \\ -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -81,6 +85,10 @@ const optdef_array = [_]OptDef{
     .{ .short = "4", .long = "ipset-name4",   .value = .required, .optfn = opt_ipset_name4,   },
     .{ .short = "6", .long = "ipset-name6",   .value = .required, .optfn = opt_ipset_name6,   },
     .{ .short = "N", .long = "no-ipv6",       .value = .optional, .optfn = opt_no_ipv6,       },
+    .{ .short = "",  .long = "cache",         .value = .required, .optfn = opt_cache,         },
+    .{ .short = "",  .long = "cache-stale",   .value = .required, .optfn = opt_cache_stale,   },
+    .{ .short = "",  .long = "cache-refresh", .value = .required, .optfn = opt_cache_refresh, },
+    .{ .short = "",  .long = "cache-ignore",  .value = .required, .optfn = opt_cache_ignore,  },
     .{ .short = "o", .long = "timeout-sec",   .value = .required, .optfn = opt_timeout_sec,   },
     .{ .short = "p", .long = "repeat-times",  .value = .required, .optfn = opt_repeat_times,  },
     .{ .short = "n", .long = "noip-as-chnip", .value = .no_value, .optfn = opt_noip_as_chnip, },
@@ -93,10 +101,14 @@ const optdef_array = [_]OptDef{
 // zig fmt: on
 
 noinline fn get_optdef(name: []const u8) ?OptDef {
+    if (name.len == 0)
+        return null;
+
     for (optdef_array) |optdef| {
         if (std.mem.eql(u8, optdef.short, name) or std.mem.eql(u8, optdef.long, name))
             return optdef;
     }
+
     return null;
 }
 
@@ -133,14 +145,14 @@ fn opt_config(in_value: ?[]const u8) void {
     };
 
     const src = @src();
+    const value = in_value.?;
 
-    if (static.depth + 1 > 20)
-        exit(src, "call chain is too deep, please check the config for a dead loop", .{});
+    if (static.depth + 1 > 10)
+        exit(src, "config chain is too deep: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 
     static.depth += 1;
     defer static.depth -= 1;
 
-    const value = in_value.?;
     if (value.len > c.PATH_MAX)
         exit(src, "filename is too long: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 
@@ -236,7 +248,39 @@ fn opt_bind_addr(in_value: ?[]const u8) void {
 
 fn opt_bind_port(in_value: ?[]const u8) void {
     const value = in_value.?;
-    g.bind_port = check_port(value) orelse err_exit(@src(), value);
+    const src = @src();
+
+    // 53 (53@tcp+udp)
+    // 53@tcp
+    // 53@udp
+    // 53@tcp+udp
+    var it = std.mem.split(u8, value, "@");
+
+    // port
+    const port = it.next().?;
+    g.bind_port = check_port(port) orelse err_exit(src, value);
+
+    // proto
+    if (it.next()) |proto| {
+        if (std.mem.eql(u8, proto, "tcp+udp") or std.mem.eql(u8, proto, "udp+tcp")) {
+            g.bind_tcp = true;
+            g.bind_udp = true;
+        } else if (std.mem.eql(u8, proto, "tcp")) {
+            g.bind_tcp = true;
+            g.bind_udp = false;
+        } else if (std.mem.eql(u8, proto, "udp")) {
+            g.bind_tcp = false;
+            g.bind_udp = true;
+        } else {
+            err_exit(src, value);
+        }
+    } else {
+        g.bind_tcp = true;
+        g.bind_udp = true;
+    }
+
+    if (it.next() != null)
+        err_exit(src, value);
 }
 
 /// "upstream,..."
@@ -304,7 +348,7 @@ fn opt_default_tag(in_value: ?[]const u8) void {
             return;
         }
     }
-    exit(@src(), "invalid domain tag: '%.*s'", .{ cc.to_int(value.len), value.ptr });
+    err_exit(@src(), value);
 }
 
 fn opt_add_tagchn_ip(in_value: ?[]const u8) void {
@@ -328,34 +372,55 @@ fn opt_no_ipv6(in_value: ?[]const u8) void {
     if (in_value) |value| {
         for (value) |rule| {
             g.noaaaa_query.add(switch (rule) {
-                'a' => NoAAAA.ALL,
-                'm' => NoAAAA.TAG_CHN,
-                'g' => NoAAAA.TAG_GFW,
-                'n' => NoAAAA.TAG_NONE,
-                'c' => NoAAAA.CHINA_DNS,
-                't' => NoAAAA.TRUST_DNS,
-                'C' => NoAAAA.CHINA_IPCHK,
-                'T' => NoAAAA.TRUST_IPCHK,
+                'a' => .all,
+                'm' => .tag_chn,
+                'g' => .tag_gfw,
+                'n' => .tag_none,
+                'c' => .china_dns,
+                't' => .trust_dns,
+                'C' => .china_ipchk,
+                'T' => .trust_ipchk,
                 else => exit(@src(), "invalid no-aaaa rule: '%c'", .{rule}),
             });
         }
     } else {
-        g.noaaaa_query.add(NoAAAA.ALL);
+        g.noaaaa_query.add(.all);
     }
+}
+
+fn opt_cache(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    g.cache_size = str2int.parse(@TypeOf(g.cache_size), value, 10) orelse
+        err_exit(@src(), value);
+}
+
+fn opt_cache_stale(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    g.cache_stale = str2int.parse(@TypeOf(g.cache_stale), value, 10) orelse
+        err_exit(@src(), value);
+}
+
+fn opt_cache_refresh(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    g.cache_refresh = str2int.parse(@TypeOf(g.cache_refresh), value, 10) orelse
+        err_exit(@src(), value);
+}
+
+fn opt_cache_ignore(in_value: ?[]const u8) void {
+    const domain = in_value.?;
+    cache_ignore.add(domain) orelse err_exit(@src(), domain);
 }
 
 fn opt_timeout_sec(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.upstream_timeout = str2int.parse(@TypeOf(g.upstream_timeout), value, 10) orelse 0;
-    if (g.upstream_timeout == 0)
-        exit(@src(), "invalid upstream timeout: '%.*s'", .{ cc.to_int(value.len), value.ptr });
+    if (g.upstream_timeout == 0) err_exit(@src(), value);
 }
 
 fn opt_repeat_times(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.trustdns_packet_n = str2int.parse(@TypeOf(g.trustdns_packet_n), value, 10) orelse 0;
-    if (g.trustdns_packet_n == 0)
-        exit(@src(), "invalid trust-dns packets num: '%.*s'", .{ cc.to_int(value.len), value.ptr });
+    if (g.trustdns_packet_n == 0) err_exit(@src(), value);
     g.trustdns_packet_n = std.math.min(g.trustdns_packet_n, g.TRUSTDNS_PACKET_MAX);
 }
 

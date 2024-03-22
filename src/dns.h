@@ -33,6 +33,18 @@
 #define DNS_TYPE_AAAA 28 /* ipv6 address */
 #define DNS_TYPE_OPT 41 /* EDNS pseudo-RR */
 
+/* "\0" => 0 */
+/* "\1x\0" => 1 */
+/* "\3foo\3com\0" => 7 */
+static inline int dns_ascii_namelen(int qnamelen) {
+    int n = qnamelen - 2;
+    return n > 0 ? n : 0;
+}
+
+u16 dns_header_len(void);
+
+u16 dns_question_len(int qnamelen);
+
 u16 dns_get_id(const void *noalias msg);
 
 void dns_set_id(void *noalias msg, u16 id);
@@ -42,26 +54,18 @@ u16 dns_get_qtype(const void *noalias msg, int qnamelen);
 /* get the peer's udp receive buffer size from the `OPT RR` */
 u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int qnamelen);
 
+u8 dns_get_rcode(const void *noalias msg);
+
 bool dns_is_tc(const void *noalias msg);
 
 /*
 * the msg has been checked by `check_reply()`
 * return the length of the truncated reply-msg
 */
-u16 dns_truncate(void *noalias msg, ssize_t len);
+u16 dns_truncate(const void *noalias msg, ssize_t len, void *noalias out);
 
 /* keep only the HEADER and QUESTION section */
 u16 dns_empty_reply(void *noalias msg, int qnamelen);
-
-/* "\0" => 0 */
-/* "\1x\0" => 1 */
-/* "\3foo\3com\0" => 7 */
-static inline int dns_ascii_namelen(int qnamelen) {
-    int n = qnamelen - 2;
-    return n > 0 ? n : 0;
-}
-
-u16 dns_question_len(int qnamelen);
 
 /* check query msg, `ascii_name` used to get domain name */
 bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen);
@@ -81,5 +85,20 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen);
 /* add the answer ip to ipset/nftset (tag:chn, tag:gfw) */
 void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, bool chn);
 
-/* return `ok` */
-bool dns_update_ttl(void *noalias rrs, ssize_t len, u32 elapsed_sec, bool *noalias expired);
+/* return <= 0 if failed or has no record */
+s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen);
+
+/* it should not fail because it has been checked by `get_ttl` */
+void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, s32 ttl_change);
+
+/*
+* `levels`: the level of the domain to get (8 bools)
+* `domains[8]`: store the domain names
+* `p_domain_end`: store the domain end ptr 
+* `return`: the number of domains (-1 means error)
+*/
+int dns_qname_domains(const void *noalias msg, int qnamelen, u8 interest_levels,
+    const char *noalias domains[noalias], const char *noalias *noalias p_domain_end);
+
+/* "google.com" => {6:google 3:com 0}, return 0 if failed */
+size_t dns_ascii_to_wire(const char *noalias ascii_name, size_t ascii_len, char buf[noalias DNS_NAME_WIRE_MAXLEN], u8 *noalias p_level);

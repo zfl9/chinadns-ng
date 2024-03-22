@@ -1,9 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_opts = @import("build_opts");
-
+const modules = @import("modules.zig");
 const tests = @import("tests.zig");
-
 const c = @import("c.zig");
 const cc = @import("cc.zig");
 const g = @import("g.zig");
@@ -11,31 +10,17 @@ const log = @import("log.zig");
 const opt = @import("opt.zig");
 const net = @import("net.zig");
 const dnl = @import("dnl.zig");
-const dns = @import("dns.zig");
 const ipset = @import("ipset.zig");
-const fmtchk = @import("fmtchk.zig");
-const str2int = @import("str2int.zig");
-const DynStr = @import("DynStr.zig");
-const StrList = @import("StrList.zig");
 const server = @import("server.zig");
-const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
 const co = @import("co.zig");
-const Rc = @import("Rc.zig");
-const RcMsg = @import("RcMsg.zig");
-const ListNode = @import("ListNode.zig");
+const cache = @import("cache.zig");
 
 // TODO:
 // - alloc_only allocator
 // - vla/alloca allocator (another stack)
 
-/// used in tests.zig for discover all test fns
-pub const project_modules = .{
-    c,       cc,     g,       log,    opt,
-    net,     dnl,    dns,     ipset,  fmtchk,
-    str2int, DynStr, StrList, server, Upstream,
-    EvLoop,  co,     Rc,      RcMsg,  ListNode,
-};
+// ============================================================================
 
 /// the rewrite is to avoid generating unnecessary code in release mode.
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
@@ -114,6 +99,12 @@ pub fn main() u8 {
 
     // ============================================================================
 
+    // used only for business-independent initialization, such as global variables
+    init_all_module();
+    defer deinit_all_module();
+
+    // ============================================================================
+
     if (build_opts.is_test)
         return tests.main();
 
@@ -125,8 +116,19 @@ pub fn main() u8 {
 
     const src = @src();
 
+    const bind_proto: cc.ConstStr = if (g.bind_tcp and g.bind_udp)
+        "tcp+udp"
+    else if (g.bind_tcp)
+        "tcp"
+    else // bind_udp
+        "udp";
+
     for (g.bind_ips.items) |ip|
-        log.info(src, "local listen addr: %s#%u", .{ ip.?, cc.to_uint(g.bind_port) });
+        log.info(
+            src,
+            "local listen addr: %s#%u@%s",
+            .{ ip.?, cc.to_uint(g.bind_port), bind_proto },
+        );
 
     for (g.china_group.items()) |*v|
         log.info(src, "china upstream: %s", .{v.url.ptr});
@@ -142,7 +144,14 @@ pub fn main() u8 {
 
     g.noaaaa_query.display();
 
-    log.info(src, "response timeout of upstream: %u", .{cc.to_uint(g.upstream_timeout)});
+    if (g.cache_size > 0)
+        log.info(src, "enable dns cache, capacity: %u", .{cc.to_uint(g.cache_size)});
+
+    if (g.cache_stale > 0)
+        log.info(src, "use stale cache, excess TTL: %u", .{cc.to_uint(g.cache_stale)});
+
+    if (g.cache_refresh > 0)
+        log.info(src, "pre-refresh cache, remain TTL: %u", .{cc.to_uint(g.cache_refresh)});
 
     if (g.trustdns_packet_n > 1)
         log.info(src, "num of packets to trustdns: %u", .{cc.to_uint(g.trustdns_packet_n)});
@@ -167,4 +176,28 @@ pub fn main() u8 {
     g.evloop.run();
 
     return 0;
+}
+
+fn init_all_module() void {
+    inline for (@typeInfo(modules).Struct.decls) |decl| {
+        const mod_name = decl.name;
+        const mod = @field(modules, mod_name);
+        if (@hasDecl(mod, "module_init")) {
+            // if (_debug)
+            //     log.debug(@src(), "%.*s.module_init()", .{ cc.to_int(mod_name.len), mod_name.ptr });
+            mod.module_init();
+        }
+    }
+}
+
+fn deinit_all_module() void {
+    inline for (@typeInfo(modules).Struct.decls) |decl| {
+        const mod_name = decl.name;
+        const mod = @field(modules, mod_name);
+        if (@hasDecl(mod, "module_deinit")) {
+            // if (_debug)
+            //     log.debug(@src(), "%.*s.module_deinit()", .{ cc.to_int(mod_name.len), mod_name.ptr });
+            mod.module_deinit();
+        }
+    }
 }
