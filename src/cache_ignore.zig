@@ -15,8 +15,6 @@ var ignore_domains: std.StringHashMapUnmanaged(void) = .{};
 /// 0001,0110 => level={2,3,5} is exists
 var _exist_levels: u8 = 0;
 
-var _keys_mem: []u8 = &.{};
-
 const MAX_LEVEL = 8;
 
 /// for opt.zig
@@ -29,6 +27,7 @@ pub fn add(ascii_domain: []const u8) ?void {
         opt.err_print(@src(), "invalid domain name", ascii_domain);
         return null;
     }
+
     const domain_z = opt_domain_z.?;
     const domain = domain_z[0 .. domain_z.len - 1];
 
@@ -36,15 +35,8 @@ pub fn add(ascii_domain: []const u8) ?void {
     if (res.found_existing)
         return;
 
-    const old_memlen = _keys_mem.len;
-    const mem = g.allocator.realloc(_keys_mem, old_memlen + domain.len) catch unreachable;
-    _keys_mem = mem;
-
-    const dupe_domain = mem[old_memlen .. old_memlen + domain.len];
-    @memcpy(dupe_domain.ptr, domain.ptr, domain.len);
-
     // ptr to dupe_domain
-    res.key_ptr.* = dupe_domain;
+    res.key_ptr.* = g.allocator.dupe(u8, domain) catch unreachable;
 
     const bit = @as(u8, 1) << @intCast(u3, level - 1);
     _exist_levels |= bit;
