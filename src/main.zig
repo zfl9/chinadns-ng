@@ -153,6 +153,9 @@ pub fn main() u8 {
     if (g.cache_refresh > 0)
         log.info(src, "pre-refresh cache, remain TTL: %u", .{cc.to_uint(g.cache_refresh)});
 
+    if (g.verdict_cache_size > 0)
+        log.info(src, "enable verdict cache, capacity: %u", .{cc.to_uint(g.verdict_cache_size)});
+
     log.info(src, "response timeout of upstream: %u", .{cc.to_uint(g.upstream_timeout)});
 
     if (g.trustdns_packet_n > 1)

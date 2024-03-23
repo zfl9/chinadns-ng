@@ -38,6 +38,11 @@ pub inline fn get_rcode(msg: []const u8) u8 {
     return c.dns_get_rcode(msg.ptr);
 }
 
+/// null label (root domain) not included
+pub inline fn get_qname(msg: []const u8, qnamelen: c_int) []const u8 {
+    return msg[header_len() .. header_len() + cc.to_usize(qnamelen) - 1];
+}
+
 pub inline fn is_tc(msg: []const u8) bool {
     return c.dns_is_tc(msg.ptr);
 }

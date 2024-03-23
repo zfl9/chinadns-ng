@@ -38,10 +38,11 @@ const help =
     \\                                      rule C: check answer ip of china upstream
     \\                                      rule T: check answer ip of trust upstream
     \\                                      if no rules is given, it defaults to 'a'
-    \\ --cache <size>                       enable cache, size is the number of caches
+    \\ --cache <size>                       enable dns caching, size 0 means disabled
     \\ --cache-stale <N>                    allow use the cached data with a TTL >= -N
     \\ --cache-refresh <N>                  pre-refresh the cached data if the TTL <= N
     \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
+    \\ --verdict-cache <size>               enable verdict caching for tag:none domains
     \\ -o, --timeout-sec <sec>              response timeout of upstream, default: 5
     \\ -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
     \\ -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -89,6 +90,7 @@ const optdef_array = [_]OptDef{
     .{ .short = "",  .long = "cache-stale",   .value = .required, .optfn = opt_cache_stale,   },
     .{ .short = "",  .long = "cache-refresh", .value = .required, .optfn = opt_cache_refresh, },
     .{ .short = "",  .long = "cache-ignore",  .value = .required, .optfn = opt_cache_ignore,  },
+    .{ .short = "",  .long = "verdict-cache", .value = .required, .optfn = opt_verdict_cache, },
     .{ .short = "o", .long = "timeout-sec",   .value = .required, .optfn = opt_timeout_sec,   },
     .{ .short = "p", .long = "repeat-times",  .value = .required, .optfn = opt_repeat_times,  },
     .{ .short = "n", .long = "noip-as-chnip", .value = .no_value, .optfn = opt_noip_as_chnip, },
@@ -409,6 +411,12 @@ fn opt_cache_refresh(in_value: ?[]const u8) void {
 fn opt_cache_ignore(in_value: ?[]const u8) void {
     const domain = in_value.?;
     cache_ignore.add(domain) orelse err_exit(@src(), domain);
+}
+
+fn opt_verdict_cache(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    g.verdict_cache_size = str2int.parse(@TypeOf(g.verdict_cache_size), value, 10) orelse
+        err_exit(@src(), value);
 }
 
 fn opt_timeout_sec(in_value: ?[]const u8) void {

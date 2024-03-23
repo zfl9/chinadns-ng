@@ -61,20 +61,20 @@ pub fn unref(msg: []const u8) void {
 }
 
 /// the `msg` should be checked by the `dns.check_reply()` first
-pub fn add(msg: []const u8, qnamelen: c_int) void {
+pub fn add(msg: []const u8, qnamelen: c_int) bool {
     if (!enabled())
-        return;
+        return false;
 
     if (cache_ignore.has(msg, qnamelen))
-        return;
+        return false;
 
-    const ttl = dns.get_ttl(msg, qnamelen) orelse return;
+    const ttl = dns.get_ttl(msg, qnamelen) orelse return false;
 
     const res = _map.getOrPut(g.allocator, dns.question(msg, qnamelen)) catch unreachable;
     if (res.found_existing) {
         // check ttl, avoid duplicate add
         const old_ttl = res.value_ptr.*.get_ttl();
-        if (std.math.absCast(ttl - old_ttl) <= 2) return;
+        if (std.math.absCast(ttl - old_ttl) <= 2) return false;
     }
 
     // create cache msg
@@ -100,4 +100,6 @@ pub fn add(msg: []const u8, qnamelen: c_int) void {
 
     // link to list
     _list.link_to_head(&cache_msg.list_node);
+
+    return true;
 }

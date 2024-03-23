@@ -26,3 +26,4 @@ pub const opt = @import("opt.zig");
 pub const server = @import("server.zig");
 pub const str2int = @import("str2int.zig");
 pub const tests = @import("tests.zig");
+pub const verdict_cache = @import("verdict_cache.zig");

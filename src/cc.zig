@@ -10,6 +10,7 @@ const testing = std.testing;
 const assert = std.debug.assert;
 const isConstPtr = meta.trait.isConstPtr;
 const isManyItemPtr = meta.trait.isManyItemPtr;
+const isSlice = meta.trait.isSlice;
 
 // ==============================================================
 
@@ -35,6 +36,8 @@ pub const ConstStr = [*:0]const u8;
 /// remove const qualification of pointer `ptr`
 /// TODO: zig 0.11 has @constCast()
 pub inline fn remove_const(ptr: anytype) RemoveConst(@TypeOf(ptr)) {
+    if (comptime isSlice(@TypeOf(ptr)))
+        return remove_const(ptr.ptr)[0..ptr.len];
     return @intToPtr(RemoveConst(@TypeOf(ptr)), @ptrToInt(ptr));
 }
 
