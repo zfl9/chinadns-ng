@@ -424,7 +424,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
     // verdict cache for tag:none
     if (name_tag == .none and is_qtype_A_AAAA and (tagnone_china and tagnone_trust)) {
-        if (verdict_cache.get(msg, qnamelen)) |china_accepted| {
+        if (verdict_cache.get(msg, qnamelen, qtype)) |china_accepted| {
             if (china_accepted) {
                 tagnone_trust = false;
                 qflags.add(.china_accepted);
@@ -569,7 +569,7 @@ fn use_china_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) boo
         .bad_msg => return only_china,
     };
 
-    verdict_cache.add(msg, qnamelen, china_accepted);
+    verdict_cache.add(msg, qnamelen, qtype, china_accepted);
 
     return china_accepted;
 }
