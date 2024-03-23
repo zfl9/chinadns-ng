@@ -314,18 +314,20 @@ const QueryLog = struct {
         );
     }
 
-    pub noinline fn cache(self: *const QueryLog, cache_msg: []const u8) void {
-        _ = cache_msg;
-        _ = self;
-        // TODO
-        // log.info(@src(), "cache() hit", args: anytype)
+    pub noinline fn cache(self: *const QueryLog, cache_msg: []const u8, ttl: i32) void {
+        log.info(
+            @src(),
+            "hit cache(id:%u, tag:%s, qtype:%u, '%s') size:%zu ttl:%ld",
+            .{ cc.to_uint(self.id), self.tag.desc(), cc.to_uint(self.qtype), self.name, cache_msg.len, cc.to_long(ttl) },
+        );
     }
 
-    pub noinline fn refresh(self: *const QueryLog, cache_msg: []const u8) void {
-        _ = cache_msg;
-        _ = self;
-        // TODO
-        // log.info(@src(), "cache() hit", args: anytype)
+    pub noinline fn refresh(self: *const QueryLog, ttl: i32) void {
+        log.info(
+            @src(),
+            "refresh cache(id:%u, tag:%s, qtype:%u, '%s') ttl:%ld",
+            .{ cc.to_uint(self.id), self.tag.desc(), cc.to_uint(self.qtype), self.name, cc.to_long(ttl) },
+        );
     }
 
     pub noinline fn forward(self: *const QueryLog, qctx: *const QueryCtx, group: cc.ConstStr) void {
@@ -404,7 +406,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         cache.ref(cache_msg);
         defer cache.unref(cache_msg);
 
-        if (g.verbose) querylog.cache(cache_msg);
+        if (g.verbose) querylog.cache(cache_msg, ttl);
         send_reply(cache_msg, fdobj, src_addr, c.DNS_MSG_MAXSIZE, id, qflags);
 
         if (ttl > g.cache_refresh)
@@ -412,7 +414,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
         // refresh cache in the background
         if (g.verbose)
-            querylog.refresh(cache_msg);
+            querylog.refresh(ttl);
 
         // avoid receiving truncated response
         if (in_proto == .udpin and cache_msg.len > c.DNS_EDNS_MINSIZE - 30)
@@ -515,10 +517,12 @@ const ReplyLog = struct {
         );
     }
 
-    pub noinline fn cache(self: *const ReplyLog, msg: []const u8) void {
-        _ = msg;
-        _ = self;
-        // TODO
+    pub noinline fn cache(self: *const ReplyLog, msg: []const u8, ttl: i32) void {
+        log.info(
+            @src(),
+            "add cache(qid:%u, tag:%s, qtype:%u, '%s') size:%zu ttl:%ld",
+            .{ cc.to_uint(self.qid), self.tag_desc(), cc.to_uint(self.qtype), self.name, msg.len, cc.to_long(ttl) },
+        );
     }
 };
 
@@ -692,8 +696,9 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
 
     // add to cache
     if (cache.enabled() and !dns.is_tc(rmsg.msg()) and dns.get_rcode(rmsg.msg()) == c.DNS_RCODE_NOERROR) {
-        if (cache.add(rmsg.msg(), qnamelen))
-            if (g.verbose) replylog.cache(rmsg.msg());
+        var ttl: i32 = undefined;
+        if (cache.add(rmsg.msg(), qnamelen, &ttl))
+            if (g.verbose) replylog.cache(rmsg.msg(), ttl);
     }
 
     qctx.free();
@@ -750,7 +755,7 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
 
     log.err(
         @src(),
-        "reply(id:%u, sz:%zu) to %s://%s#%u failed: (%d) %m",
+        "reply(id:%u, size:%zu) to %s://%s#%u failed: (%d) %m",
         .{ cc.to_uint(dns.get_id(msg)), msg.len, proto, &ip, cc.to_uint(port), cc.errno() },
     );
 }

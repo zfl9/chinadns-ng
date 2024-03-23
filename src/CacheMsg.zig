@@ -42,7 +42,6 @@ pub fn new(in_msg: []const u8, qnamelen: c_int, ttl: i32) *CacheMsg {
     return self.init(in_msg, qnamelen, ttl);
 }
 
-/// TODO: check ref count
 /// the `in_msg` will be copied
 /// if reuse fail, `self` will be freed
 pub fn reuse_or_new(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32) *CacheMsg {

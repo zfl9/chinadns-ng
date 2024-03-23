@@ -61,7 +61,7 @@ pub fn unref(msg: []const u8) void {
 }
 
 /// the `msg` should be checked by the `dns.check_reply()` first
-pub fn add(msg: []const u8, qnamelen: c_int) bool {
+pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (!enabled())
         return false;
 
@@ -69,6 +69,7 @@ pub fn add(msg: []const u8, qnamelen: c_int) bool {
         return false;
 
     const ttl = dns.get_ttl(msg, qnamelen) orelse return false;
+    p_ttl.* = ttl;
 
     const res = _map.getOrPut(g.allocator, dns.question(msg, qnamelen)) catch unreachable;
     if (res.found_existing) {
