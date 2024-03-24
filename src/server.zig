@@ -46,8 +46,8 @@ const QueryCtx = struct {
     pub const Flags = enum(u8) {
         from_local = 1 << 0, // {fdobj, src_addr} have undefined values (priority over other `.from_*`)
         from_tcp = 1 << 1,
-        is_china_domain = 1 << 2, // tag:none && qtype=A/AAAA
-        non_china_domain = 1 << 3, // tag:none && qtype=A/AAAA
+        is_china_domain = 1 << 2, // tag:none [verdict]
+        non_china_domain = 1 << 3, // tag:none [verdict]
         _, // non-exhaustive enum
         usingnamespace flags_op.get(Flags);
     };
@@ -551,7 +551,7 @@ fn use_china_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) boo
                 if (g.verbose) replylog.china_noip();
                 break :b g.noip_as_chnip;
             },
-            .other_case => false,
+            .other_case => false, // `truncated` or `rcode != 0`
         };
     } else {
         // [AAAA] only_china_path
@@ -635,6 +635,9 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
                     dns.add_ip(rmsg.msg(), qnamelen, true);
                 }
             } else {
+                // tag:none && A/AAAA
+                // verdict: non-china domain
+
                 if (g.verbose)
                     replylog.reply("filter", null);
 
@@ -660,7 +663,9 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
                     dns.add_ip(rmsg.msg(), qnamelen, false);
                 }
             } else {
+                // tag:none && A/AAAA
                 // waiting for chinadns
+
                 if (g.verbose)
                     replylog.reply(if (qctx.trust_msg == null) "delay" else "ignore", null);
 
@@ -675,16 +680,18 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     // see check_timeout()
     _qctx_list.del_nofree(qctx);
 
+    const msg = rmsg.msg();
+
     if (!qctx.flags.has(.from_local)) {
         // request from tcp/udp client
         // may suspend the current coroutine
-        send_reply(rmsg.msg(), qctx.fdobj, &qctx.src_addr, qctx.bufsz, qctx.id, qctx.flags);
+        send_reply(msg, qctx.fdobj, &qctx.src_addr, qctx.bufsz, qctx.id, qctx.flags);
     }
 
-    // add to cache
+    // add to cache (may modify the msg)
     var ttl: i32 = undefined;
-    if (cache.add(rmsg.msg(), qnamelen, &ttl))
-        if (g.verbose) replylog.cache(rmsg.msg(), ttl);
+    if (cache.add(msg, qnamelen, &ttl))
+        if (g.verbose) replylog.cache(msg, ttl);
 
     // must be at the end
     qctx.free();

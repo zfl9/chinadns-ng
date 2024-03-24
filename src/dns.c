@@ -6,6 +6,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <asm/byteorder.h>
+#include <limits.h>
 
 struct dns_header {
     u16 id; // id of message
@@ -196,7 +197,7 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
     foreach_record(p_ptr, p_len, count, NULL, NULL)
 
 static bool foreach_record(void *noalias *noalias p_ptr, ssize_t *noalias p_len, int count,
-    bool (*f)(struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break), void *ud) 
+    bool (*f)(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break), void *ud)
 {
     if (count <= 0)
         return true;
@@ -205,26 +206,28 @@ static bool foreach_record(void *noalias *noalias p_ptr, ssize_t *noalias p_len,
     ssize_t len = *p_len;
 
     for (int i = 0; i < count; ++i) {
+        ssize_t old_len = len;
+
         unlikely_if (!skip_name((const void **)&ptr, &len))
             return false;
 
+        int rnamelen = old_len - len;
         struct dns_record *record = ptr;
-        ssize_t rdatalen = ntohs(record->rdatalen);
-        ssize_t recordlen = sizeof(struct dns_record) + rdatalen;
+        ssize_t recordlen = sizeof(struct dns_record) + ntohs(record->rdatalen);
 
         unlikely_if (len < recordlen) {
             log_error("remaining length is less than sizeof(record): %zd < %zd", len, recordlen);
             return false;
         }
 
-        if (f) {
-            bool is_break = false;
-            unlikely_if (!f(record, rdatalen, ud, &is_break)) return false;
-            if (is_break) break;
-        }
-
         ptr += recordlen;
         len -= recordlen;
+
+        if (f) {
+            bool is_break = false;
+            unlikely_if (!f(record, rnamelen, ud, &is_break)) return false;
+            if (is_break) break;
+        }
     }
 
     *p_ptr = ptr;
@@ -279,8 +282,8 @@ u16 dns_get_qtype(const void *noalias msg, int qnamelen) {
     return ntohs(q->qtype);
 }
 
-static bool get_bufsz(struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
-    (void)rdatalen;
+static bool get_bufsz(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {
+    (void)rnamelen;
 
     if (ntohs(record->rtype) == DNS_TYPE_OPT) {
         u16 sz = ntohs(record->rclass);
@@ -365,21 +368,24 @@ bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_n
     return check_msg(false, msg, len, ascii_name, p_qnamelen);
 }
 
-static bool check_ip_datalen(u16 rtype, ssize_t rdatalen) {
+static bool check_ip_datalen(u16 rtype, const struct dns_record *noalias record) {
+    int rdatalen = ntohs(record->rdatalen);
     int expect_len = (rtype == DNS_TYPE_A) ? IPV4_LEN : IPV6_LEN;
     unlikely_if (rdatalen != expect_len) {
         char ipver = (rtype == DNS_TYPE_A) ? '4' : '6';
-        log_error("rdatalen:%zd != sizeof(ipv%c):%d", rdatalen, ipver, expect_len);
+        log_error("rdatalen:%d != sizeof(ipv%c):%d", rdatalen, ipver, expect_len);
         return false;
     }
     return true;
 }
 
-static bool test_ip(struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
+static bool test_ip(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {
+    (void)rnamelen;
+
     u16 rtype = ntohs(record->rtype);
 
     if (rtype == DNS_TYPE_A || rtype == DNS_TYPE_AAAA) {
-        unlikely_if (!check_ip_datalen(rtype, rdatalen))
+        unlikely_if (!check_ip_datalen(rtype, record))
             return false;
 
         int *res = ud;
@@ -392,13 +398,14 @@ static bool test_ip(struct dns_record *noalias record, ssize_t rdatalen, void *u
     return true;
 }
 
-static bool add_ip(struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
+static bool add_ip(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {
+    (void)rnamelen;
     (void)is_break;
 
     u16 rtype = ntohs(record->rtype);
 
     if (rtype == DNS_TYPE_A || rtype == DNS_TYPE_AAAA) {
-        unlikely_if (!check_ip_datalen(rtype, rdatalen))
+        unlikely_if (!check_ip_datalen(rtype, record))
             return false;
 
         bool v4 = rtype == DNS_TYPE_A;
@@ -433,8 +440,67 @@ void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, bool chn) {
     ipset_end_add_ip(chn);
 }
 
-static bool get_ttl(struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
-    (void)rdatalen;
+struct reset_opt_ctx {
+    void *msg;
+    ssize_t len;
+    int rr_idx;
+};
+
+static bool reset_opt(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {
+    (void)rnamelen;
+
+    struct reset_opt_ctx *ctx = ud;
+
+    if (ntohs(record->rtype) == DNS_TYPE_OPT) {
+        *is_break = true;
+
+        // remove: DNSSEC OK bit
+        record->rttl = htonl(ntohl(record->rttl) & 0xFFFF0000);
+
+        // remove: {attribute, value} pairs
+        if (record->rdatalen != 0) {
+            record->rdatalen = 0;
+
+            struct dns_header *h = ctx->msg;
+            int total_count = get_records_count(h);
+            int additional_count = get_additional_count(h);
+
+            int rm_count = total_count - (ctx->rr_idx + 1);
+            if (rm_count > 0) {
+                unlikely_if (rm_count >= additional_count) return false;
+                h->additional_count = htons(additional_count - rm_count);
+            }
+
+            ctx->len = ((void *)record + sizeof(*record)) - ctx->msg;
+        }
+    }
+
+    ctx->rr_idx++;
+
+    return true;
+}
+
+u16 dns_reset_opt(void *noalias msg, ssize_t len, int qnamelen) {
+    if (!is_normal_msg(msg))
+        return 0;
+
+    struct reset_opt_ctx ctx = {
+        .msg = msg,
+        .len = len,
+        .rr_idx = 0,
+    };
+
+    int count = get_records_count(msg);
+    move_to_records(msg, len, qnamelen);
+
+    unlikely_if (!foreach_record((void **)&msg, &len, count, reset_opt, &ctx))
+        return 0;
+
+    return ctx.len;
+}
+
+static bool get_ttl(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {
+    (void)rnamelen;
     (void)is_break;
 
     if (ntohs(record->rtype) != DNS_TYPE_OPT) {
@@ -449,8 +515,8 @@ static bool get_ttl(struct dns_record *noalias record, ssize_t rdatalen, void *u
     return true;
 }
 
-static bool update_ttl(struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
-    (void)rdatalen;
+static bool update_ttl(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {
+    (void)rnamelen;
     (void)is_break;
 
     if (ntohs(record->rtype) != DNS_TYPE_OPT) {

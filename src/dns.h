@@ -85,6 +85,9 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen);
 /* add the answer ip to ipset/nftset (tag:chn, tag:gfw) */
 void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, bool chn);
 
+/* return the updated length of the msg (0 means error) */
+u16 dns_reset_opt(void *noalias msg, ssize_t len, int qnamelen);
+
 /* return <= 0 if failed or has no record */
 s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen);
 

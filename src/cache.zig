@@ -61,7 +61,9 @@ pub fn unref(msg: []const u8) void {
 }
 
 /// the `msg` should be checked by the `dns.check_reply()` first
-pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
+pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32) bool {
+    var msg = in_msg;
+
     if (!enabled())
         return false;
 
@@ -70,6 +72,9 @@ pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
 
     if (cache_ignore.has(msg, qnamelen))
         return false;
+
+    // e.g. remove EDNS COOKIE
+    msg = dns.reset_opt(msg, qnamelen) orelse return false;
 
     const ttl = dns.get_ttl(msg, qnamelen) orelse return false;
     p_ttl.* = ttl;

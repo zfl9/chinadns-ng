@@ -93,6 +93,11 @@ pub inline fn add_ip(msg: []const u8, qnamelen: c_int, is_chn: bool) void {
     return c.dns_add_ip(msg.ptr, cc.to_isize(msg.len), qnamelen, is_chn);
 }
 
+pub inline fn reset_opt(msg: []u8, qnamelen: c_int) ?[]u8 {
+    const len = c.dns_reset_opt(msg.ptr, cc.to_isize(msg.len), qnamelen);
+    return if (len > 0) msg[0..len] else null;
+}
+
 /// return null if failed or has no record
 pub inline fn get_ttl(msg: []const u8, qnamelen: c_int) ?i32 {
     const ttl = c.dns_get_ttl(msg.ptr, cc.to_isize(msg.len), qnamelen);
