@@ -17,7 +17,7 @@ pub fn module_init() void {
     _list.init();
 }
 
-pub fn enabled() bool {
+fn enabled() bool {
     return g.cache_size > 0;
 }
 
@@ -63,6 +63,9 @@ pub fn unref(msg: []const u8) void {
 /// the `msg` should be checked by the `dns.check_reply()` first
 pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (!enabled())
+        return false;
+
+    if (dns.is_tc(msg) or dns.get_rcode(msg) != c.DNS_RCODE_NOERROR)
         return false;
 
     if (cache_ignore.has(msg, qnamelen))

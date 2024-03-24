@@ -29,14 +29,14 @@ const help =
     \\                                      if setname contains @, then use nft-set
     \\                                      format: family_name@table_name@set_name
     \\ -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:
-    \\                                      rule a: filter all domain name (default)
-    \\                                      rule m: filter the domain with tag chn
-    \\                                      rule g: filter the domain with tag gfw
-    \\                                      rule n: filter the domain with tag none
-    \\                                      rule c: do not forward to china upstream
-    \\                                      rule t: do not forward to trust upstream
-    \\                                      rule C: check answer ip of china upstream
-    \\                                      rule T: check answer ip of trust upstream
+    \\                                      rule a: filter AAAA for all domain
+    \\                                      rule m: filter AAAA for tag:chn domain
+    \\                                      rule g: filter AAAA for tag:gfw domain
+    \\                                      rule n: filter AAAA for tag:none domain
+    \\                                      rule c: filter AAAA for china upstream
+    \\                                      rule t: filter AAAA for trust upstream
+    \\                                      rule C: filter non-chnip reply from china
+    \\                                      rule T: filter non-chnip reply from trust
     \\                                      if no rules is given, it defaults to 'a'
     \\ --cache <size>                       enable dns caching, size 0 means disabled
     \\ --cache-stale <N>                    allow use the cached data with a TTL >= -N
@@ -373,20 +373,20 @@ fn opt_ipset_name6(in_value: ?[]const u8) void {
 fn opt_no_ipv6(in_value: ?[]const u8) void {
     if (in_value) |value| {
         for (value) |rule| {
-            g.noaaaa_query.add(switch (rule) {
+            g.noaaaa_rule.add(switch (rule) {
                 'a' => .all,
                 'm' => .tag_chn,
                 'g' => .tag_gfw,
                 'n' => .tag_none,
                 'c' => .china_dns,
                 't' => .trust_dns,
-                'C' => .china_ipchk,
-                'T' => .trust_ipchk,
+                'C' => .china_iptest,
+                'T' => .trust_iptest,
                 else => exit(@src(), "invalid no-aaaa rule: '%c'", .{rule}),
             });
         }
     } else {
-        g.noaaaa_query.add(.all);
+        g.noaaaa_rule.add(.all);
     }
 }
 

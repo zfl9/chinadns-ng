@@ -75,10 +75,10 @@ pub inline fn check_reply(msg: []const u8, ascii_name: ?[*]u8, p_qnamelen: ?*c_i
 }
 
 pub const TestIpResult = enum(c_int) {
-    is_chnip = c.DNS_TEST_IP_IS_CHNIP,
-    not_chnip = c.DNS_TEST_IP_NOT_CHNIP,
-    not_found = c.DNS_TEST_IP_NOT_FOUND,
-    bad_msg = c.DNS_TEST_IP_BAD_MSG,
+    is_china_ip = c.DNS_TEST_IP_IS_CHINA_IP,
+    non_china_ip = c.DNS_TEST_IP_NON_CHINA_IP,
+    no_ip_found = c.DNS_TEST_IP_NO_IP_FOUND,
+    other_case = c.DNS_TEST_IP_OTHER_CASE,
 
     pub inline fn from_int(v: c_int) TestIpResult {
         return @intToEnum(TestIpResult, v);

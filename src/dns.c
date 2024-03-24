@@ -233,13 +233,28 @@ static bool foreach_record(void *noalias *noalias p_ptr, ssize_t *noalias p_len,
     return true;
 }
 
+#define is_normal_msg(msg) \
+    (!dns_is_tc(msg) && dns_get_rcode(msg) == DNS_RCODE_NOERROR)
+
+#define get_answer_count(msg) \
+    ntohs(cast(const struct dns_header *, msg)->answer_count)
+
+#define get_authority_count(msg) \
+    ntohs(cast(const struct dns_header *, msg)->authority_count)
+
+#define get_additional_count(msg) \
+    ntohs(cast(const struct dns_header *, msg)->additional_count)
+
+#define get_records_count(msg) \
+    (get_answer_count(msg) + get_authority_count(msg) + get_additional_count(msg))
+
 /* header + question */
 #define msg_minlen(qnamelen) \
     (sizeof(struct dns_header) + (qnamelen) + sizeof(struct dns_question))
 
 /* move to answer section */
-#define move_to_answer(ptr, len, qnamelen) ({ \
-    (ptr) += msg_minlen(qnamelen); \
+#define move_to_records(msg, len, qnamelen) ({ \
+    (msg) += msg_minlen(qnamelen); \
     (len) -= msg_minlen(qnamelen); \
 })
 
@@ -286,19 +301,24 @@ static bool get_bufsz(struct dns_record *noalias record, ssize_t rdatalen, void 
 
 u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int qnamelen) {
     u16 bufsz = DNS_EDNS_MINSIZE;
-    const struct dns_header *h = msg;
 
-    if (ntohs(h->additional_count) <= 0)
+    int additional_count = get_additional_count(msg);
+    if (additional_count <= 0)
         return bufsz;
+
+    int answer_count = get_answer_count(msg);
+    int authority_count = get_authority_count(msg);
 
     /* move to answer section */
-    move_to_answer(msg, len, qnamelen);
+    move_to_records(msg, len, qnamelen);
 
     /* skip answer && authority section */
-    unlikely_if (!skip_record((void **)&msg, &len, ntohs(h->answer_count) + ntohs(h->authority_count)))
+    unlikely_if (!skip_record((void **)&msg, &len, answer_count + authority_count))
         return bufsz;
 
-    foreach_record((void **)&msg, &len, ntohs(h->additional_count), get_bufsz, &bufsz);
+    /* search the OPT RR */
+    foreach_record((void **)&msg, &len, additional_count, get_bufsz, &bufsz);
+
     return bufsz;
 }
 
@@ -364,7 +384,7 @@ static bool test_ip(struct dns_record *noalias record, ssize_t rdatalen, void *u
 
         int *res = ud;
         bool v4 = rtype == DNS_TYPE_A;
-        *res = ipset_test_ip(record->rdata, v4) ? DNS_TEST_IP_IS_CHNIP : DNS_TEST_IP_NOT_CHNIP;
+        *res = ipset_test_ip(record->rdata, v4) ? DNS_TEST_IP_IS_CHINA_IP : DNS_TEST_IP_NON_CHINA_IP;
 
         *is_break = true;
     }
@@ -389,22 +409,25 @@ static bool add_ip(struct dns_record *noalias record, ssize_t rdatalen, void *ud
     return true;
 }
 
-#define answer_count(msg) \
-    ntohs(cast(const struct dns_header *, msg)->answer_count)
-
 int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen) {
-    int count = answer_count(msg);
-    move_to_answer(msg, len, qnamelen);
+    if (!is_normal_msg(msg))
+        return DNS_TEST_IP_OTHER_CASE;
 
-    int res = DNS_TEST_IP_NOT_FOUND;
+    int count = get_answer_count(msg);
+    move_to_records(msg, len, qnamelen);
+
+    int res = DNS_TEST_IP_NO_IP_FOUND;
     unlikely_if (!foreach_record((void **)&msg, &len, count, test_ip, &res))
-        res = DNS_TEST_IP_BAD_MSG;
+        res = DNS_TEST_IP_OTHER_CASE;
     return res;
 }
 
 void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, bool chn) {
-    int count = answer_count(msg);
-    move_to_answer(msg, len, qnamelen);
+    if (!is_normal_msg(msg))
+        return;
+
+    int count = get_answer_count(msg);
+    move_to_records(msg, len, qnamelen);
 
     foreach_record((void **)&msg, &len, count, add_ip, (void *)(uintptr_t)chn);
     ipset_end_add_ip(chn);
@@ -426,17 +449,6 @@ static bool get_ttl(struct dns_record *noalias record, ssize_t rdatalen, void *u
     return true;
 }
 
-s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen) {
-    const struct dns_header *h = msg;
-    int count = ntohs(h->answer_count) + ntohs(h->authority_count) + ntohs(h->additional_count);
-    move_to_answer(msg, len, qnamelen);
-
-    s32 ttl = -1;
-    unlikely_if (!foreach_record((void **)&msg, &len, count, get_ttl, &ttl))
-        ttl = -1;
-    return ttl;
-}
-
 static bool update_ttl(struct dns_record *noalias record, ssize_t rdatalen, void *ud, bool *noalias is_break) {
     (void)rdatalen;
     (void)is_break;
@@ -451,10 +463,22 @@ static bool update_ttl(struct dns_record *noalias record, ssize_t rdatalen, void
     return true;
 }
 
+s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen) {
+    if (!is_normal_msg(msg))
+        return -1;
+
+    int count = get_records_count(msg);
+    move_to_records(msg, len, qnamelen);
+
+    s32 ttl = -1;
+    unlikely_if (!foreach_record((void **)&msg, &len, count, get_ttl, &ttl))
+        ttl = -1;
+    return ttl;
+}
+
 void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, s32 ttl_change) {
-    const struct dns_header *h = msg;
-    int count = ntohs(h->answer_count) + ntohs(h->authority_count) + ntohs(h->additional_count);
-    move_to_answer(msg, len, qnamelen);
+    int count = get_records_count(msg);
+    move_to_records(msg, len, qnamelen);
 
     bool ok = foreach_record(&msg, &len, count, update_ttl, (void *)(intptr_t)ttl_change);
     assert(ok); (void)ok;

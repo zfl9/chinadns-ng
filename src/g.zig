@@ -53,7 +53,7 @@ pub var reuse_port: bool = false;
 pub var noip_as_chnip: bool = false;
 
 /// how to filter AAAA query
-pub var noaaaa_query: NoAAAA = .{};
+pub var noaaaa_rule: NoAAAA = .{};
 
 /// ["file1", "file2", ...]
 pub var gfwlist_filenames: StrList = .{};

@@ -142,7 +142,7 @@ pub fn main() u8 {
 
     ipset.init();
 
-    g.noaaaa_query.display();
+    g.noaaaa_rule.display();
 
     if (g.cache_size > 0)
         log.info(src, "enable dns cache, capacity: %u", .{cc.to_uint(g.cache_size)});

@@ -21,9 +21,9 @@ pub const Flags = enum(u8) {
     trust_dns = 1 << 4,
 
     /// tag:none + only_china_path: filter non-chnip reply
-    china_ipchk = 1 << 5,
+    china_iptest = 1 << 5,
     /// tag:none + only_trust_path: filter non-chnip reply
-    trust_ipchk = 1 << 6,
+    trust_iptest = 1 << 6,
 
     _, // non-exhaustive enum
 
@@ -100,14 +100,14 @@ pub fn display(self: NoAAAA) void {
 
     // zig fmt: off
     const list = .{
-        .{ .flags = .all,         .msg = "filter AAAA for all domain", .brk = {} },
-        .{ .flags = .tag_chn,     .msg = "filter AAAA for tag_chn domain" },
-        .{ .flags = .tag_gfw,     .msg = "filter AAAA for tag_gfw domain" },
-        .{ .flags = .tag_none,    .msg = "filter AAAA for tag_none domain" },
-        .{ .flags = .china_dns,   .msg = "filter AAAA for china upstream" },
-        .{ .flags = .trust_dns,   .msg = "filter AAAA for trust upstream" },
-        .{ .flags = .china_ipchk, .msg = "check AAAA ip of china upstream" },
-        .{ .flags = .trust_ipchk, .msg = "check AAAA ip of trust upstream" },
+        .{ .flags = .all,          .msg = "filter AAAA for all domain", .brk = {} },
+        .{ .flags = .tag_chn,      .msg = "filter AAAA for tag:chn domain" },
+        .{ .flags = .tag_gfw,      .msg = "filter AAAA for tag:gfw domain" },
+        .{ .flags = .tag_none,     .msg = "filter AAAA for tag:none domain" },
+        .{ .flags = .china_dns,    .msg = "filter AAAA for china upstream" },
+        .{ .flags = .trust_dns,    .msg = "filter AAAA for trust upstream" },
+        .{ .flags = .china_iptest, .msg = "filter non-chnip reply from china" },
+        .{ .flags = .trust_iptest, .msg = "filter non-chnip reply from trust" },
     };
     // zig fmt: on
 

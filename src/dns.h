@@ -74,10 +74,10 @@ bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_n
 bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen);
 
 /* result of dns_test_ip() */
-#define DNS_TEST_IP_IS_CHNIP 0
-#define DNS_TEST_IP_NOT_CHNIP 1
-#define DNS_TEST_IP_NOT_FOUND 2
-#define DNS_TEST_IP_BAD_MSG 3
+#define DNS_TEST_IP_IS_CHINA_IP 0
+#define DNS_TEST_IP_NON_CHINA_IP 1
+#define DNS_TEST_IP_NO_IP_FOUND 2
+#define DNS_TEST_IP_OTHER_CASE 3
 
 /* check if the answer ip is chnip (check qtype before call) */
 int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen);

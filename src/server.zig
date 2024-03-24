@@ -46,8 +46,8 @@ const QueryCtx = struct {
     pub const Flags = enum(u8) {
         from_local = 1 << 0, // {fdobj, src_addr} have undefined values (priority over other `.from_*`)
         from_tcp = 1 << 1,
-        china_filtered = 1 << 2, // tag:none && qtype=A/AAAA
-        china_accepted = 1 << 3, // tag:none && qtype=A/AAAA
+        is_china_domain = 1 << 2, // tag:none && qtype=A/AAAA
+        non_china_domain = 1 << 3, // tag:none && qtype=A/AAAA
         _, // non-exhaustive enum
         usingnamespace flags_op.get(Flags);
     };
@@ -378,15 +378,13 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         querylog.query();
     }
 
-    const is_qtype_A_AAAA = qtype == c.DNS_TYPE_A or qtype == c.DNS_TYPE_AAAA;
-
-    // [no-AAAA filter] or [verdict cache]
+    // [AAAA filter] or [verdict cache]
     var tagnone_china = true;
-    var tagnone_trust = is_qtype_A_AAAA;
+    var tagnone_trust = true;
 
-    // no-AAAA filter
+    // AAAA filter
     if (qtype == c.DNS_TYPE_AAAA)
-        if (g.noaaaa_query.filter(name_tag, &tagnone_china, &tagnone_trust)) |by_rule| {
+        if (g.noaaaa_rule.filter(name_tag, &tagnone_china, &tagnone_trust)) |by_rule| {
             var rmsg = msg;
             rmsg.len = dns.empty_reply(rmsg, qnamelen);
 
@@ -424,16 +422,15 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         qflags.add(.from_local);
     }
 
-    // verdict cache for tag:none
-    if (name_tag == .none and is_qtype_A_AAAA and (tagnone_china and tagnone_trust)) {
-        if (verdict_cache.get(msg, qnamelen, qtype)) |china_accepted| {
-            if (china_accepted) {
+    // verdict cache for tag:none domain
+    if (name_tag == .none and tagnone_china and tagnone_trust) {
+        if (verdict_cache.get(msg, qnamelen)) |is_china_domain| {
+            if (is_china_domain) {
                 tagnone_trust = false;
-                qflags.add(.china_accepted);
+                qflags.add(.is_china_domain);
             } else {
-                // china_filtered
                 tagnone_china = false;
-                qflags.add(.china_filtered);
+                qflags.add(.non_china_domain);
             }
         }
     }
@@ -531,75 +528,65 @@ fn use_china_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) boo
     const msg = rmsg.msg();
     const qtype = dns.get_qtype(msg, qnamelen);
 
-    // only filter A/AAAA
+    // only care about A/AAAA query
     if (qtype != c.DNS_TYPE_A and qtype != c.DNS_TYPE_AAAA)
         return true;
 
-    // no-aaaa filter
-    const only_china = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(.trust_dns);
-    if (only_china and !g.noaaaa_query.has(.china_ipchk))
+    // AAAA filter
+    const only_china_path = qtype == c.DNS_TYPE_AAAA and g.noaaaa_rule.has(.trust_dns);
+    if (only_china_path and !g.noaaaa_rule.has(.china_iptest))
         return true;
 
-    // avoid being poisoned by GFW
-    if (dns.is_tc(msg) or dns.get_rcode(msg) != c.DNS_RCODE_NOERROR)
-        return only_china;
-
-    // test the answer ip
-    const china_accepted = switch (dns.test_ip(msg, qnamelen)) {
-        .is_chnip => b: {
-            if (only_china)
-                return true;
-            break :b true;
-        },
-
-        .not_chnip => b: {
-            if (only_china) {
-                if (g.verbose) replylog.noaaaa("china_ipchk");
-                rmsg.len = dns.empty_reply(msg, qnamelen); // `.len` updated
-                return true;
-            }
-            break :b false;
-        },
-
-        .not_found => b: {
-            if (only_china) {
-                if (g.verbose) replylog.noaaaa("china_ipchk");
-                return true;
-            }
-            if (g.verbose) replylog.china_noip();
-            break :b g.noip_as_chnip;
-        },
-
-        .bad_msg => return only_china,
-    };
-
-    verdict_cache.add(msg, qnamelen, qtype, china_accepted);
-
-    return china_accepted;
+    const test_res = dns.test_ip(msg, qnamelen);
+    if (!only_china_path) {
+        // [A/AAAA]
+        // get the verdict
+        return switch (test_res) {
+            .is_china_ip, .non_china_ip => b: {
+                const accepted = test_res == .is_china_ip;
+                verdict_cache.add(msg, qnamelen, accepted);
+                break :b accepted;
+            },
+            .no_ip_found => b: {
+                if (g.verbose) replylog.china_noip();
+                break :b g.noip_as_chnip;
+            },
+            .other_case => false,
+        };
+    } else {
+        // [AAAA] only_china_path
+        if (test_res == .non_china_ip) {
+            if (g.verbose) replylog.noaaaa("china_iptest");
+            rmsg.len = dns.empty_reply(msg, qnamelen); // `.len` updated
+        }
+        return true;
+    }
 }
 
-/// tag:none && !china_filtered
+/// tag:none (trustdns returned before chinadns)
 fn use_trust_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) bool {
     const msg = rmsg.msg();
     const qtype = dns.get_qtype(msg, qnamelen);
 
-    // no-aaaa filter
-    const only_trust = qtype == c.DNS_TYPE_AAAA and g.noaaaa_query.has(.china_dns);
-    if (!only_trust)
-        return false; // waiting for chinadns
+    // only care about A/AAAA query
+    if (qtype != c.DNS_TYPE_A and qtype != c.DNS_TYPE_AAAA)
+        return true;
 
-    // [only_trust]
-
-    // no-aaaa ipchk
-    if (g.noaaaa_query.has(.trust_ipchk)) {
-        const res = dns.test_ip(msg, qnamelen);
-        if (res == .not_chnip or res == .not_found) {
-            if (g.verbose) replylog.noaaaa("trust_ipchk");
-            if (res == .not_chnip) rmsg.len = dns.empty_reply(msg, qnamelen); // `.len` updated
+    const only_trust_path = qtype == c.DNS_TYPE_AAAA and g.noaaaa_rule.has(.china_dns);
+    if (!only_trust_path) {
+        // [A/AAAA]
+        // waiting for chinadns
+        return false;
+    } else {
+        // [AAAA] only_trust_path
+        if (g.noaaaa_rule.has(.trust_iptest)) {
+            if (dns.test_ip(msg, qnamelen) == .non_china_ip) {
+                if (g.verbose) replylog.noaaaa("trust_iptest");
+                rmsg.len = dns.empty_reply(msg, qnamelen); // `.len` updated
+            }
         }
+        return true;
     }
-
-    return true;
 }
 
 pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
@@ -634,7 +621,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     // determines whether to end the current query context
     nosuspend switch (upstream.group.tag) {
         .china => {
-            if (qctx.name_tag == .chn or qctx.flags.has(.china_accepted) or use_china_reply(rmsg, qnamelen, &replylog)) {
+            if (qctx.name_tag == .chn or qctx.flags.has(.is_china_domain) or use_china_reply(rmsg, qnamelen, &replylog)) {
                 if (g.verbose) {
                     replylog.reply("accept", null);
 
@@ -657,13 +644,13 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
                     rmsg = trust_msg;
                 } else {
                     // waiting for trustdns
-                    qctx.flags.add(.china_filtered);
+                    qctx.flags.add(.non_china_domain);
                     return;
                 }
             }
         },
         .trust => {
-            if (qctx.name_tag == .gfw or qctx.flags.has(.china_filtered) or use_trust_reply(rmsg, qnamelen, &replylog)) {
+            if (qctx.name_tag == .gfw or qctx.flags.has(.non_china_domain) or use_trust_reply(rmsg, qnamelen, &replylog)) {
                 if (g.verbose)
                     replylog.reply("accept", null);
 
@@ -695,12 +682,11 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     }
 
     // add to cache
-    if (cache.enabled() and !dns.is_tc(rmsg.msg()) and dns.get_rcode(rmsg.msg()) == c.DNS_RCODE_NOERROR) {
-        var ttl: i32 = undefined;
-        if (cache.add(rmsg.msg(), qnamelen, &ttl))
-            if (g.verbose) replylog.cache(rmsg.msg(), ttl);
-    }
+    var ttl: i32 = undefined;
+    if (cache.add(rmsg.msg(), qnamelen, &ttl))
+        if (g.verbose) replylog.cache(rmsg.msg(), ttl);
 
+    // must be at the end
     qctx.free();
 }
 

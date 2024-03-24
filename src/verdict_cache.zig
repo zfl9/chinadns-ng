@@ -6,44 +6,23 @@ const dns = @import("dns.zig");
 const Upstream = @import("Upstream.zig");
 const assert = std.debug.assert;
 
-/// tag:none && qtype=A/AAAA && china_dns
-const Verdict = packed struct {
-    A_null: bool = true,
-    A_accepted: bool = undefined,
-    AAAA_null: bool = true,
-    AAAA_accepted: bool = undefined,
-};
-
-comptime {
-    // @compileLog("sizeof(Verdict):", @sizeOf(Verdict));
-    // @compileLog("bitsizeof(Verdict):", @bitSizeOf(Verdict));
-}
-
-/// [qname] => Verdict
-var _map: std.StringHashMapUnmanaged(Verdict) = .{};
+/// for tag:none domains
+/// [qname] => is_china_domain
+var _map: std.StringHashMapUnmanaged(bool) = .{};
 
 const GetOrPutResult = @TypeOf(_map).GetOrPutResult;
 
-/// `tag:none` domain
-/// qtype `A` or `AAAA`
-/// return `china_accepted`
-pub fn get(msg: []const u8, qnamelen: c_int, qtype: u16) ?bool {
+/// tag:none && has_china_path && has_trust_path
+/// return `is_china_domain` from the cache
+pub fn get(msg: []const u8, qnamelen: c_int) ?bool {
     if (_map.count() == 0)
         return null;
 
-    if (_map.get(dns.get_qname(msg, qnamelen))) |v| {
-        return switch (qtype) {
-            c.DNS_TYPE_A => if (!v.A_null) v.A_accepted else null,
-            c.DNS_TYPE_AAAA => if (!v.AAAA_null) v.AAAA_accepted else null,
-            else => unreachable,
-        };
-    }
-
-    return null;
+    return _map.get(dns.get_qname(msg, qnamelen));
 }
 
-/// cache only if tag:none has both china_dns path and trust_dns path
-pub fn add(msg: []const u8, qnamelen: c_int, qtype: u16, china_accepted: bool) void {
+/// tag:none && has_china_path && has_trust_path
+pub fn add(msg: []const u8, qnamelen: c_int, is_china_domain: bool) void {
     if (g.verdict_cache_size == 0)
         return;
 
@@ -53,22 +32,10 @@ pub fn add(msg: []const u8, qnamelen: c_int, qtype: u16, china_accepted: bool) v
     if (!res.found_existing) {
         // init the new entry
         res.key_ptr.* = new_key(qname, &res);
-        res.value_ptr.* = .{};
     }
 
     // update the value
-    const v = res.value_ptr;
-    switch (qtype) {
-        c.DNS_TYPE_A => {
-            v.A_null = false;
-            v.A_accepted = china_accepted;
-        },
-        c.DNS_TYPE_AAAA => {
-            v.AAAA_null = false;
-            v.AAAA_accepted = china_accepted;
-        },
-        else => unreachable,
-    }
+    res.value_ptr.* = is_china_domain;
 }
 
 /// `_map.getOrPut() && !res.found_existing`
