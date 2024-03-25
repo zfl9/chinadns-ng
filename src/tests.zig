@@ -7,7 +7,7 @@ const TestFn = struct {
     func: std.meta.FnPtr(fn () anyerror!void),
 };
 
-const all_test_fns = collect(.{root} ++ root.project_modules);
+const all_test_fns = collect(@import("modules.zig").module_list);
 
 fn collect(comptime modules: anytype) [count(modules)]TestFn {
     @setEvalBranchQuota(1000000);

@@ -184,25 +184,25 @@ pub fn main() u8 {
 }
 
 fn init_all_module() void {
-    inline for (@typeInfo(modules).Struct.decls) |decl| {
-        const mod_name = decl.name;
-        const mod = @field(modules, mod_name);
-        if (@hasDecl(mod, "module_init")) {
+    inline for (modules.module_list) |module, i| {
+        const module_name: cc.ConstStr = modules.name_list[i];
+        if (@hasDecl(module, "module_init")) {
             // if (_debug)
-            //     log.debug(@src(), "%.*s.module_init()", .{ cc.to_int(mod_name.len), mod_name.ptr });
-            mod.module_init();
+            if (false)
+                log.debug(@src(), "%s.module_init()", .{module_name});
+            module.module_init();
         }
     }
 }
 
 fn deinit_all_module() void {
-    inline for (@typeInfo(modules).Struct.decls) |decl| {
-        const mod_name = decl.name;
-        const mod = @field(modules, mod_name);
-        if (@hasDecl(mod, "module_deinit")) {
+    inline for (modules.module_list) |module, i| {
+        const module_name: cc.ConstStr = modules.name_list[i];
+        if (@hasDecl(module, "module_deinit")) {
             // if (_debug)
-            //     log.debug(@src(), "%.*s.module_deinit()", .{ cc.to_int(mod_name.len), mod_name.ptr });
-            mod.module_deinit();
+            if (false)
+                log.debug(@src(), "%s.module_deinit()", .{module_name});
+            module.module_deinit();
         }
     }
 }

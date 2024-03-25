@@ -462,12 +462,36 @@ fn gen_modules_zig() void {
         }
     }.cmp);
 
-    for (list.items) |name| {
-        f.writeAll(fmt(
-            "pub const {s} = @import(\"{s}.zig\");\n",
-            .{ name, name },
-        )) catch unreachable;
+    var text = std.ArrayList(u8).init(_b.allocator);
+    defer text.deinit();
+
+    text.appendSlice("pub const name_list = .{ ") catch unreachable;
+    for (list.items) |name, i| {
+        if (i > 0)
+            text.appendSlice(", ") catch unreachable;
+        text.append('"') catch unreachable;
+        text.appendSlice(name) catch unreachable;
+        text.append('"') catch unreachable;
     }
+    text.appendSlice(" };\n") catch unreachable;
+
+    text.appendSlice("pub const module_list = .{ ") catch unreachable;
+    for (list.items) |name, i| {
+        if (i > 0)
+            text.appendSlice(", ") catch unreachable;
+        text.appendSlice(name) catch unreachable;
+    }
+    text.appendSlice(" };\n\n") catch unreachable;
+
+    for (list.items) |name| {
+        text.appendSlice("const ") catch unreachable;
+        text.appendSlice(name) catch unreachable;
+        text.appendSlice(" = @import(\"") catch unreachable;
+        text.appendSlice(name) catch unreachable;
+        text.appendSlice(".zig\");\n") catch unreachable;
+    }
+
+    f.writeAll(text.items) catch unreachable;
 }
 
 // =========================================================================
