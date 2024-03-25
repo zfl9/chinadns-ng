@@ -210,9 +210,9 @@ fn add_download(url: []const u8, path: []const u8) *Step {
         \\  url='{s}'; path='{s}'
         \\  mkdir -p "$(dirname "$path")"
         \\  echo "[INFO] downloading from $url"
-        \\  if type -P wget &>/dev/null; then
+        \\  if command -v wget >/dev/null; then
         \\      wget "$url" -O "$path"
-        \\  elif type -P curl &>/dev/null; then
+        \\  elif command -v curl >/dev/null; then
         \\      curl -fL "$url" -o "$path"
         \\  else
         \\      echo "[ERROR] please install 'wget' or 'curl'" 1>&2
@@ -532,7 +532,7 @@ fn build_openssl() *Step {
         \\  export ZIG_LOCAL_CACHE_DIR="$zig_cache_dir"
         \\  export ZIG_GLOBAL_CACHE_DIR="$zig_cache_dir"
         \\
-        \\  ((is_musl)) && pic_flags='-fno-pic -fno-PIC' || pic_flags=''
+        \\  [ "$is_musl" = 1 ] && pic_flags='-fno-pic -fno-PIC' || pic_flags=''
         \\  export CC="$zig_exe cc $target_mcpu -g0 -O3 -Xclang -O3 $lto -fno-pie -fno-PIE $pic_flags -ffunction-sections -fdata-sections"
         \\
         \\  export AR="$zig_exe ar"
