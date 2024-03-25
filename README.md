@@ -13,10 +13,12 @@
 - 可动态添加gfw域名结果IP至`ipset/nftset`，用于实现gfwlist透明代理。
 - 支持`nftables set`，并针对 add 操作进行了性能优化，避免操作延迟。
 - 更加细致的 no-ipv6(AAAA) 控制，可根据域名类型，上游类型进行过滤。
+- DNS 缓存、stale 缓存模式、缓存预刷新、缓存忽略名单（不缓存的域名）。
+- 支持 tag:none 域名的判定结果缓存，避免重复请求和判定，减少DNS泄露。
 
 ---
 
-**正在开发 2.0 版本，计划支持 DNS 缓存、DoH 上游，以及其他常用特性。详见 [#144](https://github.com/zfl9/chinadns-ng/issues/144)**
+**正在开发 2.0 版本，计划支持 ~~DNS 缓存~~、DoH 上游，以及其他常用特性。详见 [#144](https://github.com/zfl9/chinadns-ng/issues/144)**
 
 ---
 
@@ -31,6 +33,8 @@
 - gfwlist.txt域名(tag:gfw域名)，转发给trust组，trust需返回未受污染的结果，比如走代理，具体方式不限。
 
 - 其他域名(tag:none域名)，同时转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组。是否为大陆ip的核心依据，就是测试ip是否位于`ipset-name4/6`指定的那个地址集合。
+
+- 若启用了tag:none域名的判决缓存，则同一域名的后续请求只会转发给特定的上游组（china组或trust组，具体取决于之前的ip测试结果），建议启用此功能，避免重复请求、判定，减少DNS泄露。
 
 - 如果使用纯域名分流模式，则不存在tag:none域名，因此要么走china组，要么走trust组，可避免dns泄露问题。
 
@@ -153,15 +157,20 @@ usage: chinadns-ng <options...>. the existing options are as follows:
                                       if setname contains @, then use nft-set
                                       format: family_name@table_name@set_name
  -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:
-                                      rule a: filter all domain name (default)
-                                      rule m: filter the domain with tag chn
-                                      rule g: filter the domain with tag gfw
-                                      rule n: filter the domain with tag none
-                                      rule c: do not forward to china upstream
-                                      rule t: do not forward to trust upstream
-                                      rule C: check answer ip of china upstream
-                                      rule T: check answer ip of trust upstream
+                                      rule a: filter AAAA for all domain
+                                      rule m: filter AAAA for tag:chn domain
+                                      rule g: filter AAAA for tag:gfw domain
+                                      rule n: filter AAAA for tag:none domain
+                                      rule c: filter AAAA for china upstream
+                                      rule t: filter AAAA for trust upstream
+                                      rule C: filter non-chnip reply from china
+                                      rule T: filter non-chnip reply from trust
                                       if no rules is given, it defaults to 'a'
+ --cache <size>                       enable dns caching, size 0 means disabled
+ --cache-stale <N>                    allow use the cached data with a TTL >= -N
+ --cache-refresh <N>                  pre-refresh the cached data if the TTL <= N
+ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
+ --verdict-cache <size>               enable verdict caching for tag:none domains
  -o, --timeout-sec <sec>              response timeout of upstream, default: 5
  -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
  -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -192,6 +201,11 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 2023.10.28 版本起，若监听地址为 `::`，则允许来自 IPv4/IPv6 的 DNS 查询。
 - 2024.03.07 版本起，`bind-addr` 允许指定多次，以便监听多个不同的 ip 地址。
 - 2024.03.07 版本起，将会同时监听 TCP 和 UDP 端口，之前只监听了 UDP 端口。
+- 2024.03.25 版本起，可以给 `bind-port` 选项指定要监听的协议（TCP、UDP）：
+  - `--bind-port 65353`：监听 TCP + UDP，默认值。
+  - `--bind-port 65353@tcp+udp`：监听 TCP + UDP，同上。
+  - `--bind-port 65353@tcp`：只监听 TCP。
+  - `--bind-port 65353@udp`：只监听 UDP。
 
 ---
 
@@ -254,6 +268,23 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - `C`：当 tag:none 域名的 AAAA 查询只存在 china 上游路径时，过滤 非大陆ip 响应
   - `T`：当 tag:none 域名的 AAAA 查询只存在 trust 上游路径时，过滤 非大陆ip 响应
   - 如`-N gt`/`--no-ipv6 gt`：过滤 tag:gfw 域名的 AAAA 查询、禁止向 trust 上游转发 AAAA 查询
+
+---
+
+- `cache` 启用 DNS 缓存，参数是缓存容量（最多缓存多少个请求的响应消息）。
+- `cache-stale` 允许使用 TTL 已过期的（陈旧）缓存，参数是最大过期时长（秒）。
+- `cache-refresh` 若当前命中的缓存的 TTL 不足 N 秒，则提前在后台刷新该缓存。
+- `cache-ignore` 不要缓存给定的域名（后缀，最高支持 8 级），此选项可多次指定。
+
+---
+
+- `verdict-cache` 启用 tag:none 域名的判决结果缓存，参数是缓存容量。
+  - tag:none 域名的查询会同时转发给 china、trust 上游，根据 china 上游的 ip test 结果，决定最终使用的响应。
+  - ***判决结果** 就是指这个 ip test 结果，也即：给定的 tag:none 域名是 **大陆域名** 还是 **非大陆域名**。
+  - 如果记下这个结果，那么后续查询同一域名时（未命中 DNS 缓存的情况下），只会转发特定上游组了，不再同时转发。
+  - 缓存容量上限是 65535，此缓存没有 TTL 限制；若缓存满了，则随机删除一个旧缓存数据。
+  - 建议启用此缓存，可帮助减少 tag:none 域名的重复请求和判定，还能减少 DNS 泄露。
+  - 注意，判决结果缓存与 DNS 缓存是互相独立的、互补的；这两个缓存系统可同时启用。
 
 ---
 
