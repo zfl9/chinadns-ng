@@ -308,7 +308,7 @@ pub const Group = struct {
         query_count: u8 = 0,
 
         const LIFE_MAX = 20;
-        const QUERY_MAX = 30;
+        const QUERY_MAX = 10;
 
         /// called before the first query
         pub fn check_eol(self: *Life, now_time: c.time_t) bool {

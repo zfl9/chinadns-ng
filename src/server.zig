@@ -404,8 +404,13 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         cache.ref(cache_msg);
         defer cache.unref(cache_msg);
 
+        const bufsz = if (qflags.has(.from_tcp))
+            cc.to_u16(c.DNS_MSG_MAXSIZE)
+        else
+            dns.get_bufsz(msg, qnamelen);
+
         if (g.verbose) querylog.cache(cache_msg, ttl);
-        send_reply(cache_msg, fdobj, src_addr, c.DNS_MSG_MAXSIZE, id, qflags);
+        send_reply(cache_msg, fdobj, src_addr, bufsz, id, qflags);
 
         if (ttl > g.cache_refresh)
             return;
@@ -415,7 +420,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
             querylog.refresh(ttl);
 
         // avoid receiving truncated response
-        if (in_proto == .udpin and cache_msg.len > c.DNS_EDNS_MINSIZE - 30)
+        if (in_proto == .udpin and cache_msg.len + 30 > c.DNS_EDNS_MINSIZE)
             in_proto = .tcpin;
 
         // mark the qctx
@@ -551,7 +556,7 @@ fn use_china_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) boo
                 if (g.verbose) replylog.china_noip();
                 break :b g.noip_as_chnip;
             },
-            .other_case => false, // `truncated` or `rcode != 0`
+            .other_case => dns.is_tc(msg), // `truncated` or `rcode != 0`
         };
     } else {
         // [AAAA] only_china_path

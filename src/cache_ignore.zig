@@ -42,7 +42,7 @@ pub fn add(ascii_domain: []const u8) ?void {
     _exist_levels |= bit;
 }
 
-pub fn has(rmsg: []const u8, qnamelen: c_int) bool {
+pub fn is_ignore(rmsg: []const u8, qnamelen: c_int) bool {
     if (ignore_domains.count() == 0)
         return false;
 
