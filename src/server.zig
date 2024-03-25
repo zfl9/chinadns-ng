@@ -763,16 +763,27 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
 /// qctx will be free()
 fn on_timeout(qctx: *const QueryCtx) void {
     if (g.verbose) {
-        const proto = cc.b2s(qctx.flags.has(.from_tcp), "tcp", "udp");
+        const from: cc.ConstStr = if (qctx.flags.has(.from_local))
+            "local"
+        else if (qctx.flags.has(.from_tcp))
+            "tcp"
+        else
+            "udp";
 
         var ip: cc.IpStrBuf = undefined;
         var port: u16 = undefined;
-        qctx.src_addr.to_text(&ip, &port);
+        if (qctx.flags.has(.from_local)) {
+            ip[0] = '0';
+            ip[1] = 0;
+            port = 0;
+        } else {
+            qctx.src_addr.to_text(&ip, &port);
+        }
 
         log.warn(
             @src(),
             "query(qid:%u, id:%u, tag:%s) from %s://%s#%u [timeout]",
-            .{ cc.to_uint(qctx.qid), cc.to_uint(qctx.id), qctx.name_tag.desc(), proto, &ip, cc.to_uint(port) },
+            .{ cc.to_uint(qctx.qid), cc.to_uint(qctx.id), qctx.name_tag.desc(), from, &ip, cc.to_uint(port) },
         );
     }
 
