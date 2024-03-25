@@ -1,5 +1,4 @@
 const std = @import("std");
-const root = @import("root");
 const cc = @import("cc.zig");
 
 const TestFn = struct {
