@@ -620,6 +620,20 @@ size_t dns_ascii_to_wire(const char *noalias ascii_name, size_t ascii_len, char 
     if (buf_n + 1 > DNS_NAME_WIRE_MAXLEN) return 0;
     buf[buf_n++] = 0;
 
-    *p_level = level;
+    if (p_level)
+        *p_level = level;
+
     return buf_n;
+}
+
+void dns_make_reply(void *noalias rmsg, const void *noalias qmsg, int qnamelen, const void *answer, size_t answerlen, u16 answer_n) {
+    memcpy(rmsg, qmsg, msg_minlen(qnamelen));
+
+    dns_empty_reply(rmsg, qnamelen);
+
+    struct dns_header *h = rmsg;
+    h->answer_count = htons(answer_n);
+    h->aa = 1;
+
+    memcpy(rmsg + msg_minlen(qnamelen), answer, answerlen);
 }

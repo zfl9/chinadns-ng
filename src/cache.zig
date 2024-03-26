@@ -70,7 +70,7 @@ pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (dns.is_tc(msg) or dns.get_rcode(msg) != c.DNS_RCODE_NOERROR)
         return false;
 
-    if (cache_ignore.is_ignore(msg, qnamelen))
+    if (cache_ignore.is_ignored(msg, qnamelen))
         return false;
 
     // e.g. remove EDNS COOKIE

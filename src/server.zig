@@ -14,6 +14,7 @@ const RcMsg = @import("RcMsg.zig");
 const ListNode = @import("ListNode.zig");
 const flags_op = @import("flags_op.zig");
 const verdict_cache = @import("verdict_cache.zig");
+const local_dns_rr = @import("local_dns_rr.zig");
 const assert = std.debug.assert;
 
 comptime {
@@ -113,10 +114,10 @@ const QueryCtx = struct {
         pub fn add(
             self: *List,
             msg: []u8,
-            qnamelen: c_int,
             fdobj: *EvLoop.Fd,
             src_addr: *const cc.SockAddr,
             name_tag: dnl.Tag,
+            bufsz: u16,
             flags: Flags,
             /// out param
             first_query: *bool,
@@ -133,11 +134,6 @@ const QueryCtx = struct {
 
             const id = dns.get_id(msg);
             dns.set_id(msg, qid);
-
-            const bufsz = if (flags.has_any(Flags.from(.{ .from_local, .from_tcp })))
-                cc.to_u16(c.DNS_MSG_MAXSIZE)
-            else // from udp
-                dns.get_bufsz(msg, qnamelen);
 
             const qctx = QueryCtx.new(qid, id, bufsz, fdobj, src_addr, name_tag, flags);
 
@@ -378,6 +374,11 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         querylog.query();
     }
 
+    const bufsz = if (qflags.has(.from_tcp))
+        cc.to_u16(c.DNS_MSG_MAXSIZE)
+    else
+        dns.get_bufsz(msg, qnamelen);
+
     // [AAAA filter] or [verdict cache]
     var tagnone_china = true;
     var tagnone_trust = true;
@@ -389,10 +390,39 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
             rmsg.len = dns.empty_reply(rmsg, qnamelen);
 
             if (g.verbose) querylog.noaaaa(by_rule);
-            return send_reply(rmsg, fdobj, src_addr, c.DNS_MSG_MAXSIZE, id, qflags);
+            return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
         };
 
     assert(tagnone_china or tagnone_trust);
+
+    // check the local records
+    var answer_n: u16 = undefined;
+    if (local_dns_rr.find_answer(msg, qnamelen, &answer_n)) |answer| {
+        const static = struct {
+            var free_msg: ?[]u8 = null;
+        };
+
+        const msgsz = dns.header_len() + dns.question_len(qnamelen) + answer.len;
+
+        const rmsg = if (static.free_msg) |free_msg| b: {
+            static.free_msg = null;
+            break :b g.allocator.realloc(free_msg, msgsz) catch unreachable;
+        } else b: {
+            break :b g.allocator.alloc(u8, msgsz) catch unreachable;
+        };
+
+        defer {
+            if (static.free_msg == null)
+                static.free_msg = rmsg
+            else
+                g.allocator.free(rmsg);
+        }
+
+        dns.make_reply(rmsg, msg, qnamelen, answer, answer_n);
+
+        // [async func]
+        return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
+    }
 
     // for upstream_group.send()
     var in_proto: Upstream.Proto = if (qflags.has(.from_tcp)) .tcpin else .udpin;
@@ -403,11 +433,6 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         // because send_reply is async func
         cache.ref(cache_msg);
         defer cache.unref(cache_msg);
-
-        const bufsz = if (qflags.has(.from_tcp))
-            cc.to_u16(c.DNS_MSG_MAXSIZE)
-        else
-            dns.get_bufsz(msg, qnamelen);
 
         if (g.verbose) querylog.cache(cache_msg, ttl);
         send_reply(cache_msg, fdobj, src_addr, bufsz, id, qflags);
@@ -446,10 +471,10 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
     const qctx = _qctx_list.add(
         msg,
-        qnamelen,
         fdobj,
         src_addr,
         name_tag,
+        bufsz,
         qflags,
         &first_query,
     ) orelse return;

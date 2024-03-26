@@ -117,7 +117,11 @@ pub inline fn qname_domains(msg: []const u8, qnamelen: c_int, interest_levels: u
     return if (n >= 0) cc.to_u8(n) else null;
 }
 
-pub inline fn ascii_to_wire(ascii_name: []const u8, p_buf: *[c.DNS_NAME_WIRE_MAXLEN]u8, p_level: *u8) ?[]u8 {
+pub inline fn ascii_to_wire(ascii_name: []const u8, p_buf: *[c.DNS_NAME_WIRE_MAXLEN]u8, p_level: ?*u8) ?[]u8 {
     const len = c.dns_ascii_to_wire(ascii_name.ptr, ascii_name.len, p_buf, p_level);
     return if (len > 0) p_buf[0..len] else null;
+}
+
+pub inline fn make_reply(rmsg: []u8, qmsg: []const u8, qnamelen: c_int, answer: []const u8, answer_n: u16) void {
+    return c.dns_make_reply(rmsg.ptr, qmsg.ptr, qnamelen, answer.ptr, answer.len, answer_n);
 }

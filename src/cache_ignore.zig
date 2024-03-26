@@ -8,7 +8,7 @@ const DynStr = @import("DynStr.zig");
 const assert = std.debug.assert;
 
 /// domains with these suffixes (wire-format) are not added to the cache
-var ignore_domains: std.StringHashMapUnmanaged(void) = .{};
+var _ignored_domains: std.StringHashMapUnmanaged(void) = .{};
 
 /// LSB: level=1 (com)
 /// MSB: level=8 (a.b.c.d.x.y.z.com)
@@ -31,7 +31,7 @@ pub fn add(ascii_domain: []const u8) ?void {
     const domain_z = opt_domain_z.?;
     const domain = domain_z[0 .. domain_z.len - 1];
 
-    const res = ignore_domains.getOrPut(g.allocator, domain) catch unreachable;
+    const res = _ignored_domains.getOrPut(g.allocator, domain) catch unreachable;
     if (res.found_existing)
         return;
 
@@ -42,8 +42,8 @@ pub fn add(ascii_domain: []const u8) ?void {
     _exist_levels |= bit;
 }
 
-pub fn is_ignore(rmsg: []const u8, qnamelen: c_int) bool {
-    if (ignore_domains.count() == 0)
+pub fn is_ignored(rmsg: []const u8, qnamelen: c_int) bool {
+    if (_ignored_domains.count() == 0)
         return false;
 
     var domains: [8][*]const u8 = undefined;
@@ -55,7 +55,7 @@ pub fn is_ignore(rmsg: []const u8, qnamelen: c_int) bool {
     for (domains[0..n]) |domain| {
         // const domain_len = domain_end - domain;
         const domain_len = cc.ptrdiff_u(u8, domain_end, domain);
-        if (ignore_domains.contains(domain[0..domain_len]))
+        if (_ignored_domains.contains(domain[0..domain_len]))
             return true;
     }
 

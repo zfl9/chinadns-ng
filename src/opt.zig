@@ -9,6 +9,8 @@ const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
 const cache_ignore = @import("cache_ignore.zig");
+const local_dns_rr = @import("local_dns_rr.zig");
+const assert = std.debug.assert;
 
 const help =
     \\usage: chinadns-ng <options...>. the existing options are as follows:
@@ -43,6 +45,8 @@ const help =
     \\ --cache-refresh <N>                  pre-refresh the cached data if the TTL <= N
     \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
     \\ --verdict-cache <size>               enable verdict caching for tag:none domains
+    \\ --hosts [path]                       load hosts file, default path is /etc/hosts
+    \\ --dns-rr-ip <name,ip...>             define local resource records of type A/AAAA
     \\ -o, --timeout-sec <sec>              response timeout of upstream, default: 5
     \\ -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
     \\ -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -91,6 +95,8 @@ const optdef_array = [_]OptDef{
     .{ .short = "",  .long = "cache-refresh", .value = .required, .optfn = opt_cache_refresh, },
     .{ .short = "",  .long = "cache-ignore",  .value = .required, .optfn = opt_cache_ignore,  },
     .{ .short = "",  .long = "verdict-cache", .value = .required, .optfn = opt_verdict_cache, },
+    .{ .short = "",  .long = "hosts",         .value = .optional, .optfn = opt_hosts,         },
+    .{ .short = "",  .long = "dns-rr-ip",     .value = .required, .optfn = opt_dns_rr_ip,     },
     .{ .short = "o", .long = "timeout-sec",   .value = .required, .optfn = opt_timeout_sec,   },
     .{ .short = "p", .long = "repeat-times",  .value = .required, .optfn = opt_repeat_times,  },
     .{ .short = "n", .long = "noip-as-chnip", .value = .no_value, .optfn = opt_noip_as_chnip, },
@@ -117,7 +123,7 @@ noinline fn get_optdef(name: []const u8) ?OptDef {
 // ================================================================
 
 /// print msg
-fn print(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) void {
+pub fn print(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) void {
     cc.printf(log.srcinfo(src) ++ " " ++ fmt ++ "\n", args);
 }
 
@@ -417,6 +423,42 @@ fn opt_verdict_cache(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.verdict_cache_size = str2int.parse(@TypeOf(g.verdict_cache_size), value, 10) orelse
         err_exit(@src(), value);
+}
+
+fn opt_hosts(in_value: ?[]const u8) void {
+    const path = in_value orelse "/etc/hosts";
+    local_dns_rr.read_hosts(path) orelse err_exit(@src(), path);
+}
+
+fn opt_dns_rr_ip(in_value: ?[]const u8) void {
+    const src = @src();
+    const value = in_value.?;
+
+    var it = std.mem.split(u8, value, ",");
+    const name = it.next().?;
+
+    var has_data = false;
+
+    while (it.next()) |ip| {
+        has_data = true;
+
+        check_ip(ip) orelse err_exit(src, value);
+
+        var str_ip: cc.IpStrBuf = undefined;
+        @memcpy(&str_ip, ip.ptr, ip.len);
+        str_ip[ip.len] = 0;
+
+        var net_ip: [c.IPV6_LEN]u8 = undefined;
+        if (cc.inet_pton(c.AF_INET, &str_ip, &net_ip)) {
+            local_dns_rr.add_ip(name, net_ip[0..c.IPV4_LEN]) orelse err_exit(src, value);
+        } else {
+            assert(cc.inet_pton(c.AF_INET6, &str_ip, &net_ip));
+            local_dns_rr.add_ip(name, net_ip[0..c.IPV6_LEN]) orelse err_exit(src, value);
+        }
+    }
+
+    if (!has_data)
+        err_exit(src, value);
 }
 
 fn opt_timeout_sec(in_value: ?[]const u8) void {
