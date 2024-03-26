@@ -606,10 +606,13 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
         return;
     }
 
+    const qtype = dns.get_qtype(rmsg.msg(), qnamelen);
+    const is_qtype_A_AAAA = qtype == c.DNS_TYPE_A or qtype == c.DNS_TYPE_AAAA;
+
     var replylog: ReplyLog = if (g.verbose) .{
         .qid = dns.get_id(rmsg.msg()),
         .tag = null,
-        .qtype = dns.get_qtype(rmsg.msg(), qnamelen),
+        .qtype = qtype,
         .name = &ascii_namebuf,
         .url = upstream.url,
     } else undefined;
@@ -634,7 +637,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
                         replylog.reply("filter", "<previous-trustdns>");
                 }
 
-                if (qctx.name_tag == .chn and !g.chnip_setnames.is_empty()) {
+                if (is_qtype_A_AAAA and qctx.name_tag == .chn and !g.chnip_setnames.is_empty()) {
                     if (g.verbose)
                         replylog.add_ip(g.chnip_setnames.str);
                     dns.add_ip(rmsg.msg(), qnamelen, true);
@@ -662,7 +665,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
                 if (g.verbose)
                     replylog.reply("accept", null);
 
-                if (qctx.name_tag == .gfw and !g.gfwip_setnames.is_empty()) {
+                if (is_qtype_A_AAAA and qctx.name_tag == .gfw and !g.gfwip_setnames.is_empty()) {
                     if (g.verbose)
                         replylog.add_ip(g.gfwip_setnames.str);
                     dns.add_ip(rmsg.msg(), qnamelen, false);
