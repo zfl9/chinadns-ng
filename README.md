@@ -142,11 +142,11 @@ $ chinadns-ng --help
 usage: chinadns-ng <options...>. the existing options are as follows:
  -C, --config <path>                  format similar to the long option
  -b, --bind-addr <ip>                 listen address, default: 127.0.0.1
- -l, --bind-port <port>               listen port number, default: 65353
- -c, --china-dns <upstream,...>       china dns server, default: <114 DNS>
- -t, --trust-dns <upstream,...>       trust dns server, default: <Google DNS>
- -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin
- -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin
+ -l, --bind-port <port[@proto]>       listen port number, default: 65353
+ -c, --china-dns <upstreams>          china dns server, default: <114 DNS>
+ -t, --trust-dns <upstreams>          trust dns server, default: <Google DNS>
+ -m, --chnlist-file <paths>           path(s) of chnlist, '-' indicate stdin
+ -g, --gfwlist-file <paths>           path(s) of gfwlist, '-' indicate stdin
  -M, --chnlist-first                  match chnlist first, default gfwlist first
  -d, --default-tag <tag>              domain default tag: chn,gfw,none(default)
  -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nft
@@ -171,6 +171,8 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  --cache-refresh <N>                  pre-refresh the cached data if the TTL <= N
  --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
  --verdict-cache <size>               enable verdict caching for tag:none domains
+ --hosts [path]                       load hosts file, default path is /etc/hosts
+ --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
  -o, --timeout-sec <sec>              response timeout of upstream, default: 5
  -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
  -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -285,6 +287,12 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 缓存容量上限是 65535，此缓存没有 TTL 限制；缓存满时会随机删除一个旧缓存数据。
   - 建议启用此缓存，可帮助减少 tag:none 域名的重复请求和判定，还能减少 DNS 泄露。
   - 注意，判决结果缓存与 DNS 缓存是互相独立的、互补的；这两个缓存系统可同时启用。
+
+---
+
+- `hosts` 加载 hosts 文件，参数默认值为 `/etc/hosts`，此选项可多次指定。
+- `dns-rr-ip` 定义本地的 A/AAAA 记录（与 hosts 类似），此选项可多次指定。
+  - 格式：`<names>=<ips>`，多个 name 使用逗号隔开，多个 ip 使用逗号隔开。
 
 ---
 
