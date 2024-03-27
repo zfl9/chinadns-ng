@@ -125,7 +125,7 @@ pub const to_u64 = IntCast(u64).cast;
 // ==============================================================
 
 /// convert to C string (static buffer)
-pub fn to_cstr(str: []const u8) Str {
+pub noinline fn to_cstr(str: []const u8) Str {
     const static = struct {
         var buffer: []u8 = &.{};
     };
@@ -769,7 +769,7 @@ pub inline fn mmap(addr: ?*const anyopaque, len: usize, prot: c_int, flags: c_in
     };
     const mem = raw.mmap(addr, len, prot, flags, fd, offset);
     return if (mem != @ptrCast([*]u8, c.MAP_FAILED))
-        return mem[0..len]
+        mem[0..len]
     else
         null;
 }

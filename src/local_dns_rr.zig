@@ -78,13 +78,15 @@ pub fn read_hosts(path: []const u8) ?void {
     defer _ = cc.munmap(mem);
 
     var line_it = std.mem.split(u8, mem, "\n");
-    while (line_it.next()) |line| {
+    while (line_it.next()) |raw_line| {
+        // ignore comments
+        const pos = std.mem.indexOfScalar(u8, raw_line, '#');
+        const line = if (pos) |p| raw_line[0..p] else raw_line;
+
         // ip name name ...
         var it = std.mem.tokenize(u8, line, " \t\r");
 
         const ip = it.next() orelse continue;
-
-        if (std.mem.startsWith(u8, ip, "#")) continue;
 
         if (it.peek() == null) {
             opt.print(src, "missing domain", line);
