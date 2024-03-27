@@ -41,7 +41,7 @@ const Records = struct {
         @memcpy(&rr.data, net_ip.ptr, net_ip.len);
     }
 
-    pub fn add_ip(self: *Records, net_ip: []const u8) void {
+    pub noinline fn add_ip(self: *Records, net_ip: []const u8) void {
         if (net_ip.len == c.IPV4_LEN)
             self.do_add_ip(net_ip, true)
         else
@@ -97,7 +97,7 @@ pub fn read_hosts(path: []const u8) ?void {
 }
 
 /// for opt.zig
-pub fn add_ip(ascii_name: []const u8, str_ip: []const u8) ?void {
+pub noinline fn add_ip(ascii_name: []const u8, str_ip: []const u8) ?void {
     const src = @src();
 
     var name_buf: [c.DNS_NAME_WIRE_MAXLEN]u8 = undefined;
