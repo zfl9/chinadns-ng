@@ -71,38 +71,28 @@ const RR_AAAA = packed struct {
 pub fn read_hosts(path: []const u8) ?void {
     const src = @src();
 
-    const file = cc.fopen(cc.to_cstr(path), "r") orelse {
-        opt.print(src, "fopen: (%d) %m", .{cc.errno()});
+    const mem = cc.mmap_file(cc.to_cstr(path)) orelse {
+        opt.print(src, "open file: %m", .{});
         return null;
     };
-    defer _ = cc.fclose(file);
+    defer _ = cc.munmap(mem);
 
-    var buf: [1024]u8 = undefined;
-    while (cc.fgets(file, &buf)) |p_line| {
-        const line = cc.strslice_c(p_line);
+    var line_it = std.mem.split(u8, mem, "\n");
+    while (line_it.next()) |line| {
+        // ip name name ...
+        var it = std.mem.tokenize(u8, line, " \t\r");
 
-        const errmsg: [:0]const u8 = e: {
-            if (line[line.len - 1] == '\n')
-                p_line[line.len - 1] = 0 // remove \n
-            else if (!cc.feof(file)) // last line may not have \n
-                break :e "line is too long";
+        const ip = it.next() orelse continue;
 
-            // ip name name ...
-            var it = std.mem.tokenize(u8, line, " \t\x00");
+        if (std.mem.startsWith(u8, ip, "#")) continue;
 
-            const ip = it.next() orelse continue;
-            if (std.mem.startsWith(u8, ip, "#")) continue;
+        if (it.peek() == null) {
+            opt.err_print(src, "missing domain name", line);
+            return null;
+        }
 
-            if (it.peek() == null) break :e "missing domain name";
-
-            while (it.next()) |name|
-                add_ip(name, ip) orelse return null;
-
-            continue;
-        };
-
-        opt.err_print(src, errmsg, line);
-        return null;
+        while (it.next()) |name|
+            add_ip(name, ip) orelse return null;
     }
 }
 
@@ -123,8 +113,8 @@ pub fn add_ip(ascii_name: []const u8, str_ip: []const u8) ?void {
         res.value_ptr.* = .{};
     }
 
-    var net_ip_buf: cc.IpNetBuf = undefined;
-    const net_ip = cc.ip_to_net(cc.to_cstr(str_ip), &net_ip_buf) orelse {
+    var ip_buf: cc.IpNetBuf = undefined;
+    const net_ip = cc.ip_to_net(cc.to_cstr(str_ip), &ip_buf) orelse {
         opt.err_print(src, "invalid ip", str_ip);
         return null;
     };

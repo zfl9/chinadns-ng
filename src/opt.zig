@@ -166,23 +166,15 @@ fn opt_config(in_value: ?[]const u8) void {
 
     const filename = cc.to_cstr(value);
 
-    const file = cc.fopen(filename, "r") orelse
-        exit(src, "failed to open the config file: '%s' (%m)", .{filename});
-    defer _ = cc.fclose(file);
+    const mem = cc.mmap_file(filename) orelse
+        exit(src, "failed to open file: '%s' (%m)", .{filename});
+    defer _ = cc.munmap(mem);
 
-    var buf: [512]u8 = undefined;
-
-    while (cc.fgets(file, &buf)) |p_line| {
-        const errmsg: cc.ConstStr = e: {
-            const line = cc.strslice_c(p_line);
-
-            if (line[line.len - 1] == '\n')
-                p_line[line.len - 1] = 0 // remove \n
-            else if (!cc.feof(file)) // last line may not have \n
-                break :e "line is too long";
-
+    var line_it = std.mem.split(u8, mem, "\n");
+    while (line_it.next()) |line| {
+        const err: cc.ConstStr = e: {
             // optname [optvalue]
-            var it = std.mem.tokenize(u8, line, " \t\r\n\x00");
+            var it = std.mem.tokenize(u8, line, " \t\r");
 
             const optname = it.next() orelse continue;
 
@@ -217,7 +209,7 @@ fn opt_config(in_value: ?[]const u8) void {
         };
 
         // error handling
-        exit(src, "'%s': %s: %s", .{ filename, errmsg, p_line });
+        exit(src, "'%s': %s: %.*s", .{ filename, err, cc.to_int(line.len), line.ptr });
     }
 }
 
@@ -487,7 +479,7 @@ const Parser = struct {
     pub noinline fn parse(self: *Parser) void {
         const arg = self.pop_arg() orelse return;
 
-        const errmsg: cc.ConstStr = e: {
+        const err: cc.ConstStr = e: {
             if (std.mem.startsWith(u8, arg, "--")) {
                 if (arg.len < 4)
                     break :e "invalid long option";
@@ -523,7 +515,7 @@ const Parser = struct {
         };
 
         // error handling
-        exit(@src(), "%s: '%s'", .{ errmsg, arg.ptr });
+        exit(@src(), "%s: '%s'", .{ err, arg.ptr });
     }
 
     noinline fn peek_arg(self: Parser) ?[:0]const u8 {

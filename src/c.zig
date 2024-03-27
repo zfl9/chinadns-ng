@@ -21,6 +21,8 @@ pub usingnamespace @cImport({
     @cInclude("sys/types.h");
     @cInclude("sys/epoll.h");
     @cInclude("sys/socket.h");
+    @cInclude("sys/mman.h");
+    @cInclude("sys/stat.h");
     @cInclude("arpa/inet.h");
     @cInclude("netinet/in.h");
     @cInclude("netinet/tcp.h");

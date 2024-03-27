@@ -448,6 +448,21 @@ pub inline fn socket(family: c_int, type_: c_int, protocol: c_int) ?c_int {
     return if (res >= 0) res else null;
 }
 
+pub inline fn open(filename: ConstStr, flags: c_int, newfile_mode: ?c.mode_t) ?c_int {
+    const raw = struct {
+        extern fn open(file: ConstStr, oflag: c_int, ...) c_int;
+    };
+    const fd = raw.open(filename, flags, newfile_mode orelse 0);
+    return if (fd >= 0) fd else null;
+}
+
+pub inline fn fstat(fd: c_int, p_stat: *c.struct_stat) ?void {
+    const raw = struct {
+        extern fn fstat(fd: c_int, buf: *c.struct_stat) c_int;
+    };
+    return if (raw.fstat(fd, p_stat) == -1) null;
+}
+
 pub inline fn close(fd: c_int) ?void {
     const raw = struct {
         extern fn close(fd: c_int) c_int;
@@ -582,7 +597,6 @@ inline fn SIG_ERR() sighandler_t {
 
 // ==============================================================
 
-/// ipv4/ipv6 address strbuf (char_array with sentinel 0)
 pub const IpStrBuf = [c.INET6_ADDRSTRLEN - 1:0]u8;
 pub const IpNetBuf = [c.IPV6_LEN]u8;
 
@@ -747,6 +761,38 @@ pub inline fn sendmmsg(fd: c_int, msgs: []mmsghdr_t, flags: c_int) ?[]mmsghdr_t 
     assert(msgs.len > 0);
     const n = SENDMMSG(fd, msgs.ptr, to_uint(msgs.len), flags);
     return if (n > 0) msgs[0..to_usize(n)] else null;
+}
+
+// ==============================================================
+
+pub inline fn mmap(addr: ?*const anyopaque, len: usize, prot: c_int, flags: c_int, fd: c_int, offset: c.off_t) ?[]u8 {
+    const raw = struct {
+        extern fn mmap(addr: ?*const anyopaque, len: usize, prot: c_int, flags: c_int, fd: c_int, offset: c.off_t) [*]u8;
+    };
+    const mem = raw.mmap(addr, len, prot, flags, fd, offset);
+    return if (mem != @ptrCast([*]u8, c.MAP_FAILED))
+        return mem[0..len]
+    else
+        null;
+}
+
+pub inline fn munmap(mem: []const u8) ?void {
+    const raw = struct {
+        extern fn munmap(addr: *const anyopaque, len: usize) c_int;
+    };
+    return if (raw.munmap(mem.ptr, mem.len) == -1) null;
+}
+
+/// mmap a file to memory (readonly)
+pub fn mmap_file(filename: ConstStr) ?[]const u8 {
+    const fd = open(filename, c.O_RDONLY | c.O_CLOEXEC, null) orelse return null;
+    defer _ = close(fd);
+
+    var st: c.struct_stat = undefined;
+    fstat(fd, &st) orelse return null;
+    const size = to_usize(st.st_size);
+
+    return mmap(null, size, c.PROT_READ, c.MAP_PRIVATE, fd, 0);
 }
 
 // ==============================================================
