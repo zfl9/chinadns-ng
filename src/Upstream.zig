@@ -419,9 +419,7 @@ pub const Group = struct {
     noinline fn do_add(self: *Group, proto: Proto, host: []const u8, ip: []const u8, port: u16, path: []const u8) void {
         @setCold(true);
 
-        var tmpbuf: cc.IpStrBuf = undefined;
-
-        const addr = cc.SockAddr.from_text(cc.strdup_r(ip, &tmpbuf).?, port);
+        const addr = cc.SockAddr.from_text(cc.to_cstr(ip), port);
 
         for (self.items()) |*v| {
             if (v.eql(proto, &addr, host, path))
@@ -429,6 +427,8 @@ pub const Group = struct {
         }
 
         var url = DynStr{};
+
+        var portbuf: [10]u8 = undefined;
 
         url.set_ex(&.{
             // https://
@@ -439,7 +439,7 @@ pub const Group = struct {
             // ip
             ip,
             // #port
-            cc.b2v(proto.is_std_port(port), "", cc.snprintf(&tmpbuf, "#%u", .{cc.to_uint(port)})),
+            cc.b2v(proto.is_std_port(port), "", cc.snprintf(&portbuf, "#%u", .{cc.to_uint(port)})),
             // path
             path,
         });

@@ -406,7 +406,10 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
         const rmsg = if (static.free_msg) |free_msg| b: {
             static.free_msg = null;
-            break :b g.allocator.realloc(free_msg, msgsz) catch unreachable;
+            break :b if (msgsz <= free_msg.len)
+                free_msg
+            else
+                g.allocator.realloc(free_msg, msgsz) catch unreachable;
         } else b: {
             break :b g.allocator.alloc(u8, msgsz) catch unreachable;
         };

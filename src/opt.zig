@@ -16,11 +16,11 @@ const help =
     \\usage: chinadns-ng <options...>. the existing options are as follows:
     \\ -C, --config <path>                  format similar to the long option
     \\ -b, --bind-addr <ip>                 listen address, default: 127.0.0.1
-    \\ -l, --bind-port <port>               listen port number, default: 65353
-    \\ -c, --china-dns <upstream,...>       china dns server, default: <114 DNS>
-    \\ -t, --trust-dns <upstream,...>       trust dns server, default: <Google DNS>
-    \\ -m, --chnlist-file <path,...>        path(s) of chnlist, '-' indicate stdin
-    \\ -g, --gfwlist-file <path,...>        path(s) of gfwlist, '-' indicate stdin
+    \\ -l, --bind-port <port[@proto]>       listen port number, default: 65353
+    \\ -c, --china-dns <upstreams>          china dns server, default: <114 DNS>
+    \\ -t, --trust-dns <upstreams>          trust dns server, default: <Google DNS>
+    \\ -m, --chnlist-file <paths>           path(s) of chnlist, '-' indicate stdin
+    \\ -g, --gfwlist-file <paths>           path(s) of gfwlist, '-' indicate stdin
     \\ -M, --chnlist-first                  match chnlist first, default gfwlist first
     \\ -d, --default-tag <tag>              domain default tag: chn,gfw,none(default)
     \\ -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nft
@@ -46,7 +46,7 @@ const help =
     \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
     \\ --verdict-cache <size>               enable verdict caching for tag:none domains
     \\ --hosts [path]                       load hosts file, default path is /etc/hosts
-    \\ --dns-rr-ip <name,ip...>             define local resource records of type A/AAAA
+    \\ --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
     \\ -o, --timeout-sec <sec>              response timeout of upstream, default: 5
     \\ -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
     \\ -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -164,12 +164,10 @@ fn opt_config(in_value: ?[]const u8) void {
     if (value.len > c.PATH_MAX)
         exit(src, "filename is too long: '%.*s'", .{ cc.to_int(value.len), value.ptr });
 
-    // TODO: vla/alloca allocator
-    const filename = cc.strdup(value);
-    defer g.allocator.free(filename);
+    const filename = cc.to_cstr(value);
 
     const file = cc.fopen(filename, "r") orelse
-        exit(src, "failed to open the config file: '%s' (%m)", .{filename.ptr});
+        exit(src, "failed to open the config file: '%s' (%m)", .{filename});
     defer _ = cc.fclose(file);
 
     var buf: [512]u8 = undefined;
@@ -219,22 +217,13 @@ fn opt_config(in_value: ?[]const u8) void {
         };
 
         // error handling
-        exit(src, "'%s': %s: %s", .{ filename.ptr, errmsg, p_line });
+        exit(src, "'%s': %s: %s", .{ filename, errmsg, p_line });
     }
 }
 
 pub noinline fn check_ip(value: []const u8) ?void {
-    var buf: [64]u8 = undefined;
-
-    const src = @src();
-
-    const ip = cc.strdup_r(value, &buf) orelse {
-        err_print(src, "ip is too long", value);
-        return null;
-    };
-
-    if (cc.get_ipstr_family(ip.ptr) == null) {
-        err_print(src, "invalid ip", value);
+    if (cc.ip_family(cc.to_cstr(value)) == null) {
+        err_print(@src(), "invalid ip", value);
         return null;
     }
 }
@@ -427,38 +416,24 @@ fn opt_verdict_cache(in_value: ?[]const u8) void {
 
 fn opt_hosts(in_value: ?[]const u8) void {
     const path = in_value orelse "/etc/hosts";
-    local_dns_rr.read_hosts(path) orelse err_exit(@src(), path);
+    local_dns_rr.read_hosts(path) orelse
+        exit(@src(), "failed to load the hosts file: '%.*s'", .{ cc.to_int(path.len), path.ptr });
 }
 
 fn opt_dns_rr_ip(in_value: ?[]const u8) void {
-    const src = @src();
     const value = in_value.?;
+    const src = @src();
 
-    var it = std.mem.split(u8, value, ",");
-    const name = it.next().?;
+    const sep = std.mem.indexOfScalar(u8, value, '=') orelse err_exit(src, value);
+    const name_list = value[0..sep];
+    const ip_list = value[sep + 1 ..];
 
-    var has_data = false;
-
-    while (it.next()) |ip| {
-        has_data = true;
-
-        check_ip(ip) orelse err_exit(src, value);
-
-        var str_ip: cc.IpStrBuf = undefined;
-        @memcpy(&str_ip, ip.ptr, ip.len);
-        str_ip[ip.len] = 0;
-
-        var net_ip: [c.IPV6_LEN]u8 = undefined;
-        if (cc.inet_pton(c.AF_INET, &str_ip, &net_ip)) {
-            local_dns_rr.add_ip(name, net_ip[0..c.IPV4_LEN]) orelse err_exit(src, value);
-        } else {
-            assert(cc.inet_pton(c.AF_INET6, &str_ip, &net_ip));
-            local_dns_rr.add_ip(name, net_ip[0..c.IPV6_LEN]) orelse err_exit(src, value);
-        }
+    var name_it = std.mem.split(u8, name_list, ",");
+    while (name_it.next()) |name| {
+        var ip_it = std.mem.split(u8, ip_list, ",");
+        while (ip_it.next()) |ip|
+            local_dns_rr.add_ip(name, ip) orelse err_exit(src, value);
     }
-
-    if (!has_data)
-        err_exit(src, value);
 }
 
 fn opt_timeout_sec(in_value: ?[]const u8) void {

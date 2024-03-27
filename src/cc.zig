@@ -124,6 +124,18 @@ pub const to_u64 = IntCast(u64).cast;
 
 // ==============================================================
 
+/// convert to C string (static buffer)
+pub fn to_cstr(str: []const u8) Str {
+    const static = struct {
+        var buffer: []u8 = &.{};
+    };
+    if (str.len + 1 > static.buffer.len)
+        static.buffer = g.allocator.realloc(static.buffer, str.len + 1) catch unreachable;
+    @memcpy(static.buffer.ptr, str.ptr, str.len);
+    static.buffer[str.len] = 0;
+    return @ptrCast(Str, static.buffer.ptr);
+}
+
 /// end with sentinel 0
 pub inline fn is_cstr(comptime S: type) bool {
     return @typeInfo(StrSlice(S, false)).Pointer.sentinel != null;
@@ -572,17 +584,20 @@ inline fn SIG_ERR() sighandler_t {
 
 /// ipv4/ipv6 address strbuf (char_array with sentinel 0)
 pub const IpStrBuf = [c.INET6_ADDRSTRLEN - 1:0]u8;
+pub const IpNetBuf = [c.IPV6_LEN]u8;
 
-pub fn get_ipstr_family(ip: ConstStr) ?c.sa_family_t {
-    var net_ip: [c.IPV6_LEN]u8 = undefined;
-
-    if (inet_pton(c.AF_INET, ip, &net_ip))
-        return c.AF_INET;
-
-    if (inet_pton(c.AF_INET6, ip, &net_ip))
-        return c.AF_INET6;
-
+pub fn ip_to_net(ip: ConstStr, buf: *IpNetBuf) ?[]u8 {
+    if (inet_pton(c.AF_INET, ip, buf))
+        return buf[0..c.IPV4_LEN];
+    if (inet_pton(c.AF_INET6, ip, buf))
+        return buf[0..c.IPV6_LEN];
     return null;
+}
+
+pub fn ip_family(ip: ConstStr) ?c.sa_family_t {
+    var buf: IpNetBuf = undefined;
+    const net_ip = ip_to_net(ip, &buf) orelse return null;
+    return if (net_ip.len == c.IPV4_LEN) c.AF_INET else c.AF_INET6;
 }
 
 // ==============================================================
@@ -627,7 +642,7 @@ pub const SockAddr = extern union {
         var self: SockAddr = undefined;
         @memset(std.mem.asBytes(&self), 0, @sizeOf(SockAddr));
 
-        if (get_ipstr_family(ip).? == c.AF_INET) {
+        if (ip_family(ip).? == c.AF_INET) {
             const sin = &self.sin;
             sin.sin_family = c.AF_INET;
             assert(inet_pton(c.AF_INET, ip, &sin.sin_addr));

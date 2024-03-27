@@ -68,14 +68,11 @@ const RR_AAAA = packed struct {
 };
 
 /// for opt.zig
-pub fn read_hosts(in_path: []const u8) ?void {
-    const path = g.allocator.dupeZ(u8, in_path) catch unreachable;
-    defer g.allocator.free(path);
-
+pub fn read_hosts(path: []const u8) ?void {
     const src = @src();
 
-    const file = cc.fopen(path, "r") orelse {
-        opt.print(src, "fopen(%s) failed: (%d) %m", .{ path.ptr, cc.errno() });
+    const file = cc.fopen(cc.to_cstr(path), "r") orelse {
+        opt.print(src, "fopen: (%d) %m", .{cc.errno()});
         return null;
     };
     defer _ = cc.fclose(file);
@@ -95,24 +92,11 @@ pub fn read_hosts(in_path: []const u8) ?void {
 
             const ip = it.next() orelse continue;
             if (std.mem.startsWith(u8, ip, "#")) continue;
-            opt.check_ip(ip) orelse return null;
-
-            var str_ip: cc.IpStrBuf = undefined;
-            @memcpy(&str_ip, ip.ptr, ip.len);
-            str_ip[ip.len] = 0;
-
-            var net_ip: [c.IPV6_LEN]u8 = undefined;
-            const ip_len = if (cc.inet_pton(c.AF_INET, &str_ip, &net_ip))
-                cc.to_usize(c.IPV4_LEN)
-            else if (cc.inet_pton(c.AF_INET6, &str_ip, &net_ip))
-                cc.to_usize(c.IPV6_LEN)
-            else
-                unreachable;
 
             if (it.peek() == null) break :e "missing domain name";
 
             while (it.next()) |name|
-                add_ip(name, net_ip[0..ip_len]) orelse return null;
+                add_ip(name, ip) orelse return null;
 
             continue;
         };
@@ -123,10 +107,12 @@ pub fn read_hosts(in_path: []const u8) ?void {
 }
 
 /// for opt.zig
-pub fn add_ip(ascii_name: []const u8, net_ip: []const u8) ?void {
-    var buf: [c.DNS_NAME_WIRE_MAXLEN]u8 = undefined;
-    const name_z = dns.ascii_to_wire(ascii_name, &buf, null) orelse {
-        opt.err_print(@src(), "invalid domain name", ascii_name);
+pub fn add_ip(ascii_name: []const u8, str_ip: []const u8) ?void {
+    const src = @src();
+
+    var name_buf: [c.DNS_NAME_WIRE_MAXLEN]u8 = undefined;
+    const name_z = dns.ascii_to_wire(ascii_name, &name_buf, null) orelse {
+        opt.err_print(src, "invalid domain", ascii_name);
         return null;
     };
     const name = name_z[0 .. name_z.len - 1];
@@ -136,10 +122,19 @@ pub fn add_ip(ascii_name: []const u8, net_ip: []const u8) ?void {
         res.key_ptr.* = g.allocator.dupe(u8, name) catch unreachable;
         res.value_ptr.* = .{};
     }
+
+    var net_ip_buf: cc.IpNetBuf = undefined;
+    const net_ip = cc.ip_to_net(cc.to_cstr(str_ip), &net_ip_buf) orelse {
+        opt.err_print(src, "invalid ip", str_ip);
+        return null;
+    };
     res.value_ptr.add_ip(net_ip);
 }
 
 pub fn find_answer(msg: []const u8, qnamelen: c_int, p_answer_n: *u16) ?[]const u8 {
+    if (_name_to_records.count() == 0)
+        return null;
+
     const qtype = dns.get_qtype(msg, qnamelen);
     if (qtype != c.DNS_TYPE_A and qtype != c.DNS_TYPE_AAAA)
         return null;
