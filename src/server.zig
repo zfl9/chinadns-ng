@@ -116,8 +116,8 @@ const QueryCtx = struct {
             msg: []u8,
             fdobj: *EvLoop.Fd,
             src_addr: *const cc.SockAddr,
-            name_tag: dnl.Tag,
             bufsz: u16,
+            name_tag: dnl.Tag,
             flags: Flags,
             /// out param
             first_query: *bool,
@@ -313,6 +313,14 @@ const QueryLog = struct {
         );
     }
 
+    pub noinline fn local_rr(self: *const QueryLog, answer_n: u16, answer_sz: usize) void {
+        log.info(
+            @src(),
+            "local_rr(id:%u, tag:%s, qtype:%u, '%s') answer_n:%u size:%zu",
+            .{ cc.to_uint(self.id), self.tag.desc(), cc.to_uint(self.qtype), self.name, cc.to_uint(answer_n), answer_sz },
+        );
+    }
+
     pub noinline fn cache(self: *const QueryLog, cache_msg: []const u8, ttl: i32) void {
         log.info(
             @src(),
@@ -427,6 +435,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         dns.make_reply(rmsg, msg, qnamelen, answer, answer_n);
 
         // [async func]
+        if (g.verbose) querylog.local_rr(answer_n, answer.len);
         return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
     }
 
@@ -479,8 +488,8 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         msg,
         fdobj,
         src_addr,
-        name_tag,
         bufsz,
+        name_tag,
         qflags,
         &first_query,
     ) orelse return;

@@ -108,4 +108,4 @@ int dns_qname_domains(const void *noalias msg, int qnamelen, u8 interest_levels,
 /* "google.com" => {6:google 3:com 0}, return 0 if failed */
 size_t dns_ascii_to_wire(const char *noalias ascii_name, size_t ascii_len, char buf[noalias DNS_NAME_WIRE_MAXLEN], u8 *noalias p_level);
 
-void dns_make_reply(void *noalias rmsg, const void *noalias qmsg, int qnamelen, const void *answer, size_t answerlen, u16 answer_n);
+void dns_make_reply(void *noalias rmsg, const void *noalias qmsg, int qnamelen, const void *noalias answer, size_t answerlen, u16 answer_n);

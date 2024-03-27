@@ -127,7 +127,7 @@ pub fn printf(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const 
     cc.printf("%s " ++ fmt ++ "\n", .{comptime log.srcinfo(src).ptr} ++ args);
 }
 
-/// print("<msg>: <value>")
+/// print("msg: value")
 pub fn print(comptime src: std.builtin.SourceLocation, msg: [:0]const u8, value: []const u8) void {
     printf(src, "%s: '%.*s'", .{ msg.ptr, cc.to_int(value.len), value.ptr });
 }
@@ -139,12 +139,12 @@ fn printf_exit(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const
     cc.exit(1);
 }
 
-/// print("<msg>: <value>") + print(help) + exit(1)
+/// print("msg: value") + print(help) + exit(1)
 fn print_exit(comptime src: std.builtin.SourceLocation, msg: [:0]const u8, value: []const u8) noreturn {
     printf_exit(src, "%s: '%.*s'", .{ msg.ptr, cc.to_int(value.len), value.ptr });
 }
 
-/// print("invalid opt-value: <value>") + print(help) + exit(1)
+/// print("invalid opt-value: value") + print(help) + exit(1)
 fn invalid_optvalue(comptime src: std.builtin.SourceLocation, value: []const u8) noreturn {
     print_exit(src, "invalid opt-value", value);
 }

@@ -626,7 +626,7 @@ size_t dns_ascii_to_wire(const char *noalias ascii_name, size_t ascii_len, char 
     return buf_n;
 }
 
-void dns_make_reply(void *noalias rmsg, const void *noalias qmsg, int qnamelen, const void *answer, size_t answerlen, u16 answer_n) {
+void dns_make_reply(void *noalias rmsg, const void *noalias qmsg, int qnamelen, const void *noalias answer, size_t answerlen, u16 answer_n) {
     memcpy(rmsg, qmsg, msg_minlen(qnamelen));
 
     dns_empty_reply(rmsg, qnamelen);
