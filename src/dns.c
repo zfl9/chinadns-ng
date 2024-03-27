@@ -70,11 +70,11 @@ static bool decode_name(char *noalias out, const char *noalias src, int len) {
         if (first) first = 0; else *out++ = '.';
         int label_len = *(const ubyte *)src++; --len;
         unlikely_if (label_len < 1 || label_len > DNS_NAME_LABEL_MAXLEN) {
-            log_error("label length is out of range: %d [1, %d]", label_len, DNS_NAME_LABEL_MAXLEN);
+            // log_error("label length is out of range: %d [1, %d]", label_len, DNS_NAME_LABEL_MAXLEN);
             return false;
         }
         unlikely_if (label_len > len) {
-            log_error("label length is greater than remaining length: %d > %d", label_len, len);
+            // log_error("label length is greater than remaining length: %d > %d", label_len, len);
             return false;
         }
         src += label_len;
@@ -83,7 +83,7 @@ static bool decode_name(char *noalias out, const char *noalias src, int len) {
     }
 
     unlikely_if (len != 0) {
-        log_error("name format error, remaining length: %d", len);
+        // log_error("name format error, remaining length: %d", len);
         return false;
     }
 
@@ -97,22 +97,22 @@ static bool check_msg(bool is_query,
 {
     /* check msg length */
     unlikely_if (len < (ssize_t)DNS_MSG_MINSIZE || len > DNS_MSG_MAXSIZE) {
-        log_error("msg length is out of range: %zd [%d, %d]", len, DNS_MSG_MINSIZE, DNS_MSG_MAXSIZE);
+        // log_error("msg length is out of range: %zd [%d, %d]", len, DNS_MSG_MINSIZE, DNS_MSG_MAXSIZE);
         return false;
     }
 
     /* check header */
     const struct dns_header *header = msg;
     unlikely_if (header->qr != (is_query ? DNS_QR_QUERY : DNS_QR_REPLY)) {
-        log_error("this is a %s msg, but header->qr = %u", is_query ? "query" : "reply", (uint)header->qr);
+        // log_error("this is a %s msg, but header->qr = %u", is_query ? "query" : "reply", (uint)header->qr);
         return false;
     }
     unlikely_if (ntohs(header->question_count) != 1) {
-        log_error("there should be one and only one question: %u", (uint)ntohs(header->question_count));
+        // log_error("there should be one and only one question: %u", (uint)ntohs(header->question_count));
         return false;
     }
     unlikely_if (is_query && header->tc) {
-        log_error("query msg should not have the TC flag set");
+        // log_error("query msg should not have the TC flag set");
         return false;
     }
 
@@ -124,14 +124,14 @@ static bool check_msg(bool is_query,
     /* encoded name: "\3www\6google\3com\0" */
     const void *p = memchr(msg, 0, len);
     unlikely_if (!p) {
-        log_error("format error: domain name end byte not found");
+        // log_error("format error: domain name end byte not found");
         return false;
     }
 
     /* check name length */
     const int qnamelen = p + 1 - msg;
     unlikely_if (qnamelen < DNS_NAME_WIRE_MINLEN || qnamelen > DNS_NAME_WIRE_MAXLEN) {
-        log_error("encoded domain namelen is out of range: %d [%d, %d]", qnamelen, DNS_NAME_WIRE_MINLEN, DNS_NAME_WIRE_MAXLEN);
+        // log_error("encoded domain namelen is out of range: %d [%d, %d]", qnamelen, DNS_NAME_WIRE_MINLEN, DNS_NAME_WIRE_MAXLEN);
         return false;
     }
 
@@ -149,7 +149,7 @@ static bool check_msg(bool is_query,
 
     /* check remaining length */
     unlikely_if (len < (ssize_t)sizeof(struct dns_question)) {
-        log_error("remaining length is less than sizeof(dns_question): %zd < %zu", len, sizeof(struct dns_question));
+        // log_error("remaining length is less than sizeof(dns_question): %zd < %zu", len, sizeof(struct dns_question));
         return false;
     }
 
@@ -178,13 +178,13 @@ static bool skip_name(const void *noalias *noalias p_ptr, ssize_t *noalias p_len
             ptr += 1 + label_len;
             len -= 1 + label_len;
         } else {
-            log_error("label length is too long: %d", label_len);
+            // log_error("label length is too long: %d", label_len);
             return false;
         }
     }
 
     unlikely_if (len < (ssize_t)sizeof(struct dns_record)) {
-        log_error("remaining length is less than sizeof(dns_record): %zd < %zu", len, sizeof(struct dns_record));
+        // log_error("remaining length is less than sizeof(dns_record): %zd < %zu", len, sizeof(struct dns_record));
         return false;
     }
 
@@ -216,7 +216,7 @@ static bool foreach_record(void *noalias *noalias p_ptr, ssize_t *noalias p_len,
         ssize_t recordlen = sizeof(struct dns_record) + ntohs(record->rdatalen);
 
         unlikely_if (len < recordlen) {
-            log_error("remaining length is less than sizeof(record): %zd < %zd", len, recordlen);
+            // log_error("remaining length is less than sizeof(record): %zd < %zd", len, recordlen);
             return false;
         }
 
@@ -372,8 +372,8 @@ static bool check_ip_datalen(u16 rtype, const struct dns_record *noalias record)
     int rdatalen = ntohs(record->rdatalen);
     int expect_len = (rtype == DNS_TYPE_A) ? IPV4_LEN : IPV6_LEN;
     unlikely_if (rdatalen != expect_len) {
-        char ipver = (rtype == DNS_TYPE_A) ? '4' : '6';
-        log_error("rdatalen:%d != sizeof(ipv%c):%d", rdatalen, ipver, expect_len);
+        // char ipver = (rtype == DNS_TYPE_A) ? '4' : '6';
+        // log_error("rdatalen:%d != sizeof(ipv%c):%d", rdatalen, ipver, expect_len);
         return false;
     }
     return true;

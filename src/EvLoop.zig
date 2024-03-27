@@ -211,7 +211,7 @@ const Ev = opaque {
 
 pub noinline fn init() EvLoop {
     const epfd = cc.epoll_create1(c.EPOLL_CLOEXEC) orelse {
-        log.err(@src(), "failed to create epoll: (%d) %m", .{cc.errno()});
+        log.err(@src(), "epoll_create() failed: (%d) %m", .{cc.errno()});
         cc.exit(1);
     };
     return .{ .epfd = epfd };

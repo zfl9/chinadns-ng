@@ -122,26 +122,31 @@ noinline fn get_optdef(name: []const u8) ?OptDef {
 
 // ================================================================
 
-/// print msg
-pub fn print(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) void {
-    cc.printf(log.srcinfo(src) ++ " " ++ fmt ++ "\n", args);
+/// print(fmt, args)
+pub fn printf(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) void {
+    cc.printf("%s " ++ fmt ++ "\n", .{comptime log.srcinfo(src).ptr} ++ args);
 }
 
-/// print msg + print help + exit(1)
-fn exit(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
-    cc.printf(log.srcinfo(src) ++ " " ++ fmt ++ "\n", args);
+/// print("<msg>: <value>")
+pub fn print(comptime src: std.builtin.SourceLocation, msg: [:0]const u8, value: []const u8) void {
+    printf(src, "%s: '%.*s'", .{ msg.ptr, cc.to_int(value.len), value.ptr });
+}
+
+/// print(fmt, args) + print(help) + exit(1)
+fn printf_exit(comptime src: std.builtin.SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
+    printf(src, fmt, args);
     cc.printf("%s\n", .{help});
     cc.exit(1);
 }
 
-/// simple version of `print`
-pub fn err_print(comptime src: std.builtin.SourceLocation, msg: [:0]const u8, value: []const u8) void {
-    print(src, "%s: '%.*s'", .{ msg.ptr, cc.to_int(value.len), value.ptr });
+/// print("<msg>: <value>") + print(help) + exit(1)
+fn print_exit(comptime src: std.builtin.SourceLocation, msg: [:0]const u8, value: []const u8) noreturn {
+    printf_exit(src, "%s: '%.*s'", .{ msg.ptr, cc.to_int(value.len), value.ptr });
 }
 
-/// simple version of `exit`
-fn err_exit(comptime src: std.builtin.SourceLocation, value: []const u8) noreturn {
-    exit(src, "invalid opt-value: '%.*s'", .{ cc.to_int(value.len), value.ptr });
+/// print("invalid opt-value: <value>") + print(help) + exit(1)
+fn invalid_optvalue(comptime src: std.builtin.SourceLocation, value: []const u8) noreturn {
+    print_exit(src, "invalid opt-value", value);
 }
 
 // ================================================================
@@ -156,18 +161,18 @@ fn opt_config(in_value: ?[]const u8) void {
     const value = in_value.?;
 
     if (static.depth + 1 > 10)
-        exit(src, "config chain is too deep: '%.*s'", .{ cc.to_int(value.len), value.ptr });
+        print_exit(src, "config chain is too deep", value);
 
     static.depth += 1;
     defer static.depth -= 1;
 
     if (value.len > c.PATH_MAX)
-        exit(src, "filename is too long: '%.*s'", .{ cc.to_int(value.len), value.ptr });
+        print_exit(src, "filename is too long", value);
 
     const filename = cc.to_cstr(value);
 
     const mem = cc.mmap_file(filename) orelse
-        exit(src, "failed to open file: '%s' (%m)", .{filename});
+        printf_exit(src, "failed to open file: '%s' (%m)", .{filename});
     defer _ = cc.munmap(mem);
 
     var line_it = std.mem.split(u8, mem, "\n");
@@ -209,13 +214,13 @@ fn opt_config(in_value: ?[]const u8) void {
         };
 
         // error handling
-        exit(src, "'%s': %s: %.*s", .{ filename, err, cc.to_int(line.len), line.ptr });
+        printf_exit(src, "'%s': %s: %.*s", .{ filename, err, cc.to_int(line.len), line.ptr });
     }
 }
 
 pub noinline fn check_ip(value: []const u8) ?void {
     if (cc.ip_family(cc.to_cstr(value)) == null) {
-        err_print(@src(), "invalid ip", value);
+        print(@src(), "invalid ip", value);
         return null;
     }
 }
@@ -223,7 +228,7 @@ pub noinline fn check_ip(value: []const u8) ?void {
 pub noinline fn check_port(value: []const u8) ?u16 {
     const port = str2int.parse(u16, value, 10) orelse 0;
     if (port == 0) {
-        err_print(@src(), "invalid port", value);
+        print(@src(), "invalid port", value);
         return null;
     }
     return port;
@@ -231,7 +236,7 @@ pub noinline fn check_port(value: []const u8) ?u16 {
 
 fn opt_bind_addr(in_value: ?[]const u8) void {
     const value = in_value.?;
-    check_ip(value) orelse err_exit(@src(), value);
+    check_ip(value) orelse invalid_optvalue(@src(), value);
     g.bind_ips.add(value);
 }
 
@@ -247,7 +252,7 @@ fn opt_bind_port(in_value: ?[]const u8) void {
 
     // port
     const port = it.next().?;
-    g.bind_port = check_port(port) orelse err_exit(src, value);
+    g.bind_port = check_port(port) orelse invalid_optvalue(src, value);
 
     // proto
     if (it.next()) |proto| {
@@ -261,7 +266,7 @@ fn opt_bind_port(in_value: ?[]const u8) void {
             g.bind_tcp = false;
             g.bind_udp = true;
         } else {
-            err_exit(src, value);
+            invalid_optvalue(src, value);
         }
     } else {
         g.bind_tcp = true;
@@ -269,7 +274,7 @@ fn opt_bind_port(in_value: ?[]const u8) void {
     }
 
     if (it.next() != null)
-        err_exit(src, value);
+        invalid_optvalue(src, value);
 }
 
 /// "upstream,..."
@@ -277,7 +282,7 @@ noinline fn add_upstreams(group: *Upstream.Group, upstreams: []const u8) ?void {
     var it = std.mem.split(u8, upstreams, ",");
     while (it.next()) |upstream| {
         group.add(upstream) orelse {
-            err_print(@src(), "invalid address", upstream);
+            print(@src(), "invalid format", upstream);
             return null;
         };
     }
@@ -285,12 +290,12 @@ noinline fn add_upstreams(group: *Upstream.Group, upstreams: []const u8) ?void {
 
 fn opt_china_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.china_group, value) orelse err_exit(@src(), value);
+    add_upstreams(&g.china_group, value) orelse invalid_optvalue(@src(), value);
 }
 
 fn opt_trust_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.trust_group, value) orelse err_exit(@src(), value);
+    add_upstreams(&g.trust_group, value) orelse invalid_optvalue(@src(), value);
 }
 
 /// "foo.txt,..."
@@ -299,11 +304,11 @@ noinline fn add_paths(list: *StrList, paths: []const u8) ?void {
     while (it.next()) |path| {
         const src = @src();
         if (path.len <= 0) {
-            err_print(src, "invalid paths format", paths);
+            print(src, "invalid format", paths);
             return null;
         }
         if (path.len > c.PATH_MAX) {
-            err_print(src, "path is too long", path);
+            print(src, "path is too long", path);
             return null;
         }
         list.add(path);
@@ -312,12 +317,12 @@ noinline fn add_paths(list: *StrList, paths: []const u8) ?void {
 
 fn opt_chnlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_paths(&g.chnlist_filenames, value) orelse err_exit(@src(), value);
+    add_paths(&g.chnlist_filenames, value) orelse invalid_optvalue(@src(), value);
 }
 
 fn opt_gfwlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_paths(&g.gfwlist_filenames, value) orelse err_exit(@src(), value);
+    add_paths(&g.gfwlist_filenames, value) orelse invalid_optvalue(@src(), value);
 }
 
 fn opt_chnlist_first(_: ?[]const u8) void {
@@ -337,7 +342,7 @@ fn opt_default_tag(in_value: ?[]const u8) void {
             return;
         }
     }
-    err_exit(@src(), value);
+    invalid_optvalue(@src(), value);
 }
 
 fn opt_add_tagchn_ip(in_value: ?[]const u8) void {
@@ -369,7 +374,7 @@ fn opt_no_ipv6(in_value: ?[]const u8) void {
                 't' => .trust_dns,
                 'C' => .china_iptest,
                 'T' => .trust_iptest,
-                else => exit(@src(), "invalid no-aaaa rule: '%c'", .{rule}),
+                else => printf_exit(@src(), "invalid no-aaaa rule: '%c'", .{rule}),
             });
         }
     } else {
@@ -380,43 +385,43 @@ fn opt_no_ipv6(in_value: ?[]const u8) void {
 fn opt_cache(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.cache_size = str2int.parse(@TypeOf(g.cache_size), value, 10) orelse
-        err_exit(@src(), value);
+        invalid_optvalue(@src(), value);
 }
 
 fn opt_cache_stale(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.cache_stale = str2int.parse(@TypeOf(g.cache_stale), value, 10) orelse
-        err_exit(@src(), value);
+        invalid_optvalue(@src(), value);
 }
 
 fn opt_cache_refresh(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.cache_refresh = str2int.parse(@TypeOf(g.cache_refresh), value, 10) orelse
-        err_exit(@src(), value);
+        invalid_optvalue(@src(), value);
 }
 
 fn opt_cache_ignore(in_value: ?[]const u8) void {
     const domain = in_value.?;
-    cache_ignore.add(domain) orelse err_exit(@src(), domain);
+    cache_ignore.add(domain) orelse invalid_optvalue(@src(), domain);
 }
 
 fn opt_verdict_cache(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.verdict_cache_size = str2int.parse(@TypeOf(g.verdict_cache_size), value, 10) orelse
-        err_exit(@src(), value);
+        invalid_optvalue(@src(), value);
 }
 
 fn opt_hosts(in_value: ?[]const u8) void {
     const path = in_value orelse "/etc/hosts";
     local_dns_rr.read_hosts(path) orelse
-        exit(@src(), "failed to load the hosts file: '%.*s'", .{ cc.to_int(path.len), path.ptr });
+        print_exit(@src(), "failed to load hosts", path);
 }
 
 fn opt_dns_rr_ip(in_value: ?[]const u8) void {
     const value = in_value.?;
     const src = @src();
 
-    const sep = std.mem.indexOfScalar(u8, value, '=') orelse err_exit(src, value);
+    const sep = std.mem.indexOfScalar(u8, value, '=') orelse invalid_optvalue(src, value);
     const name_list = value[0..sep];
     const ip_list = value[sep + 1 ..];
 
@@ -424,20 +429,20 @@ fn opt_dns_rr_ip(in_value: ?[]const u8) void {
     while (name_it.next()) |name| {
         var ip_it = std.mem.split(u8, ip_list, ",");
         while (ip_it.next()) |ip|
-            local_dns_rr.add_ip(name, ip) orelse err_exit(src, value);
+            local_dns_rr.add_ip(name, ip) orelse invalid_optvalue(src, value);
     }
 }
 
 fn opt_timeout_sec(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.upstream_timeout = str2int.parse(@TypeOf(g.upstream_timeout), value, 10) orelse 0;
-    if (g.upstream_timeout == 0) err_exit(@src(), value);
+    if (g.upstream_timeout == 0) invalid_optvalue(@src(), value);
 }
 
 fn opt_repeat_times(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.trustdns_packet_n = str2int.parse(@TypeOf(g.trustdns_packet_n), value, 10) orelse 0;
-    if (g.trustdns_packet_n == 0) err_exit(@src(), value);
+    if (g.trustdns_packet_n == 0) invalid_optvalue(@src(), value);
     g.trustdns_packet_n = std.math.min(g.trustdns_packet_n, g.TRUSTDNS_PACKET_MAX);
 }
 
@@ -479,7 +484,7 @@ const Parser = struct {
     pub noinline fn parse(self: *Parser) void {
         const arg = self.pop_arg() orelse return;
 
-        const err: cc.ConstStr = e: {
+        const err: [:0]const u8 = e: {
             if (std.mem.startsWith(u8, arg, "--")) {
                 if (arg.len < 4)
                     break :e "invalid long option";
@@ -515,7 +520,7 @@ const Parser = struct {
         };
 
         // error handling
-        exit(@src(), "%s: '%s'", .{ err, arg.ptr });
+        print_exit(@src(), err, arg);
     }
 
     noinline fn peek_arg(self: Parser) ?[:0]const u8 {
@@ -538,7 +543,7 @@ const Parser = struct {
     noinline fn take_value(self: *Parser, name: []const u8, required: bool) ?[:0]const u8 {
         const arg = self.peek_arg() orelse {
             if (required)
-                exit(@src(), "expect a value for option '%.*s'", .{ cc.to_int(name.len), name.ptr });
+                print_exit(@src(), "expect a value for option", name);
             return null;
         };
 
@@ -554,18 +559,18 @@ const Parser = struct {
         const src = @src();
 
         const optdef = get_optdef(name) orelse
-            exit(src, "unknown option: '%.*s'", .{ cc.to_int(name.len), name.ptr });
+            print_exit(src, "unknown option", name);
 
         const value = switch (optdef.value) {
             .required => if (in_value) |v| v else self.take_value(name, true),
             .optional => if (in_value) |v| v else self.take_value(name, false),
             .no_value => if (in_value == null) null else {
-                exit(src, "option '%.*s' does not accept any values: '%s'", .{ cc.to_int(name.len), name.ptr, in_value.?.ptr });
+                printf_exit(src, "option '%.*s' not accept value: '%s'", .{ cc.to_int(name.len), name.ptr, in_value.?.ptr });
             },
         };
 
         if (value != null and value.?.len <= 0)
-            exit(src, "option '%.*s' does not accept empty string", .{ cc.to_int(name.len), name.ptr });
+            printf_exit(src, "option '%.*s' not accept empty string", .{ cc.to_int(name.len), name.ptr });
 
         optdef.optfn(value);
     }

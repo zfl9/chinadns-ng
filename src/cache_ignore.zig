@@ -24,7 +24,7 @@ pub fn add(ascii_domain: []const u8) ?void {
 
     const opt_domain_z = dns.ascii_to_wire(ascii_domain, &buf, &level);
     if (opt_domain_z == null or level > MAX_LEVEL) {
-        opt.err_print(@src(), "invalid domain name", ascii_domain);
+        opt.print(@src(), "invalid domain", ascii_domain);
         return null;
     }
 

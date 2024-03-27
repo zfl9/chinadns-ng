@@ -72,7 +72,7 @@ pub fn read_hosts(path: []const u8) ?void {
     const src = @src();
 
     const mem = cc.mmap_file(cc.to_cstr(path)) orelse {
-        opt.print(src, "open file: %m", .{});
+        opt.printf(src, "open file: %m", .{});
         return null;
     };
     defer _ = cc.munmap(mem);
@@ -87,7 +87,7 @@ pub fn read_hosts(path: []const u8) ?void {
         if (std.mem.startsWith(u8, ip, "#")) continue;
 
         if (it.peek() == null) {
-            opt.err_print(src, "missing domain name", line);
+            opt.print(src, "missing domain", line);
             return null;
         }
 
@@ -102,7 +102,7 @@ pub noinline fn add_ip(ascii_name: []const u8, str_ip: []const u8) ?void {
 
     var name_buf: [c.DNS_NAME_WIRE_MAXLEN]u8 = undefined;
     const name_z = dns.ascii_to_wire(ascii_name, &name_buf, null) orelse {
-        opt.err_print(src, "invalid domain", ascii_name);
+        opt.print(src, "invalid domain", ascii_name);
         return null;
     };
     const name = name_z[0 .. name_z.len - 1];
@@ -115,7 +115,7 @@ pub noinline fn add_ip(ascii_name: []const u8, str_ip: []const u8) ?void {
 
     var ip_buf: cc.IpNetBuf = undefined;
     const net_ip = cc.ip_to_net(cc.to_cstr(str_ip), &ip_buf) orelse {
-        opt.err_print(src, "invalid ip", str_ip);
+        opt.print(src, "invalid ip", str_ip);
         return null;
     };
     res.value_ptr.add_ip(net_ip);

@@ -200,8 +200,10 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
     var port: u16 = undefined;
     if (g.verbose) src_addr.to_text(&ip, &port);
 
-    if (g.verbose) log.info(@src(), "new connection:%d from %s#%u", .{ fd, &ip, cc.to_uint(port) });
-    defer if (g.verbose) log.info(@src(), "close connection:%d from %s#%u", .{ fd, &ip, cc.to_uint(port) });
+    const src = @src();
+
+    if (g.verbose) log.info(src, "new connection:%d from %s#%u", .{ fd, &ip, cc.to_uint(port) });
+    defer if (g.verbose) log.info(src, "close connection:%d from %s#%u", .{ fd, &ip, cc.to_uint(port) });
 
     const e: struct { op: cc.ConstStr, msg: ?cc.ConstStr = null } = e: {
         var free_qmsg: ?*RcMsg = null;
@@ -215,7 +217,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
 
             len = cc.ntohs(len);
             if (len < c.DNS_MSG_MINSIZE or len > c.DNS_QMSG_MAXSIZE) {
-                log.err(@src(), "invalid query_msg length: %u", .{cc.to_uint(len)});
+                log.err(src, "invalid query_msg length: %u", .{cc.to_uint(len)});
                 break :e .{ .op = "read_len", .msg = "invalid query_msg length" };
             }
 
@@ -238,9 +240,10 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
         }
     };
 
+    // error handling
+
     if (!g.verbose) src_addr.to_text(&ip, &port);
 
-    const src = @src();
     if (e.msg) |msg|
         log.err(src, "%s(fd:%d, %s#%u) failed: %s", .{ e.op, fd, &ip, cc.to_uint(port), msg })
     else

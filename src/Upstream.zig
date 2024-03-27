@@ -347,7 +347,7 @@ pub const Group = struct {
     }
 
     noinline fn parse_failed(msg: [:0]const u8, value: []const u8) ?void {
-        opt.err_print(@src(), msg, value);
+        opt.print(@src(), msg, value);
         return null;
     }
 
