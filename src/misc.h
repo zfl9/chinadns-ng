@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <sys/types.h>
 
 #define likely(x)	__builtin_expect(!!(x), 1)
 #define unlikely(x)	__builtin_expect(!!(x), 0)
@@ -97,3 +98,5 @@ typedef u8 bitvec_t;
 const void *SIG_IGNORE(void);
 const void *SIG_DEFAULT(void);
 const void *SIG_ERROR(void);
+
+ssize_t fstat_size(int fd);

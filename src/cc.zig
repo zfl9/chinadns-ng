@@ -456,11 +456,9 @@ pub inline fn open(filename: ConstStr, flags: c_int, newfile_mode: ?c.mode_t) ?c
     return if (fd >= 0) fd else null;
 }
 
-pub inline fn fstat(fd: c_int, p_stat: *c.struct_stat) ?void {
-    const raw = struct {
-        extern fn fstat(fd: c_int, buf: *c.struct_stat) c_int;
-    };
-    return if (raw.fstat(fd, p_stat) == -1) null;
+pub inline fn fstat_size(fd: c_int) ?usize {
+    const sz = c.fstat_size(fd);
+    return if (sz >= 0) to_usize(sz) else null;
 }
 
 pub inline fn close(fd: c_int) ?void {
@@ -788,9 +786,7 @@ pub fn mmap_file(filename: ConstStr) ?[]const u8 {
     const fd = open(filename, c.O_RDONLY | c.O_CLOEXEC, null) orelse return null;
     defer _ = close(fd);
 
-    var st: c.struct_stat = undefined;
-    fstat(fd, &st) orelse return null;
-    const size = to_usize(st.st_size);
+    const size = fstat_size(fd) orelse return null;
 
     return mmap(null, size, c.PROT_READ, c.MAP_PRIVATE, fd, 0);
 }
