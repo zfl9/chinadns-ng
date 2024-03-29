@@ -106,7 +106,7 @@ pub var cache_size: u16 = 0;
 /// allow stale cache
 /// - `0`: disable stale mode
 /// - `N`: stale cache is allowed if `-ttl <= N`
-pub var cache_stale: u16 = 0;
+pub var cache_stale: u32 = 0;
 
 /// if the current hit cache has a `ttl <= N`, refresh it
 pub var cache_refresh: u16 = 0;

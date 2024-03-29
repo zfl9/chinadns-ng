@@ -148,7 +148,7 @@ pub fn main() u8 {
         log.info(src, "enable dns cache, capacity: %u", .{cc.to_uint(g.cache_size)});
 
     if (g.cache_stale > 0)
-        log.info(src, "use stale cache, excess TTL: %u", .{cc.to_uint(g.cache_stale)});
+        log.info(src, "use stale cache, excess TTL: %lu", .{cc.to_ulong(g.cache_stale)});
 
     if (g.cache_refresh > 0)
         log.info(src, "pre-refresh cache, remain TTL: %u", .{cc.to_uint(g.cache_refresh)});
