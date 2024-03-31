@@ -313,6 +313,14 @@ const QueryLog = struct {
         );
     }
 
+    pub noinline fn filter(self: *const QueryLog) void {
+        log.info(
+            @src(),
+            "query(id:%u, tag:%s, qtype:%u, '%s') filtered by rule: qtype_%u",
+            .{ cc.to_uint(self.id), self.tag.desc(), cc.to_uint(self.qtype), self.name, cc.to_uint(self.qtype) },
+        );
+    }
+
     pub noinline fn local_rr(self: *const QueryLog, answer_n: u16, answer_sz: usize) void {
         log.info(
             @src(),
@@ -397,14 +405,19 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     // AAAA filter
     if (qtype == c.DNS_TYPE_AAAA)
         if (g.noaaaa_rule.filter(name_tag, &tagnone_china, &tagnone_trust)) |by_rule| {
-            var rmsg = msg;
-            rmsg.len = dns.empty_reply(rmsg, qnamelen);
-
             if (g.verbose) querylog.noaaaa(by_rule);
+            const rmsg = dns.empty_reply(msg, qnamelen);
             return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
         };
 
     assert(tagnone_china or tagnone_trust);
+
+    // qtype filter
+    if (std.mem.indexOfScalar(u16, g.filter_qtypes, qtype) != null) {
+        if (g.verbose) querylog.filter();
+        const rmsg = dns.empty_reply(msg, qnamelen);
+        return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
+    }
 
     // check the local records
     var answer_n: u16 = undefined;
@@ -602,7 +615,7 @@ fn use_china_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) boo
         // [AAAA] only_china_path
         if (test_res == .non_china_ip) {
             if (g.verbose) replylog.noaaaa("china_iptest");
-            rmsg.len = dns.empty_reply(msg, qnamelen); // `.len` updated
+            rmsg.len = cc.to_u16(dns.empty_reply(msg, qnamelen).len); // `.len` updated
         }
         return true;
     }
@@ -627,7 +640,7 @@ fn use_trust_reply(rmsg: *RcMsg, qnamelen: c_int, replylog: *const ReplyLog) boo
         if (g.noaaaa_rule.has(.trust_iptest)) {
             if (dns.test_ip(msg, qnamelen) == .non_china_ip) {
                 if (g.verbose) replylog.noaaaa("trust_iptest");
-                rmsg.len = dns.empty_reply(msg, qnamelen); // `.len` updated
+                rmsg.len = cc.to_u16(dns.empty_reply(msg, qnamelen).len); // `.len` updated
             }
         }
         return true;
@@ -745,6 +758,7 @@ pub fn on_reply(in_rmsg: *RcMsg, upstream: *const Upstream) void {
     qctx.free();
 }
 
+/// [async]
 fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, bufsz: u16, id: c.be16, qflags: QueryCtx.Flags) void {
     var iov = [_]cc.iovec_t{
         undefined, // for tcp

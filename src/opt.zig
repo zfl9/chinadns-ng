@@ -40,6 +40,7 @@ const help =
     \\                                      rule C: filter non-chnip reply from china
     \\                                      rule T: filter non-chnip reply from trust
     \\                                      if no rules is given, it defaults to 'a'
+    \\ --filter-qtype <qtypes>              filter queries with the given qtype (u16)
     \\ --cache <size>                       enable dns caching, size 0 means disabled
     \\ --cache-stale <N>                    allow use the cached data with a TTL >= -N
     \\ --cache-refresh <N>                  pre-refresh the cached data if the TTL <= N
@@ -90,6 +91,7 @@ const optdef_array = [_]OptDef{
     .{ .short = "4", .long = "ipset-name4",   .value = .required, .optfn = opt_ipset_name4,   },
     .{ .short = "6", .long = "ipset-name6",   .value = .required, .optfn = opt_ipset_name6,   },
     .{ .short = "N", .long = "no-ipv6",       .value = .optional, .optfn = opt_no_ipv6,       },
+    .{ .short = "",  .long = "filter-qtype",  .value = .required, .optfn = opt_filter_qtype,  },
     .{ .short = "",  .long = "cache",         .value = .required, .optfn = opt_cache,         },
     .{ .short = "",  .long = "cache-stale",   .value = .required, .optfn = opt_cache_stale,   },
     .{ .short = "",  .long = "cache-refresh", .value = .required, .optfn = opt_cache_refresh, },
@@ -379,6 +381,21 @@ fn opt_no_ipv6(in_value: ?[]const u8) void {
         }
     } else {
         g.noaaaa_rule.add(.all);
+    }
+}
+
+fn opt_filter_qtype(in_value: ?[]const u8) void {
+    const value = in_value.?;
+
+    var it = std.mem.split(u8, value, ",");
+    while (it.next()) |str_qtype| {
+        const qtype = str2int.parse(u16, str_qtype, 10) orelse invalid_optvalue(@src(), value);
+        _ = std.mem.indexOfScalar(u16, g.filter_qtypes, qtype) orelse {
+            const new_n = g.filter_qtypes.len + 1;
+            const slice = g.allocator.realloc(g.filter_qtypes, new_n) catch unreachable;
+            g.filter_qtypes = slice[0..new_n];
+            g.filter_qtypes[new_n - 1] = qtype;
+        };
     }
 }
 

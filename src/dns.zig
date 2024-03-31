@@ -56,8 +56,9 @@ pub inline fn truncate(msg: []const u8) []u8 {
 }
 
 /// return the updated msg length
-pub inline fn empty_reply(msg: []u8, qnamelen: c_int) u16 {
-    return c.dns_empty_reply(msg.ptr, qnamelen);
+pub inline fn empty_reply(msg: []u8, qnamelen: c_int) []u8 {
+    const len = c.dns_empty_reply(msg.ptr, qnamelen);
+    return msg[0..len];
 }
 
 /// check if the query msg is valid

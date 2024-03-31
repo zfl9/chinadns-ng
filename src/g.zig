@@ -55,6 +55,8 @@ pub var noip_as_chnip: bool = false;
 /// how to filter AAAA query
 pub var noaaaa_rule: NoAAAA = .{};
 
+pub var filter_qtypes: []u16 = &.{};
+
 /// ["file1", "file2", ...]
 pub var gfwlist_filenames: StrList = .{};
 
