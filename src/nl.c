@@ -2,6 +2,7 @@
 #include "nl.h"
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 
 int nl_sock_create(int protocol, u32 *noalias src_portid) {

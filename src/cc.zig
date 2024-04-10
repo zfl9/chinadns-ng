@@ -125,14 +125,30 @@ pub const to_u64 = IntCast(u64).cast;
 // ==============================================================
 
 /// convert to C string (static buffer)
-pub noinline fn to_cstr(str: []const u8) Str {
+pub inline fn to_cstr(str: []const u8) Str {
+    return to_cstr_x(&.{str});
+}
+
+/// convert to C string (static buffer)
+pub noinline fn to_cstr_x(str_list: []const []const u8) Str {
     const static = struct {
         var buffer: []u8 = &.{};
     };
-    if (str.len + 1 > static.buffer.len)
-        static.buffer = g.allocator.realloc(static.buffer, str.len + 1) catch unreachable;
-    @memcpy(static.buffer.ptr, str.ptr, str.len);
-    static.buffer[str.len] = 0;
+
+    var total_len: usize = 0;
+    for (str_list) |str|
+        total_len += str.len;
+
+    if (total_len + 1 > static.buffer.len)
+        static.buffer = g.allocator.realloc(static.buffer, total_len + 1) catch unreachable;
+
+    var ptr = static.buffer.ptr;
+    for (str_list) |str| {
+        @memcpy(ptr, str.ptr, str.len);
+        ptr += str.len;
+    }
+    ptr[0] = 0;
+
     return @ptrCast(Str, static.buffer.ptr);
 }
 
@@ -197,33 +213,6 @@ fn StrSlice(comptime S: type, comptime force_const: bool) type {
         else
             []u8;
     }
-}
-
-// ==============================================================
-
-/// caller own the returned memory | g.allocator.free(buf)
-pub fn strdup(str: anytype) [:0]u8 {
-    const s = strslice_c(str);
-    return strdup_internal(s, g.allocator.alloc(u8, s.len + 1) catch unreachable);
-}
-
-/// note: `str` and `buf` cannot overlap
-/// similar to strdup, but copy to the given buffer
-pub fn strdup_r(str: anytype, buf: []u8) ?[:0]u8 {
-    const s = strslice_c(str);
-    if (s.len > buf.len - 1) return null;
-    return strdup_internal(s, buf);
-}
-
-/// `s`: strslice_c(str)
-fn strdup_internal(s: anytype, buf: []u8) [:0]u8 {
-    if (comptime is_cstr(@TypeOf(s))) {
-        @memcpy(buf.ptr, s.ptr, s.len + 1);
-    } else {
-        @memcpy(buf.ptr, s.ptr, s.len);
-        buf[s.len] = 0;
-    }
-    return buf[0..s.len :0];
 }
 
 // ==============================================================
@@ -297,37 +286,6 @@ pub fn snprintf(buffer: []u8, comptime fmt: [:0]const u8, args: anytype) [:0]u8 
 
 // ==============================================================
 
-pub extern fn fopen(filename: ConstStr, mode: ConstStr) ?*FILE;
-
-pub inline fn fclose(file: *FILE) ?void {
-    const raw = struct {
-        extern fn fclose(file: *FILE) c_int;
-    };
-    return if (raw.fclose(file) == c.EOF) null;
-}
-
-pub inline fn fgets(file: *FILE, buf: []u8) ?Str {
-    const raw = struct {
-        extern fn fgets(buf: [*]u8, len: c_int, file: *FILE) ?Str;
-    };
-    return raw.fgets(buf.ptr, to_int(buf.len), file);
-}
-
-pub inline fn feof(file: *FILE) bool {
-    const raw = struct {
-        extern fn feof(file: *FILE) c_int;
-    };
-    return raw.feof(file) != 0;
-}
-
-/// if file is `null` then flush all output streams
-pub inline fn fflush(file: ?*FILE) ?void {
-    const raw = struct {
-        extern fn fflush(file: ?*FILE) c_int;
-    };
-    return if (raw.fflush(file) == c.EOF) null;
-}
-
 pub inline fn setvbuf(file: *FILE, buffer: ?[*]u8, mode: c_int, size: usize) ?void {
     const raw = struct {
         extern fn setvbuf(file: *FILE, buffer: ?[*]u8, mode: c_int, size: usize) c_int;
@@ -352,8 +310,6 @@ pub inline fn localtime(t: c.time_t) ?*c.struct_tm {
 }
 
 // ==============================================================
-
-pub extern fn rand() c_int;
 
 pub extern fn getenv(env_name: ConstStr) ?ConstStr;
 
@@ -480,22 +436,6 @@ pub inline fn listen(fd: c_int, backlog: c_int) ?void {
         extern fn listen(fd: c_int, backlog: c_int) c_int;
     };
     return if (raw.listen(fd, backlog) == -1) null;
-}
-
-pub inline fn getsockname(fd: c_int, addr: *SockAddr) ?void {
-    const raw = struct {
-        extern fn getsockname(fd: c_int, addr: *anyopaque, addrlen: *c.socklen_t) c_int;
-    };
-    var addrlen: c.socklen_t = @sizeOf(SockAddr);
-    return if (raw.getsockname(fd, addr, &addrlen) == -1) null;
-}
-
-pub inline fn getpeername(fd: c_int, addr: *SockAddr) ?void {
-    const raw = struct {
-        extern fn getpeername(fd: c_int, addr: *anyopaque, addrlen: *c.socklen_t) c_int;
-    };
-    var addrlen: c.socklen_t = @sizeOf(SockAddr);
-    return if (raw.getpeername(fd, addr, &addrlen) == -1) null;
 }
 
 pub inline fn getsockopt(fd: c_int, level: c_int, opt: c_int, optval: *anyopaque, optlen: *c.socklen_t) ?void {
@@ -793,20 +733,6 @@ pub fn mmap_file(filename: ConstStr) ?[]const u8 {
 
 // ==============================================================
 
-pub fn @"test: strdup"() !void {
-    const org_str = "helloworld";
-
-    const dup_str = strdup(org_str);
-    defer g.allocator.free(dup_str);
-
-    try testing.expectEqual(@as(usize, 10), org_str.len);
-    try testing.expectEqual(org_str.len, dup_str.len);
-    try testing.expectEqualStrings(org_str, dup_str);
-
-    dup_str[dup_str.len - 1] = 'x';
-    try testing.expectEqualStrings(org_str[0 .. org_str.len - 1], dup_str[0 .. dup_str.len - 1]);
-}
-
 pub fn @"test: strslice"() !void {
     const hello = "hello";
     const N = hello.len;
@@ -856,39 +782,6 @@ pub fn @"test: strslice_c"() !void {
 pub fn @"test: errno"() !void {
     set_errno(c.EAGAIN);
     try testing.expectEqual(c.EAGAIN, errno());
-}
-
-pub fn @"test: fopen fclose"() !void {
-    // random string as filename
-    const pool = "123456789-ABCDEF"; // string-literal => *const [16:0]u8
-    var filename: [128:0]u8 = undefined;
-    for (filename) |*ch| ch.* = pool[to_usize(rand()) % pool.len];
-    filename[filename.len] = 0;
-
-    try testing.expectEqual(*const [16:0]u8, @TypeOf(pool));
-    try testing.expectEqual(@as(usize, 16), pool.len);
-    try testing.expectEqual(@as(u8, 0), pool[pool.len]);
-    try testing.expectEqual(16 + 1, @sizeOf(@TypeOf(pool.*))); // .len + sentinel(0)
-
-    try testing.expectEqual(128, filename.len);
-    try testing.expectEqual(@sizeOf(@TypeOf(filename)), filename.len + 1);
-    try testing.expectEqual(@as(usize, 128), std.mem.indexOfSentinel(u8, 0, &filename));
-
-    // open non-exist file
-    {
-        const file = fopen(&filename, "rb");
-        defer if (file) |f| fclose(f) orelse unreachable;
-
-        // assuming it fails because the file doesn's exist
-        if (file == null)
-            try testing.expectEqual(c.ENOENT, errno());
-    }
-
-    // open ./build.zig file
-    {
-        const file = fopen("./build.zig", "rb") orelse unreachable;
-        defer fclose(file) orelse unreachable;
-    }
 }
 
 pub fn @"test: snprintf"() !void {

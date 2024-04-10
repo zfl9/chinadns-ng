@@ -1,120 +1,151 @@
+const std = @import("std");
+const g = @import("g.zig");
+const c = @import("c.zig");
+const cc = @import("cc.zig");
+const opt = @import("opt.zig");
+const dns = @import("dns.zig");
 const log = @import("log.zig");
 const dnl = @import("dnl.zig");
-const cc = @import("cc.zig");
 const flags_op = @import("flags_op.zig");
+const Tag = @import("tag.zig").Tag;
 
 // ================================================
 
 const NoAAAA = @This();
 
-// struct fields
-flags: Flags = Flags.empty(),
+flags: Flags.T = 0,
 
-pub const Flags = enum(u8) {
-    all = @import("std").math.maxInt(u8),
+// ================================================
 
-    tag_gfw = 1 << 0,
-    tag_chn = 1 << 1,
-    tag_none = 1 << 2,
+/// index
+pub const Rule = opaque {
+    /// left-shift bits
+    pub const T = u8;
 
-    china_dns = 1 << 3,
-    trust_dns = 1 << 4,
+    // tag:* [0, 8]
 
-    /// tag:none + only_china_path: filter non-chnip reply
-    china_iptest = 1 << 5,
-    /// tag:none + only_trust_path: filter non-chnip reply
-    trust_iptest = 1 << 6,
+    // ip:* [9, 10]
+    pub const ip_china: T = c.TAG_NONE + 1;
+    pub const ip_non_china: T = ip_china + 1;
 
-    _, // non-exhaustive enum
+    pub fn to_flags(rule: Rule.T) Flags.T {
+        return @as(Flags.T, 1) << @intCast(u4, rule);
+    }
 
-    usingnamespace flags_op.get(Flags);
+    /// static buffer
+    pub fn to_name(rule: Rule.T) cc.ConstStr {
+        if (rule < ip_china) {
+            const tag_name = Tag.from_int(rule).name();
+            return cc.to_cstr_x(&.{ "tag:", cc.strslice_c(tag_name) });
+        } else {
+            return switch (rule) {
+                ip_china => "ip:china",
+                ip_non_china => "ip:non_china",
+                else => unreachable,
+            };
+        }
+    }
+};
+
+/// bit flags
+const Flags = opaque {
+    /// flags type
+    pub const T = u16;
+
+    pub const all: T = std.math.maxInt(@TypeOf((NoAAAA{}).flags));
+    pub const all_ip: T = (1 << Rule.ip_china) | (1 << Rule.ip_non_china);
 };
 
 // ================================================
 
-pub fn is_empty(self: NoAAAA) bool {
-    return self.flags.is_empty();
+fn is_empty(self: NoAAAA) bool {
+    return self.flags == 0;
 }
 
-pub fn is_full(self: NoAAAA) bool {
-    return self.flags.is_full();
+fn is_all(self: NoAAAA) bool {
+    return self.flags == Flags.all;
 }
 
-/// try simplify to flags .all
-fn check_full(self: *NoAAAA) void {
-    const all_tag = Flags.from(.{ .tag_gfw, .tag_chn, .tag_none });
-    const all_dns = Flags.from(.{ .china_dns, .trust_dns });
-
-    if (self.flags != .all and (self.has(all_tag) or self.has(all_dns)))
-        self.flags = .all;
+fn has_rule(self: NoAAAA, rule: Rule.T) bool {
+    return self.has_flags(Rule.to_flags(rule));
 }
 
-/// for single flag bit
-/// for multiple flag bits, equivalent to `has_all`
-pub fn has(self: NoAAAA, flags: Flags) bool {
-    return self.flags.has(flags);
+fn has_flags(self: NoAAAA, flags: Flags.T) bool {
+    return self.flags & flags == flags;
 }
 
-/// for multiple flag bits
-pub const has_all = has;
-
-/// for multiple flag bits
-pub fn has_any(self: NoAAAA, flags: Flags) bool {
-    return self.flags.has_any(flags);
+fn has_flags_any(self: NoAAAA, flags: Flags.T) bool {
+    return self.flags & flags != 0;
 }
 
-pub fn add(self: *NoAAAA, flags: Flags) void {
-    self.flags.add(flags);
-    self.check_full();
-}
+// ================================================
 
-/// return the rule (string literal) that caused the filter
-pub fn filter(self: NoAAAA, name_tag: dnl.Tag, p_tagnone_china: *bool, p_tagnone_trust: *bool) ?cc.ConstStr {
-    if (self.is_empty())
+/// for opt.zig
+pub fn add_rule(self: *NoAAAA, rule: Rule.T) ?void {
+    if (self.is_all())
+        return;
+
+    self.flags |= Rule.to_flags(rule);
+
+    if (self.has_flags(Flags.all_ip)) {
+        opt.printf(@src(), "both 'ip:china' and 'ip:non_china' exist", .{});
         return null;
-
-    if (self.is_full())
-        return "all";
-
-    switch (name_tag) {
-        .chn => {
-            if (self.has(.tag_chn)) return "tag_chn";
-            if (self.has(.china_dns)) return "china_dns";
-        },
-        .gfw => {
-            if (self.has(.tag_gfw)) return "tag_gfw";
-            if (self.has(.trust_dns)) return "trust_dns";
-        },
-        .none => {
-            if (self.has(.tag_none)) return "tag_none";
-            if (self.has(.china_dns)) p_tagnone_china.* = false;
-            if (self.has(.trust_dns)) p_tagnone_trust.* = false;
-        },
     }
+}
 
+/// for opt.zig
+pub fn add_all(self: *NoAAAA) void {
+    self.flags = Flags.all;
+}
+
+// ================================================
+
+/// [on_query] filter by tag
+pub fn by_tag(self: NoAAAA, tag: Tag) ?Rule.T {
+    const rule: Rule.T = tag.int();
+    return if (self.has_rule(rule)) rule else null;
+}
+
+/// [on_reply] filter by ip test
+pub fn by_ip_test(self: NoAAAA, msg: []const u8, qnamelen: c_int, in_res: ?dns.TestIpResult) ?Rule.T {
+    if (self.has_flags_any(Flags.all_ip)) {
+        const res = in_res orelse dns.test_ip(msg, qnamelen, g.chnroute_testctx);
+        return switch (res) {
+            .is_china_ip => if (self.has_rule(Rule.ip_china)) Rule.ip_china else null,
+            .non_china_ip => if (self.has_rule(Rule.ip_non_china)) Rule.ip_non_china else null,
+            else => null,
+        };
+    }
     return null;
 }
 
+// ================================================
+
+pub fn require_ip_test(self: NoAAAA) bool {
+    return !self.is_all() and self.has_flags_any(Flags.all_ip);
+}
+
 pub fn display(self: NoAAAA) void {
-    if (self.is_empty()) return;
+    const src = @src();
 
-    // zig fmt: off
-    const list = .{
-        .{ .flags = .all,          .msg = "filter AAAA for all domain", .brk = {} },
-        .{ .flags = .tag_chn,      .msg = "filter AAAA for tag:chn domain" },
-        .{ .flags = .tag_gfw,      .msg = "filter AAAA for tag:gfw domain" },
-        .{ .flags = .tag_none,     .msg = "filter AAAA for tag:none domain" },
-        .{ .flags = .china_dns,    .msg = "filter AAAA for china upstream" },
-        .{ .flags = .trust_dns,    .msg = "filter AAAA for trust upstream" },
-        .{ .flags = .china_iptest, .msg = "filter non-chnip reply from china" },
-        .{ .flags = .trust_iptest, .msg = "filter non-chnip reply from trust" },
-    };
-    // zig fmt: on
+    if (self.is_empty())
+        return;
 
-    inline for (list) |v| {
-        if (self.has(v.flags)) {
-            log.info(@src(), v.msg, .{});
-            if (@hasField(@TypeOf(v), "brk")) break;
-        }
+    if (self.is_all()) {
+        log.info(src, "filter AAAA query: all", .{});
+        return;
     }
+
+    // tag:*
+    var tag: u8 = 0;
+    while (tag <= c.TAG_NONE) : (tag += 1) {
+        if (self.has_rule(tag))
+            log.info(src, "filter AAAA query: tag:%s", .{Tag.from_int(tag).name()});
+    }
+
+    // ip:*
+    if (self.has_rule(Rule.ip_china))
+        log.info(src, "filter AAAA reply: ip:china", .{});
+    if (self.has_rule(Rule.ip_non_china))
+        log.info(src, "filter AAAA reply: ip:non_china", .{});
 }

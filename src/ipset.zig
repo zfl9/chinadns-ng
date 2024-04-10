@@ -1,15 +1,13 @@
 const c = @import("c.zig");
-const g = @import("g.zig");
+const cc = @import("cc.zig");
 
-pub fn init() void {
-    const need_ipset = !g.chnip_setnames.is_empty() or !g.gfwip_setnames.is_empty() or g.default_tag == .none;
-    if (!need_ipset) return;
+pub const testctx_t = c.struct_ipset_testctx;
+pub const addctx_t = c.struct_ipset_addctx;
 
-    c.ipset_init(
-        g.chnroute_name.str,
-        g.chnroute6_name.str,
-        g.chnip_setnames.str,
-        g.gfwip_setnames.str,
-        g.default_tag.to_int(),
-    );
+pub fn new_testctx(name46: cc.ConstStr) *const testctx_t {
+    return c.ipset_new_testctx(name46).?;
+}
+
+pub fn new_addctx(name46: cc.ConstStr) *addctx_t {
+    return c.ipset_new_addctx(name46).?;
 }

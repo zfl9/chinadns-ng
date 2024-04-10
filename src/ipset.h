@@ -3,17 +3,16 @@
 #include "misc.h"
 #include <stdbool.h>
 
-void ipset_init(const char *noalias tagnone_setname4,
-                const char *noalias tagnone_setname6,
-                const char *noalias tagchn_setname46,
-                const char *noalias taggfw_setname46,
-                u8 default_tag);
+struct ipset_testctx;
+struct ipset_addctx;
 
-/* tag:none */
-bool ipset_test_ip(const void *noalias ip, bool v4);
+const struct ipset_testctx *ipset_new_testctx(const char *noalias name46);
 
-/* tag:chn | tag:gfw */
-void ipset_add_ip(const void *noalias ip, bool v4, bool chn);
+struct ipset_addctx *ipset_new_addctx(const char *noalias name46);
 
-/* tag:chn | tag:gfw */
-void ipset_end_add_ip(bool chn);
+/* `ip` exists in the set ? */
+bool ipset_test_ip(const struct ipset_testctx *noalias ctx, const void *noalias ip, bool v4);
+
+void ipset_add_ip(struct ipset_addctx *noalias ctx, const void *noalias ip, bool v4);
+
+void ipset_end_add_ip(struct ipset_addctx *noalias ctx);

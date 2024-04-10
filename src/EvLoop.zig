@@ -556,15 +556,3 @@ pub fn sendmsg(self: *EvLoop, fdobj: *Fd, msg: *const cc.msghdr_t, flags: c_int)
         }
     }
 }
-
-// =====================================================================
-
-pub fn @"test: EvLoop"() !void {
-    _ = add;
-    _ = mod;
-    _ = del;
-    _ = Ev.get_events;
-    _ = Ev.get_fdobj;
-    _ = Ev.set_events;
-    _ = Ev.set_fdobj;
-}

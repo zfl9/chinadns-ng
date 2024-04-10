@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 
 #ifndef LOG_FILENAME
@@ -27,9 +26,3 @@ const struct tm *get_tm(void);
 
 #define log_error(fmt, args...) \
     log_write("35", "E", fmt, ##args)
-
-#define log_fatal(fmt, args...) ({ \
-    log_write("31", "F", fmt, ##args); \
-    fflush(NULL); \
-    abort(); \
-}) 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "misc.h"
+#include "ipset.h"
 #include <stdbool.h>
 #include <sys/types.h>
 
@@ -82,16 +83,16 @@ bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_n
 #define DNS_TEST_IP_OTHER_CASE 3
 
 /* check if the answer ip is chnip (check qtype before call) */
-int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen);
+int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen, const struct ipset_testctx *noalias ctx);
 
 /* add the answer ip to ipset/nftset (tag:chn, tag:gfw) */
-void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, bool chn);
+void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset_addctx *noalias ctx);
 
 /* return the updated length of the msg (0 means error) */
 u16 dns_reset_opt(void *noalias msg, ssize_t len, int qnamelen);
 
-/* return <= 0 if failed or has no record */
-s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen);
+/* return -1 if failed */
+s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, s32 nodata_ttl);
 
 /* it should not fail because it has been checked by `get_ttl` */
 void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, s32 ttl_change);

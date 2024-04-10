@@ -15,6 +15,7 @@ const server = @import("server.zig");
 const EvLoop = @import("EvLoop.zig");
 const co = @import("co.zig");
 const cache = @import("cache.zig");
+const groups = @import("groups.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -101,7 +102,7 @@ pub fn main() u8 {
 
     // used only for business-independent initialization, such as global variables
     init_all_module();
-    defer deinit_all_module();
+    defer if (_debug) deinit_all_module();
 
     // ============================================================================
 
@@ -116,42 +117,44 @@ pub fn main() u8 {
 
     const src = @src();
 
-    const bind_proto: cc.ConstStr = if (g.bind_tcp and g.bind_udp)
+    const bind_proto: cc.ConstStr = if (g.flags.has_all(.{ .bind_tcp, .bind_udp }))
         "tcp+udp"
-    else if (g.bind_tcp)
+    else if (g.flags.has(.bind_tcp))
         "tcp"
     else // bind_udp
         "udp";
 
-    for (g.bind_ips.items) |ip|
+    for (g.bind_ips.items()) |ip|
         log.info(
             src,
             "local listen addr: %s#%u@%s",
-            .{ ip.?, cc.to_uint(g.bind_port), bind_proto },
+            .{ ip, cc.to_uint(g.bind_port), bind_proto },
         );
 
-    for (g.china_group.items()) |*v|
-        log.info(src, "china upstream: %s", .{v.url.ptr});
+    groups.on_start();
 
-    for (g.trust_group.items()) |*v|
-        log.info(src, "trust upstream: %s", .{v.url.ptr});
+    if (g.default_tag == .none or g.noaaaa_rule.require_ip_test()) {
+        const name46 = cc.to_cstr_x(&.{ g.chnroute_name.slice(), ",", g.chnroute6_name.slice() });
+        g.chnroute_testctx = ipset.new_testctx(name46);
+        log.info(src, "ip test db: %s", .{name46});
+    }
 
-    dnl.init();
-
-    log.info(src, "default domain name tag: %s", .{g.default_tag.desc()});
-
-    ipset.init();
+    log.info(src, "default domain name tag: %s", .{g.default_tag.name()});
 
     g.noaaaa_rule.display();
 
-    if (g.cache_size > 0)
+    if (g.cache_size > 0) {
         log.info(src, "enable dns cache, capacity: %u", .{cc.to_uint(g.cache_size)});
 
-    if (g.cache_stale > 0)
-        log.info(src, "use stale cache, excess TTL: %lu", .{cc.to_ulong(g.cache_stale)});
+        if (g.cache_stale > 0)
+            log.info(src, "use stale cache, excess TTL: %lu", .{cc.to_ulong(g.cache_stale)});
 
-    if (g.cache_refresh > 0)
-        log.info(src, "pre-refresh cache, remain TTL: %u", .{cc.to_uint(g.cache_refresh)});
+        if (g.cache_refresh > 0)
+            log.info(src, "pre-refresh cache, remain TTL: %u%%", .{cc.to_uint(g.cache_refresh)});
+
+        if (g.cache_nodata_ttl > 0)
+            log.info(src, "cache NODATA response, TTL: %u", .{cc.to_uint(g.cache_nodata_ttl)});
+    }
 
     if (g.verdict_cache_size > 0)
         log.info(src, "enable verdict cache, capacity: %u", .{cc.to_uint(g.verdict_cache_size)});
@@ -161,12 +164,15 @@ pub fn main() u8 {
     if (g.trustdns_packet_n > 1)
         log.info(src, "num of packets to trustdns: %u", .{cc.to_uint(g.trustdns_packet_n)});
 
-    log.info(src, "%s no-ip reply from chinadns", .{cc.b2s(g.noip_as_chnip, "accept", "filter")});
+    if (g.default_tag == .none) {
+        const action = cc.b2s(g.flags.has(.noip_as_chnip), "accept", "filter");
+        log.info(src, "%s no-ip reply from chinadns", .{action});
+    }
 
-    if (g.reuse_port)
+    if (g.flags.has(.reuse_port))
         log.info(src, "SO_REUSEPORT for listening socket", .{});
 
-    if (g.verbose)
+    if (g.verbose())
         log.info(src, "printing the verbose runtime log", .{});
 
     // ============================================================================

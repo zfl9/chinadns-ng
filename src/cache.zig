@@ -22,7 +22,7 @@ fn enabled() bool {
 }
 
 /// return the cached reply msg
-pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32) ?[]const u8 {
+pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32, p_ttl_r: *i32) ?[]const u8 {
     if (!enabled())
         return null;
 
@@ -32,6 +32,7 @@ pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32) ?[]const u8 {
     // update ttl
     const ttl = cache_msg.update_ttl();
     p_ttl.* = ttl;
+    p_ttl_r.* = cache_msg.ttl_r;
 
     if (ttl > 0 or (g.cache_stale > 0 and -ttl <= g.cache_stale)) {
         // not expired, or stale cache
@@ -76,7 +77,7 @@ pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32) bool {
     // e.g. remove EDNS COOKIE
     msg = dns.reset_opt(msg, qnamelen) orelse return false;
 
-    const ttl = dns.get_ttl(msg, qnamelen) orelse return false;
+    const ttl = dns.get_ttl(msg, qnamelen, g.cache_nodata_ttl) orelse return false;
     p_ttl.* = ttl;
 
     const res = _map.getOrPut(g.allocator, dns.question(msg, qnamelen)) catch unreachable;

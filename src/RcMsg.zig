@@ -82,18 +82,24 @@ pub fn msg(self: anytype) Bytes(@TypeOf(self), .slice) {
 
 // =============================================================
 
-pub fn @"test: RcMsg"() !void {
+pub fn @"test: return type"() !void {
     const var_rcmsg: *RcMsg = RcMsg.new(512);
     const const_rcmsg: *const RcMsg = var_rcmsg;
-    const msg1 = var_rcmsg.msg();
-    const msg2 = const_rcmsg.msg();
-    try std.testing.expectEqual([]u8, @TypeOf(msg1));
-    try std.testing.expectEqual([]const u8, @TypeOf(msg2));
+    defer var_rcmsg.free();
 
-    const msg3 = var_rcmsg.realloc(512);
-    try std.testing.expectEqual(var_rcmsg, msg3);
+    const var_msg = var_rcmsg.msg();
+    const const_msg = const_rcmsg.msg();
 
-    const msg4 = var_rcmsg.realloc(5120);
-    defer msg4.free();
-    try std.testing.expectEqual(@as(u16, 5120), msg4.cap);
+    try std.testing.expectEqual([]u8, @TypeOf(var_msg));
+    try std.testing.expectEqual([]const u8, @TypeOf(const_msg));
+}
+
+pub fn @"test: realloc"() !void {
+    const rcmsg = RcMsg.new(512);
+    const no_change = rcmsg.realloc(512);
+    try std.testing.expectEqual(rcmsg, no_change);
+
+    const expanded = rcmsg.realloc(5120); // rcmsg is freed
+    defer expanded.free();
+    try std.testing.expectEqual(@as(u16, 5120), expanded.cap);
 }

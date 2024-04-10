@@ -1,22 +1,23 @@
 const std = @import("std");
 const cc = @import("cc.zig");
+const modules = @import("modules.zig");
 
 const TestFn = struct {
     name: [:0]const u8,
     func: std.meta.FnPtr(fn () anyerror!void),
 };
 
-const all_test_fns = collect(@import("modules.zig").module_list);
+const all_test_fns = collect(0);
 
-fn collect(comptime modules: anytype) [count(modules)]TestFn {
+fn collect(comptime _: comptime_int) [count()]TestFn {
     @setEvalBranchQuota(1000000);
-    var test_fns: [count(modules)]TestFn = undefined;
+    var test_fns: [count()]TestFn = undefined;
     var i = 0;
-    for (modules) |module| {
+    for (modules.module_list) |module, module_idx| {
         for (@typeInfo(module).Struct.decls) |decl| {
-            if (std.mem.startsWith(u8, decl.name, "test:")) {
+            if (std.mem.startsWith(u8, decl.name, "test: ")) {
                 test_fns[i] = .{
-                    .name = decl.name ++ "",
+                    .name = modules.name_list[module_idx] ++ ": " ++ decl.name[6..],
                     .func = @field(module, decl.name),
                 };
                 i += 1;
@@ -26,12 +27,12 @@ fn collect(comptime modules: anytype) [count(modules)]TestFn {
     return test_fns;
 }
 
-fn count(comptime modules: anytype) comptime_int {
+fn count() comptime_int {
     @setEvalBranchQuota(1000000);
     var n = 0;
-    for (modules) |module| {
+    for (modules.module_list) |module| {
         for (@typeInfo(module).Struct.decls) |decl| {
-            if (std.mem.startsWith(u8, decl.name, "test:"))
+            if (std.mem.startsWith(u8, decl.name, "test: "))
                 n += 1;
         }
     }

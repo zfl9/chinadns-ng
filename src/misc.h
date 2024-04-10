@@ -26,6 +26,8 @@
 */
 #define noalias restrict
 
+/* ======================================================== */
+
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -54,6 +56,8 @@ typedef unsigned long ulong; /* >= 32 bits */
 typedef long long llong; /* >= 64 bits */
 typedef unsigned long long ullong; /* >= 64 bits */
 
+/* ======================================================== */
+
 /* token stringize */
 #define _literal(x) #x
 #define literal(x) _literal(x)
@@ -70,12 +74,31 @@ typedef unsigned long long ullong; /* >= 64 bits */
 
 #define cast(t, v) ((t)(v))
 
+/* ======================================================== */
+
 /* for blocking system calls */
 #define retry_EINTR(call) ({ \
     __typeof__(call) ret_; \
     while ((ret_ = (call)) == -1 && errno == EINTR); \
     ret_; \
 })
+
+/* try to (blocking) send all, retry if interrupted by signal */
+#define sendall(f, fd, base, len, args...) ({ \
+    __typeof__(f(fd, base, len, ##args)) nsent_ = 0; \
+    __auto_type base_ = (base); \
+    __typeof__(nsent_) len_ = (len); \
+    assert(len_ > 0); \
+    do { \
+        __auto_type ret_ = retry_EINTR(f(fd, &base_[nsent_], len_ - nsent_, ##args)); \
+        unlikely_if (ret_ < 0) break; /* error occurs */ \
+        assert(ret_ != 0); \
+        nsent_ += ret_; \
+    } while (nsent_ < len_); \
+    nsent_ == 0 ? (__typeof__(nsent_))-1 : nsent_; \
+})
+
+/* ======================================================== */
 
 typedef u8 bitvec_t;
 
@@ -90,9 +113,13 @@ typedef u8 bitvec_t;
 #define bitvec_set0(vec, i) \
     ((vec)[(ullong)(i) >> 3] &= ~(1U << ((ullong)(i) & 7)))
 
+/* ======================================================== */
+
 /* align to `n` (struct, struct member) */
 #define struct_alignto(n) \
     __attribute__((packed,aligned(n)))
+
+/* ======================================================== */
 
 /* zig is currently unable to translate the SIG_IGN/DFL/ERR macro */
 const void *SIG_IGNORE(void);

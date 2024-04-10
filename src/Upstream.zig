@@ -6,8 +6,10 @@ const co = @import("co.zig");
 const opt = @import("opt.zig");
 const net = @import("net.zig");
 const dns = @import("dns.zig");
+const dnl = @import("dnl.zig");
 const log = @import("log.zig");
 const server = @import("server.zig");
+const Tag = @import("tag.zig").Tag;
 const DynStr = @import("DynStr.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
@@ -160,7 +162,7 @@ fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
         break :b fd;
     };
 
-    if (self.group.tag == .trust and g.trustdns_packet_n > 1) {
+    if (self.group.tag == .gfw and g.trustdns_packet_n > 1) {
         var iov = [_]cc.iovec_t{
             .{
                 .iov_base = qmsg.msg().ptr,
@@ -329,11 +331,6 @@ pub const Group = struct {
         }
     };
 
-    pub const Tag = enum {
-        china,
-        trust,
-    };
-
     pub fn init(tag: Tag) Group {
         return .{ .tag = tag };
     }
@@ -430,7 +427,7 @@ pub const Group = struct {
 
         var portbuf: [10]u8 = undefined;
 
-        url.set_ex(&.{
+        url.set_x(&.{
             // https://
             proto.to_str(),
             // host@
@@ -444,13 +441,13 @@ pub const Group = struct {
             path,
         });
 
-        var item = Upstream{
+        var upstream = Upstream{
             .group = self,
             .proto = proto,
             .addr = addr,
             .host = host,
             .path = path,
-            .url = url.str,
+            .url = url.slice(),
         };
 
         const raw_values = .{ host, path };
@@ -458,20 +455,20 @@ pub const Group = struct {
         inline for (field_names) |field_name, i| {
             const raw_v = raw_values[i];
             if (raw_v.len > 0) {
-                const pos = std.mem.indexOfPosLinear(u8, url.str, 0, raw_v).?;
-                @field(item, field_name) = url.str[pos .. pos + raw_v.len]; // pointer to allocated memory
+                const pos = std.mem.indexOfPosLinear(u8, upstream.url, 0, raw_v).?;
+                @field(upstream, field_name) = upstream.url[pos .. pos + raw_v.len]; // pointer to allocated memory
             } else {
-                @field(item, field_name) = ""; // pointer to const string
+                @field(upstream, field_name) = ""; // pointer to const string
             }
         }
 
-        self.list.append(g.allocator, item) catch unreachable;
+        self.list.append(g.allocator, upstream) catch unreachable;
     }
 
     /// [nosuspend]
     /// @in_proto: `.tcpin` or `.udpin`
     pub fn send(self: *Group, qmsg: *RcMsg, in_proto: Proto, first_query: bool) void {
-        const verbose_info = if (g.verbose) .{
+        const verbose_info = if (g.verbose()) .{
             .qid = dns.get_id(qmsg.msg()),
             .from = cc.b2s(in_proto == .tcpin, "tcp", "udp"),
         } else undefined;
@@ -485,7 +482,7 @@ pub const Group = struct {
             if (upstream.proto == .tcpin or upstream.proto == .udpin)
                 if (in_proto != upstream.proto) continue;
 
-            if (g.verbose)
+            if (g.verbose())
                 log.info(
                     @src(),
                     "forward query(qid:%u, from:%s) to upstream %s",
@@ -509,14 +506,8 @@ pub const Group = struct {
         }
 
         if (udp_touched) {
-            const add_count = if (self.tag == .trust) g.trustdns_packet_n else 1;
+            const add_count = if (self.tag == .gfw) g.trustdns_packet_n else 1;
             self.udp_life.on_query(add_count);
         }
     }
 };
-
-// ======================================================
-
-pub fn @"test: Upstream"() !void {
-    // _ =
-}

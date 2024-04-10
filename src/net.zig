@@ -73,7 +73,7 @@ pub noinline fn setsockopt_int(fd: c_int, level: c_int, opt: c_int, optname: cc.
 fn setup_listen_sock(fd: c_int, family: c.sa_family_t) void {
     _ = setsockopt_int(fd, c.SOL_SOCKET, c.SO_REUSEADDR, "SO_REUSEADDR", 1);
 
-    if (g.reuse_port)
+    if (g.flags.has(.reuse_port))
         _ = setsockopt_int(fd, c.SOL_SOCKET, c.SO_REUSEPORT, "SO_REUSEPORT", 1);
 
     if (family == c.AF_INET6)
@@ -87,15 +87,4 @@ pub fn setup_tcp_conn_sock(fd: c_int) void {
     _ = setsockopt_int(fd, c.IPPROTO_TCP, c.TCP_KEEPIDLE, "TCP_KEEPIDLE", 60);
     _ = setsockopt_int(fd, c.IPPROTO_TCP, c.TCP_KEEPCNT, "TCP_KEEPCNT", 3);
     _ = setsockopt_int(fd, c.IPPROTO_TCP, c.TCP_KEEPINTVL, "TCP_KEEPINTVL", 5);
-}
-
-// ===============================================================
-
-pub fn @"test: net"() !void {
-    // _ = Addr.family;
-    // _ = Addr.len;
-    // _ = Addr.is_sin;
-    // _ = Addr.is_sin6;
-    // _ = Addr.from_text;
-    // _ = Addr.to_text;
 }

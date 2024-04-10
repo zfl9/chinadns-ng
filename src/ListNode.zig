@@ -128,7 +128,7 @@ const Object = struct {
     }
 };
 
-pub fn @"test: List"() !void {
+pub fn @"test: linked list"() !void {
     var list: ListNode = undefined;
     list.init();
 

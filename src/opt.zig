@@ -3,13 +3,17 @@ const c = @import("c.zig");
 const cc = @import("cc.zig");
 const g = @import("g.zig");
 const log = @import("log.zig");
+const dnl = @import("dnl.zig");
 const net = @import("net.zig");
+const groups = @import("groups.zig");
 const str2int = @import("str2int.zig");
+const Tag = @import("tag.zig").Tag;
+const NoAAAA = @import("NoAAAA.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
 const cache_ignore = @import("cache_ignore.zig");
-const local_dns_rr = @import("local_dns_rr.zig");
+const local_rr = @import("local_rr.zig");
 const assert = std.debug.assert;
 
 const help =
@@ -22,28 +26,25 @@ const help =
     \\ -m, --chnlist-file <paths>           path(s) of chnlist, '-' indicate stdin
     \\ -g, --gfwlist-file <paths>           path(s) of gfwlist, '-' indicate stdin
     \\ -M, --chnlist-first                  match chnlist first, default gfwlist first
-    \\ -d, --default-tag <tag>              domain default tag: chn,gfw,none(default)
-    \\ -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nft
+    \\ -d, --default-tag <tag>              chn or gfw or <user-tag> or none(default)
+    \\ -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nftset
     \\                                      use '--ipset-name4/6' setname if no value
-    \\ -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft
+    \\ -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nftset
     \\ -4, --ipset-name4 <set4>             ip test for tag:none, default: chnroute
     \\ -6, --ipset-name6 <set6>             ip test for tag:none, default: chnroute6
-    \\                                      if setname contains @, then use nft-set
+    \\                                      if setname contains @, then use nftset
     \\                                      format: family_name@table_name@set_name
-    \\ -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:
-    \\                                      rule a: filter AAAA for all domain
-    \\                                      rule m: filter AAAA for tag:chn domain
-    \\                                      rule g: filter AAAA for tag:gfw domain
-    \\                                      rule n: filter AAAA for tag:none domain
-    \\                                      rule c: filter AAAA for china upstream
-    \\                                      rule t: filter AAAA for trust upstream
-    \\                                      rule C: filter non-chnip reply from china
-    \\                                      rule T: filter non-chnip reply from trust
-    \\                                      if no rules is given, it defaults to 'a'
+    \\ --group <name>                       define rule group: {dnl, upstream, ipset}
+    \\ --group-dnl <paths>                  domain name list for the current group
+    \\ --group-upstream <upstreams>         upstream dns server for the current group
+    \\ --group-ipset <set4,set6>            add the ip of the current group to ipset
+    \\ -N, --no-ipv6 [rules]                rule: tag:<name>, ip:china, ip:non_china
+    \\                                      if no rules, then filter all AAAA queries
     \\ --filter-qtype <qtypes>              filter queries with the given qtype (u16)
     \\ --cache <size>                       enable dns caching, size 0 means disabled
-    \\ --cache-stale <N>                    allow use the cached data with a TTL >= -N
-    \\ --cache-refresh <N>                  pre-refresh the cached data if the TTL <= N
+    \\ --cache-stale <N>                    use stale cache: expired time <= N(second)
+    \\ --cache-refresh <N>                  pre-refresh the cached data if TTL <= N(%)
+    \\ --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
     \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
     \\ --verdict-cache <size>               enable verdict caching for tag:none domains
     \\ --hosts [path]                       load hosts file, default path is /etc/hosts
@@ -77,36 +78,41 @@ const OptFn = std.meta.FnPtr(fn (in_value: ?[]const u8) void);
 
 // zig fmt: off
 const optdef_array = [_]OptDef{
-    .{ .short = "C", .long = "config",        .value = .required, .optfn = opt_config,        },
-    .{ .short = "b", .long = "bind-addr",     .value = .required, .optfn = opt_bind_addr,     },
-    .{ .short = "l", .long = "bind-port",     .value = .required, .optfn = opt_bind_port,     },
-    .{ .short = "c", .long = "china-dns",     .value = .required, .optfn = opt_china_dns,     },
-    .{ .short = "t", .long = "trust-dns",     .value = .required, .optfn = opt_trust_dns,     },
-    .{ .short = "m", .long = "chnlist-file",  .value = .required, .optfn = opt_chnlist_file,  },
-    .{ .short = "g", .long = "gfwlist-file",  .value = .required, .optfn = opt_gfwlist_file,  },
-    .{ .short = "M", .long = "chnlist-first", .value = .no_value, .optfn = opt_chnlist_first, },
-    .{ .short = "d", .long = "default-tag",   .value = .required, .optfn = opt_default_tag,   },
-    .{ .short = "a", .long = "add-tagchn-ip", .value = .optional, .optfn = opt_add_tagchn_ip, },
-    .{ .short = "A", .long = "add-taggfw-ip", .value = .required, .optfn = opt_add_taggfw_ip, },
-    .{ .short = "4", .long = "ipset-name4",   .value = .required, .optfn = opt_ipset_name4,   },
-    .{ .short = "6", .long = "ipset-name6",   .value = .required, .optfn = opt_ipset_name6,   },
-    .{ .short = "N", .long = "no-ipv6",       .value = .optional, .optfn = opt_no_ipv6,       },
-    .{ .short = "",  .long = "filter-qtype",  .value = .required, .optfn = opt_filter_qtype,  },
-    .{ .short = "",  .long = "cache",         .value = .required, .optfn = opt_cache,         },
-    .{ .short = "",  .long = "cache-stale",   .value = .required, .optfn = opt_cache_stale,   },
-    .{ .short = "",  .long = "cache-refresh", .value = .required, .optfn = opt_cache_refresh, },
-    .{ .short = "",  .long = "cache-ignore",  .value = .required, .optfn = opt_cache_ignore,  },
-    .{ .short = "",  .long = "verdict-cache", .value = .required, .optfn = opt_verdict_cache, },
-    .{ .short = "",  .long = "hosts",         .value = .optional, .optfn = opt_hosts,         },
-    .{ .short = "",  .long = "dns-rr-ip",     .value = .required, .optfn = opt_dns_rr_ip,     },
-    .{ .short = "o", .long = "timeout-sec",   .value = .required, .optfn = opt_timeout_sec,   },
-    .{ .short = "p", .long = "repeat-times",  .value = .required, .optfn = opt_repeat_times,  },
-    .{ .short = "n", .long = "noip-as-chnip", .value = .no_value, .optfn = opt_noip_as_chnip, },
-    .{ .short = "f", .long = "fair-mode",     .value = .no_value, .optfn = opt_fair_mode,     },
-    .{ .short = "r", .long = "reuse-port",    .value = .no_value, .optfn = opt_reuse_port,    },
-    .{ .short = "v", .long = "verbose",       .value = .no_value, .optfn = opt_verbose,       },
-    .{ .short = "V", .long = "version",       .value = .no_value, .optfn = opt_version,       },
-    .{ .short = "h", .long = "help",          .value = .no_value, .optfn = opt_help,          },
+    .{ .short = "C", .long = "config",           .value = .required, .optfn = opt_config,           },
+    .{ .short = "b", .long = "bind-addr",        .value = .required, .optfn = opt_bind_addr,        },
+    .{ .short = "l", .long = "bind-port",        .value = .required, .optfn = opt_bind_port,        },
+    .{ .short = "c", .long = "china-dns",        .value = .required, .optfn = opt_china_dns,        },
+    .{ .short = "t", .long = "trust-dns",        .value = .required, .optfn = opt_trust_dns,        },
+    .{ .short = "m", .long = "chnlist-file",     .value = .required, .optfn = opt_chnlist_file,     },
+    .{ .short = "g", .long = "gfwlist-file",     .value = .required, .optfn = opt_gfwlist_file,     },
+    .{ .short = "M", .long = "chnlist-first",    .value = .no_value, .optfn = opt_chnlist_first,    },
+    .{ .short = "d", .long = "default-tag",      .value = .required, .optfn = opt_default_tag,      },
+    .{ .short = "a", .long = "add-tagchn-ip",    .value = .optional, .optfn = opt_add_tagchn_ip,    },
+    .{ .short = "A", .long = "add-taggfw-ip",    .value = .required, .optfn = opt_add_taggfw_ip,    },
+    .{ .short = "4", .long = "ipset-name4",      .value = .required, .optfn = opt_ipset_name4,      },
+    .{ .short = "6", .long = "ipset-name6",      .value = .required, .optfn = opt_ipset_name6,      },
+    .{ .short = "",  .long = "group",            .value = .required, .optfn = opt_group,            },
+    .{ .short = "",  .long = "group-dnl",        .value = .required, .optfn = opt_group_dnl,        },
+    .{ .short = "",  .long = "group-upstream",   .value = .required, .optfn = opt_group_upstream,   },
+    .{ .short = "",  .long = "group-ipset",      .value = .required, .optfn = opt_group_ipset,      },
+    .{ .short = "N", .long = "no-ipv6",          .value = .optional, .optfn = opt_no_ipv6,          },
+    .{ .short = "",  .long = "filter-qtype",     .value = .required, .optfn = opt_filter_qtype,     },
+    .{ .short = "",  .long = "cache",            .value = .required, .optfn = opt_cache,            },
+    .{ .short = "",  .long = "cache-stale",      .value = .required, .optfn = opt_cache_stale,      },
+    .{ .short = "",  .long = "cache-refresh",    .value = .required, .optfn = opt_cache_refresh,    },
+    .{ .short = "",  .long = "cache-nodata-ttl", .value = .required, .optfn = opt_cache_nodata_ttl, },
+    .{ .short = "",  .long = "cache-ignore",     .value = .required, .optfn = opt_cache_ignore,     },
+    .{ .short = "",  .long = "verdict-cache",    .value = .required, .optfn = opt_verdict_cache,    },
+    .{ .short = "",  .long = "hosts",            .value = .optional, .optfn = opt_hosts,            },
+    .{ .short = "",  .long = "dns-rr-ip",        .value = .required, .optfn = opt_dns_rr_ip,        },
+    .{ .short = "o", .long = "timeout-sec",      .value = .required, .optfn = opt_timeout_sec,      },
+    .{ .short = "p", .long = "repeat-times",     .value = .required, .optfn = opt_repeat_times,     },
+    .{ .short = "n", .long = "noip-as-chnip",    .value = .no_value, .optfn = opt_noip_as_chnip,    },
+    .{ .short = "f", .long = "fair-mode",        .value = .no_value, .optfn = opt_fair_mode,        },
+    .{ .short = "r", .long = "reuse-port",       .value = .no_value, .optfn = opt_reuse_port,       },
+    .{ .short = "v", .long = "verbose",          .value = .no_value, .optfn = opt_verbose,          },
+    .{ .short = "V", .long = "version",          .value = .no_value, .optfn = opt_version,          },
+    .{ .short = "h", .long = "help",             .value = .no_value, .optfn = opt_help,             },
 };
 // zig fmt: on
 
@@ -256,104 +262,62 @@ fn opt_bind_port(in_value: ?[]const u8) void {
     const port = it.next().?;
     g.bind_port = check_port(port) orelse invalid_optvalue(src, value);
 
+    g.flags.add(.bind_tcp);
+    g.flags.add(.bind_udp);
+
     // proto
     if (it.next()) |proto| {
         if (std.mem.eql(u8, proto, "tcp+udp") or std.mem.eql(u8, proto, "udp+tcp")) {
-            g.bind_tcp = true;
-            g.bind_udp = true;
+            //
         } else if (std.mem.eql(u8, proto, "tcp")) {
-            g.bind_tcp = true;
-            g.bind_udp = false;
+            g.flags.rm(.bind_udp);
         } else if (std.mem.eql(u8, proto, "udp")) {
-            g.bind_tcp = false;
-            g.bind_udp = true;
+            g.flags.rm(.bind_tcp);
         } else {
             invalid_optvalue(src, value);
         }
-    } else {
-        g.bind_tcp = true;
-        g.bind_udp = true;
     }
 
     if (it.next() != null)
         invalid_optvalue(src, value);
 }
 
-/// "upstream,..."
-noinline fn add_upstreams(group: *Upstream.Group, upstreams: []const u8) ?void {
-    var it = std.mem.split(u8, upstreams, ",");
-    while (it.next()) |upstream| {
-        group.add(upstream) orelse {
-            print(@src(), "invalid format", upstream);
-            return null;
-        };
-    }
-}
-
 fn opt_china_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.china_group, value) orelse invalid_optvalue(@src(), value);
+    groups.add_upstream(.chn, value) orelse invalid_optvalue(@src(), value);
 }
 
 fn opt_trust_dns(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_upstreams(&g.trust_group, value) orelse invalid_optvalue(@src(), value);
-}
-
-/// "foo.txt,..."
-noinline fn add_paths(list: *StrList, paths: []const u8) ?void {
-    var it = std.mem.split(u8, paths, ",");
-    while (it.next()) |path| {
-        const src = @src();
-        if (path.len <= 0) {
-            print(src, "invalid format", paths);
-            return null;
-        }
-        if (path.len > c.PATH_MAX) {
-            print(src, "path is too long", path);
-            return null;
-        }
-        list.add(path);
-    }
+    groups.add_upstream(.gfw, value) orelse invalid_optvalue(@src(), value);
 }
 
 fn opt_chnlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_paths(&g.chnlist_filenames, value) orelse invalid_optvalue(@src(), value);
+    groups.add_dnl(.chn, value) orelse invalid_optvalue(@src(), value);
 }
 
 fn opt_gfwlist_file(in_value: ?[]const u8) void {
     const value = in_value.?;
-    add_paths(&g.gfwlist_filenames, value) orelse invalid_optvalue(@src(), value);
+    groups.add_dnl(.gfw, value) orelse invalid_optvalue(@src(), value);
 }
 
 fn opt_chnlist_first(_: ?[]const u8) void {
-    g.gfwlist_first = false;
+    g.flags.rm(.gfwlist_first);
 }
 
 fn opt_default_tag(in_value: ?[]const u8) void {
-    const value = in_value.?;
-    const map = .{
-        .{ .tagname = "chn", .tag = .chn },
-        .{ .tagname = "gfw", .tag = .gfw },
-        .{ .tagname = "none", .tag = .none },
-    };
-    inline for (map) |v| {
-        if (std.mem.eql(u8, v.tagname, value)) {
-            g.default_tag = v.tag;
-            return;
-        }
-    }
-    invalid_optvalue(@src(), value);
+    const name = in_value.?;
+    g.default_tag = Tag.from_name(cc.to_cstr(name)) orelse invalid_optvalue(@src(), name);
 }
 
 fn opt_add_tagchn_ip(in_value: ?[]const u8) void {
     // empty string means 'no_value'
-    g.chnip_setnames.set(in_value orelse "");
+    groups.set_ipset(.chn, in_value orelse "");
 }
 
 fn opt_add_taggfw_ip(in_value: ?[]const u8) void {
-    g.gfwip_setnames.set(in_value.?);
+    groups.set_ipset(.gfw, in_value.?);
 }
 
 fn opt_ipset_name4(in_value: ?[]const u8) void {
@@ -364,23 +328,67 @@ fn opt_ipset_name6(in_value: ?[]const u8) void {
     g.chnroute6_name.set(in_value.?);
 }
 
+var _tag: Tag = .none;
+
+fn opt_group(in_value: ?[]const u8) void {
+    const group_name = cc.to_cstr(in_value.?);
+
+    var overflow: bool = undefined;
+    _tag = Tag.register(group_name, &overflow) orelse {
+        const reason = cc.b2s(overflow, "overflow", "invalid");
+        printf_exit(@src(), "can't register group '%s': %s", .{ group_name, reason });
+    };
+}
+
+fn check_group_context(comptime src: std.builtin.SourceLocation, value: []const u8) void {
+    if (_tag == .none)
+        print_exit(src, "out of group context", value);
+}
+
+fn opt_group_dnl(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    const src = @src();
+
+    check_group_context(src, value);
+    groups.add_dnl(_tag, value) orelse invalid_optvalue(src, value);
+}
+
+fn opt_group_upstream(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    const src = @src();
+
+    check_group_context(src, value);
+    groups.add_upstream(_tag, value) orelse invalid_optvalue(src, value);
+}
+
+fn opt_group_ipset(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    const src = @src();
+
+    check_group_context(src, value);
+    groups.set_ipset(_tag, value);
+}
+
 fn opt_no_ipv6(in_value: ?[]const u8) void {
+    const src = @src();
+
     if (in_value) |value| {
-        for (value) |rule| {
-            g.noaaaa_rule.add(switch (rule) {
-                'a' => .all,
-                'm' => .tag_chn,
-                'g' => .tag_gfw,
-                'n' => .tag_none,
-                'c' => .china_dns,
-                't' => .trust_dns,
-                'C' => .china_iptest,
-                'T' => .trust_iptest,
-                else => printf_exit(@src(), "invalid no-aaaa rule: '%c'", .{rule}),
-            });
+        var it = std.mem.split(u8, value, ",");
+        while (it.next()) |rule| {
+            if (std.mem.startsWith(u8, rule, "tag:")) {
+                const tag_name = cc.to_cstr(rule[4..]);
+                const tag = Tag.from_name(tag_name) orelse printf_exit(src, "invalid tag: '%s'", .{tag_name});
+                g.noaaaa_rule.add_rule(tag.int()) orelse invalid_optvalue(src, value);
+            } else if (std.mem.eql(u8, rule, "ip:china")) {
+                g.noaaaa_rule.add_rule(NoAAAA.Rule.ip_china) orelse invalid_optvalue(src, value);
+            } else if (std.mem.eql(u8, rule, "ip:non_china")) {
+                g.noaaaa_rule.add_rule(NoAAAA.Rule.ip_non_china) orelse invalid_optvalue(src, value);
+            } else {
+                print_exit(src, "invalid rule", rule);
+            }
         }
     } else {
-        g.noaaaa_rule.add(.all);
+        g.noaaaa_rule.add_all();
     }
 }
 
@@ -417,6 +425,12 @@ fn opt_cache_refresh(in_value: ?[]const u8) void {
         invalid_optvalue(@src(), value);
 }
 
+fn opt_cache_nodata_ttl(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    g.cache_nodata_ttl = str2int.parse(@TypeOf(g.cache_nodata_ttl), value, 10) orelse
+        invalid_optvalue(@src(), value);
+}
+
 fn opt_cache_ignore(in_value: ?[]const u8) void {
     const domain = in_value.?;
     cache_ignore.add(domain) orelse invalid_optvalue(@src(), domain);
@@ -430,7 +444,7 @@ fn opt_verdict_cache(in_value: ?[]const u8) void {
 
 fn opt_hosts(in_value: ?[]const u8) void {
     const path = in_value orelse "/etc/hosts";
-    local_dns_rr.read_hosts(path) orelse
+    local_rr.read_hosts(path) orelse
         print_exit(@src(), "failed to load hosts", path);
 }
 
@@ -446,7 +460,7 @@ fn opt_dns_rr_ip(in_value: ?[]const u8) void {
     while (name_it.next()) |name| {
         var ip_it = std.mem.split(u8, ip_list, ",");
         while (ip_it.next()) |ip|
-            local_dns_rr.add_ip(name, ip) orelse invalid_optvalue(src, value);
+            local_rr.add_ip(name, ip) orelse invalid_optvalue(src, value);
     }
 }
 
@@ -464,7 +478,7 @@ fn opt_repeat_times(in_value: ?[]const u8) void {
 }
 
 fn opt_noip_as_chnip(_: ?[]const u8) void {
-    g.noip_as_chnip = true;
+    g.flags.add(.noip_as_chnip);
 }
 
 fn opt_fair_mode(_: ?[]const u8) void {
@@ -472,11 +486,11 @@ fn opt_fair_mode(_: ?[]const u8) void {
 }
 
 fn opt_reuse_port(_: ?[]const u8) void {
-    g.reuse_port = true;
+    g.flags.add(.reuse_port);
 }
 
 fn opt_verbose(_: ?[]const u8) void {
-    g.verbose = true;
+    g.flags.add(.verbose);
 }
 
 fn opt_version(_: ?[]const u8) void {
@@ -601,25 +615,23 @@ pub fn parse() void {
     var parser = Parser.init();
     parser.parse();
 
+    if (g.bind_ips.is_null())
+        g.bind_ips.add("127.0.0.1");
+
+    if (groups.get_upstream_group(.chn).is_empty())
+        groups.get_upstream_group(.chn).add("114.114.114.114") orelse unreachable;
+
+    if (groups.get_upstream_group(.gfw).is_empty())
+        groups.get_upstream_group(.gfw).add("8.8.8.8") orelse unreachable;
+
     if (g.chnroute_name.is_null())
         g.chnroute_name.set("chnroute");
 
     if (g.chnroute6_name.is_null())
         g.chnroute6_name.set("chnroute6");
 
-    if (!g.chnip_setnames.is_null() and g.chnip_setnames.is_empty())
-        g.chnip_setnames.set_ex(&.{ g.chnroute_name.str, ",", g.chnroute6_name.str });
-
-    if (g.bind_ips.is_null())
-        g.bind_ips.add("127.0.0.1");
-
-    if (g.china_group.is_empty())
-        g.china_group.add("114.114.114.114") orelse unreachable;
-
-    if (g.trust_group.is_empty())
-        g.trust_group.add("8.8.8.8") orelse unreachable;
-}
-
-pub fn @"test: opt"() !void {
-    _ = parse;
+    // see the `opt_add_tagchn_ip`
+    const ipset_name46 = groups.get_ipset_name46(.chn);
+    if (!ipset_name46.is_null() and ipset_name46.is_empty())
+        ipset_name46.set_x(&.{ g.chnroute_name.slice(), ",", g.chnroute6_name.slice() });
 }

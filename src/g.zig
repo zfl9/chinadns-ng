@@ -3,14 +3,17 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_opts = @import("build_opts");
+const c = @import("c.zig");
 const cc = @import("cc.zig");
 const dnl = @import("dnl.zig");
+const ipset = @import("ipset.zig");
 const NoAAAA = @import("NoAAAA.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
 const EvLoop = @import("EvLoop.zig");
 const flags_op = @import("flags_op.zig");
+const Tag = @import("tag.zig").Tag;
 
 pub const VERSION: cc.ConstStr = b: {
     var target: [:0]const u8 = @tagName(builtin.cpu.arch) ++ "-" ++ @tagName(builtin.os.tag) ++ "-" ++ @tagName(builtin.abi);
@@ -43,55 +46,37 @@ pub const VERSION: cc.ConstStr = b: {
     });
 };
 
-/// verbose logging
-pub var verbose: bool = false;
+pub const Flags = enum(u8) {
+    verbose = 1 << 0,
+    reuse_port = 1 << 1,
+    noip_as_chnip = 1 << 2,
+    gfwlist_first = 1 << 3,
+    bind_tcp = 1 << 4,
+    bind_udp = 1 << 5,
+    _,
+    usingnamespace flags_op.get(Flags);
+};
 
-/// SO_REUSEPORT
-pub var reuse_port: bool = false;
+pub var flags: Flags = Flags.init(.{ .gfwlist_first, .bind_tcp, .bind_udp });
 
-/// for tag:none (china-upstream)
-pub var noip_as_chnip: bool = false;
+pub inline fn verbose() bool {
+    return flags.has(.verbose);
+}
 
-/// how to filter AAAA query
 pub var noaaaa_rule: NoAAAA = .{};
-
 pub var filter_qtypes: []u16 = &.{};
 
-/// ["file1", "file2", ...]
-pub var gfwlist_filenames: StrList = .{};
-
-/// ["file1", "file2", ...]
-pub var chnlist_filenames: StrList = .{};
-
-/// only effect the same domains
-pub var gfwlist_first: bool = true;
-
 /// default tag for domains that do not match any list
-pub var default_tag: dnl.Tag = .none;
+pub var default_tag: Tag = .none;
 
-/// for tag:none (ip test)
+/// for ip test (tag:none or no-AAAA)
 pub var chnroute_name: DynStr = .{};
-
-/// for tag:none (ip6 test)
 pub var chnroute6_name: DynStr = .{};
-
-/// for tag:chn (ip add) "set4,set6"
-pub var chnip_setnames: DynStr = .{};
-
-/// for tag:gfw (ip add) "set4,set6"
-pub var gfwip_setnames: DynStr = .{};
+pub var chnroute_testctx: *const ipset.testctx_t = undefined;
 
 /// ["ip1", "ip2", ...]
 pub var bind_ips: StrList = .{};
-
 pub var bind_port: u16 = 65353;
-
-pub var bind_tcp: bool = true;
-pub var bind_udp: bool = true;
-
-pub var china_group = Upstream.Group.init(.china);
-
-pub var trust_group = Upstream.Group.init(.trust);
 
 /// too large may cause stack overflow
 pub const TRUSTDNS_PACKET_MAX: u8 = 5;
@@ -106,12 +91,15 @@ pub var upstream_timeout: u8 = 5;
 pub var cache_size: u16 = 0;
 
 /// allow stale cache
-/// - `0`: disable stale mode
-/// - `N`: stale cache is allowed if `-ttl <= N`
+/// - `0`: disable
+/// - `N`: N is the max expired_sec
 pub var cache_stale: u32 = 0;
 
-/// if the current hit cache has a `ttl <= N`, refresh it
-pub var cache_refresh: u16 = 0;
+/// refresh current cache if TTL <= N(%)
+pub var cache_refresh: u8 = 0;
+
+/// rcode=NOERROR && no-records
+pub var cache_nodata_ttl: u16 = 60;
 
 /// [tag:none] verdict cache size
 pub var verdict_cache_size: u16 = 0;

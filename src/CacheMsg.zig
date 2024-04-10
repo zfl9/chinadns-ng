@@ -13,8 +13,9 @@ const CacheMsg = @This();
 
 list_node: ListNode = undefined,
 update_time: c.time_t,
-rc: Rc = .{},
 ttl: i32,
+ttl_r: i32, // refresh if ttl <= ttl_r
+rc: Rc = .{},
 msg_len: u16,
 qnamelen: u8,
 // msg: [msg_len]u8, // {header, question, answer, authority, additional}
@@ -28,6 +29,7 @@ fn init(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32) *CacheMs
     self.* = .{
         .update_time = cc.time(),
         .ttl = ttl,
+        .ttl_r = @divTrunc(ttl * g.cache_refresh, 100),
         .msg_len = cc.to_u16(in_msg.len),
         .qnamelen = cc.to_u8(qnamelen),
     };

@@ -27,9 +27,9 @@
 #define LABEL_MAXCNT 4
 
 /* u32 (bit-field) */
-#define NAMEADDR_BIT 30
+#define NAMEADDR_BIT 29
 
-#define NAMEADDR_END ((u32)-1 & ((U32C(1) << NAMEADDR_BIT) - 1))
+#define NAMEADDR_END ((U32C(1) << NAMEADDR_BIT) - 1)
 
 struct name {
     u32 next:NAMEADDR_BIT; /* addr in s_base */
@@ -39,6 +39,7 @@ struct name {
     char name[];
 } __attribute__((packed));
 
+/* see the `NAMEADDR_BIT` */
 #define BUCKET_FREE 0 /* free */
 #define BUCKET_HEAD 1 /* list head */
 #define BUCKET_NEXT 2 /* find next-level map (L2) */
@@ -84,8 +85,10 @@ static u32 alloc(u32 sz, u32 align) {
             s_base = mmap(NULL, s_cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         else
             s_base = mremap(s_base, oldcap, s_cap, MREMAP_MAYMOVE);
-        unlikely_if (s_base == MAP_FAILED)
-            log_fatal("mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %m", (ulong)oldcap, (ulong)s_cap, errno);
+        unlikely_if (s_base == MAP_FAILED) {
+            log_error("mmap/mremap failed. oldcap:%lu newcap:%lu errno:%d %m", (ulong)oldcap, (ulong)s_cap, errno);
+            exit(1);
+        }
     }
 
     return s_end - sz;
@@ -383,11 +386,14 @@ static int split_name(const char *noalias name, int namelen, const char *noalias
     return n;
 }
 
-static bool load_list(u8 tag, const char *noalias filenames[noalias], u32 *noalias p_addr0, u32 *noalias p_n) {
-    u32 addr0 = 0, n = 0;
+/* return `has_domains` */
+static bool load_list(u8 tag, filenames_t filenames,
+    u32 *noalias p_addr0, u32 *noalias p_count, u32 *noalias p_cost)
+{
+    u32 addr0 = 0, count = 0;
 
-    for (int file_idx = 0; filenames[file_idx]; ++file_idx) {
-        const char *fname = filenames[file_idx];
+    for (int i = 0; filenames[i]; ++i) {
+        const char *fname = filenames[i];
 
         FILE *fp;
         if (strcmp(fname, "-") == 0) {
@@ -405,7 +411,7 @@ static bool load_list(u8 tag, const char *noalias filenames[noalias], u32 *noali
             const char *name = trim_name(buf);
             if (name) {
                 u32 nameaddr = add_name(name, tag);
-                if (n++ == 0) addr0 = nameaddr;
+                if (count++ == 0) addr0 = nameaddr;
             }
         }
 
@@ -415,17 +421,18 @@ static bool load_list(u8 tag, const char *noalias filenames[noalias], u32 *noali
             fclose(fp);
     }
 
-    if (n <= 0) return false;
+    if (count > 0) {
+        *p_addr0 = addr0;
+        *p_count = count;
+        *p_cost = s_end - addr0;
+    }
 
-    *p_addr0 = addr0;
-    *p_n = n;
-
-    return true;
+    return count > 0;
 }
 
-static u32 add_list(u32 addr0, u32 n) {
+static u32 add_list(u32 addr0, u32 count) {
     u32 old_nitems = dnl_nitems();
-    for (u32 i = 0, nameaddr = addr0; i < n; ++i) {
+    for (u32 i = 0, nameaddr = addr0; i < count; ++i) {
         add_to_dnl(nameaddr);
         nameaddr += get_namesz(nameaddr);
     }
@@ -433,43 +440,7 @@ static u32 add_list(u32 addr0, u32 n) {
 }
 
 #ifdef TEST
-static void do_test(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
-    const char *tagname_vec[] = {"gfwlist", "chnlist"};
-    u8 tag_vec[] = {NAME_TAG_GFW, NAME_TAG_CHN};
-    u32 addr0_vec[] = {gfw_addr0, chn_addr0};
-    u32 n_vec[] = {gfw_n, chn_n};
-
-    /* test hash lookup */
-    for (int veci = 0; veci < (int)array_n(tagname_vec); ++veci) {
-        const char *tagname = tagname_vec[veci];
-        u8 tag = tag_vec[veci];
-        u32 addr0 = addr0_vec[veci];
-        u32 n = n_vec[veci];
-
-        for (u32 i = 0, addr = addr0; i < n; ++i, addr += get_namesz(addr)) {
-            const struct name *name = ptr_name(addr);
-            char tmp[DNS_NAME_MAXLEN + 1] = {0};
-            int namelen = name->namelen;
-            memcpy(tmp, name->name, namelen);
-
-            u8 tag1;
-            if (!exists_in_dnl(name->name, namelen, &tag1))
-                log_fatal("[%s] #raw test failed: %.*s", tagname, namelen, name->name);
-            if (tag1 != tag) /* dup with chnlist ? */
-                log_info("[%s] duplicate: %.*s (tag:%s)", tagname, namelen, name->name, get_tag_desc(tag1));
-
-            u8 tag2;
-            if (!exists_in_dnl(tmp, namelen, &tag2))
-                log_fatal("[%s] #copy test failed: %.*s", tagname, namelen, name->name);
-            if (tag2 != tag1)
-                log_fatal("[%s] tag1:%s != tag2:%s (%.*s)", tagname, get_tag_desc(tag1), get_tag_desc(tag2), namelen, name->name);
-
-            *tmp = '.';
-            if (exists_in_dnl(tmp, namelen, &tag2))
-                log_fatal("[%s] #fake test failed: %.*s", tagname, namelen, name->name);
-        }
-    }
-
+static void do_test(void) {
     /* check map2 hash collisions */
     if (!map_is_null(&s_map2)) {
         int maxlen = 0;
@@ -492,44 +463,54 @@ static void do_test(u32 gfw_addr0, u32 gfw_n, u32 chn_addr0, u32 chn_n) {
 }
 #endif
 
-void dnl_init(const char *noalias gfwlist[noalias], const char *noalias chnlist[noalias], bool gfwlist_first) {
-    u32 gfw_addr0 = 0, gfw_n = 0, gfw_cost, gfw_nitems = 0;
-    bool has_gfw = gfwlist && load_list(NAME_TAG_GFW, gfwlist, &gfw_addr0, &gfw_n);
-    gfw_cost = has_gfw ? s_end - gfw_addr0 : 0;
-
-    u32 chn_addr0 = 0, chn_n = 0, chn_cost, chn_nitems = 0;
-    bool has_chn = chnlist && load_list(NAME_TAG_CHN, chnlist, &chn_addr0, &chn_n);
-    chn_cost = has_chn ? s_end - chn_addr0 : 0;
-
-    if (!has_gfw && !has_chn) return;
-
+void dnl_init(const filenames_t tag_to_filenames[TAG__MAX + 1], bool gfwlist_first) {
     /* first load_list() and then add_list() is friendly to malloc/realloc */
 
-    dnl_set_notnull(calc_lcap(gfw_n + chn_n), 0);
+    /* names loaded from <tag:chn,gfw,...>.txt */
+    u32 tag_to_addr0[TAG__MAX + 1] = {0};
+    u32 tag_to_count[TAG__MAX + 1] = {0};
+    u32 tag_to_cost[TAG__MAX + 1] = {0};
 
-    if (has_gfw && has_chn) {
-        log_info("%slist have higher priority", gfwlist_first ? "gfw" : "chn");
-        if (gfwlist_first) {
-            gfw_nitems = add_list(gfw_addr0, gfw_n);
-            chn_nitems = add_list(chn_addr0, chn_n);
-        } else {
-            chn_nitems = add_list(chn_addr0, chn_n);
-            gfw_nitems = add_list(gfw_addr0, gfw_n);
-        }
-    } else if (has_gfw) {
-        gfw_nitems = add_list(gfw_addr0, gfw_n);
+    u32 total_count = 0;
+    for (int tag = 0; tag <= TAG__MAX; ++tag) {
+        /* [tag] => {filename, ..., NULL} or NULL */
+        filenames_t filenames = tag_to_filenames[tag];
+        if (filenames && load_list(tag, filenames, &tag_to_addr0[tag], &tag_to_count[tag], &tag_to_cost[tag]))
+            total_count += tag_to_count[tag];
+    }
+    if (total_count == 0) return;
+
+    dnl_set_notnull(calc_lcap(total_count), 0);
+
+    /* names added to the map first have higher priority */
+    u8 ordered_tags[TAG__MAX + 1]; /* high -> low */
+    int ordered_tags_n = 0;
+
+    /* user-defined tags */
+    for (int tag = TAG__MAX; tag >= TAG__USER; --tag)
+        ordered_tags[ordered_tags_n++] = tag;
+
+    /* pre-defined tags */
+    if (gfwlist_first) {
+        ordered_tags[ordered_tags_n++] = TAG_GFW;
+        ordered_tags[ordered_tags_n++] = TAG_CHN;
     } else {
-        assert(has_chn);
-        chn_nitems = add_list(chn_addr0, chn_n);
+        ordered_tags[ordered_tags_n++] = TAG_CHN;
+        ordered_tags[ordered_tags_n++] = TAG_GFW;
     }
 
-    assert(dnl_nitems() == gfw_nitems + chn_nitems);
-
-    if (has_chn)
-        log_info("chnlist loaded:%lu added:%lu cost:%.3fk", (ulong)chn_n, (ulong)chn_nitems, chn_cost/1024.0);
-
-    if (has_gfw)
-        log_info("gfwlist loaded:%lu added:%lu cost:%.3fk", (ulong)gfw_n, (ulong)gfw_nitems, gfw_cost/1024.0);
+    u32 total_added = 0;
+    for (int i = 0; i < ordered_tags_n; ++i) {
+        u8 tag = ordered_tags[i];
+        if (tag_to_count[tag] > 0) {
+            u32 added = add_list(tag_to_addr0[tag], tag_to_count[tag]);
+            total_added += added;
+            log_info("%slist loaded:%lu added:%lu cost:%.3fk",
+                tag_to_name(tag), (ulong)tag_to_count[tag], (ulong)added, tag_to_cost[tag]/1024.0);
+        }
+    }
+    assert(dnl_nitems() == total_added);
+    (void)total_added;
 
     log_info("L1 items:%lu lists:%lu buckets:%lu cost:%.3fk",
         (ulong)s_map1.nitems, (ulong)s_map1.nlists, (ulong)map_cap(&s_map1), map_cap(&s_map1)*sizeof(struct bucket)/1024.0);
@@ -541,7 +522,7 @@ void dnl_init(const char *noalias gfwlist[noalias], const char *noalias chnlist[
     log_info("total memory cost (page-aligned): %.3fk", s_cap/1024.0);
 
 #ifdef TEST
-    do_test(gfw_addr0, gfw_n, chn_addr0, chn_n);
+    do_test();
 #endif
 }
 
@@ -549,7 +530,7 @@ bool dnl_is_empty(void) {
     return dnl_is_null();
 }
 
-u8 get_name_tag(const char *noalias name, int namelen, u8 default_tag) {
+u8 dnl_get_tag(const char *noalias name, int namelen, u8 default_tag) {
     assert(!dnl_is_null());
 
     const char *noalias sub_names[LABEL_MAXCNT];
@@ -560,24 +541,11 @@ u8 get_name_tag(const char *noalias name, int namelen, u8 default_tag) {
     int n = split_name(name, namelen, sub_names, sub_namelens);
     assert(n > 0);
 
-    u8 name_tag;
+    u8 tag;
     while (--n >= 0) {
-        if (exists_in_dnl(sub_names[n], sub_namelens[n], &name_tag))
-            return name_tag;
+        if (exists_in_dnl(sub_names[n], sub_namelens[n], &tag))
+            return tag;
     }
 
     return default_tag;
-}
-
-const char *get_tag_desc(u8 tag) {
-    switch (tag) {
-        case NAME_TAG_GFW:
-            return "gfw";
-        case NAME_TAG_CHN:
-            return "chn";
-        case NAME_TAG_NONE:
-            return "none";
-        default:
-            return "(null)";
-    }
 }

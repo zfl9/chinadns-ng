@@ -61,21 +61,6 @@ void *epev_get_ptrdata(const void *noalias ev);
 void epev_set_events(void *noalias ev, u32 events);
 void epev_set_ptrdata(void *noalias ev, const void *ptrdata);
 
-/* try to (blocking) send all, retry if interrupted by signal */
-#define sendall(f, fd, base, len, args...) ({ \
-    __typeof__(f(fd, base, len, ##args)) nsent_ = 0; \
-    __auto_type base_ = (base); \
-    __typeof__(nsent_) len_ = (len); \
-    assert(len_ > 0); \
-    do { \
-        __auto_type ret_ = retry_EINTR(f(fd, &base_[nsent_], len_ - nsent_, ##args)); \
-        unlikely_if (ret_ < 0) break; /* error occurs */ \
-        assert(ret_ != 0); \
-        nsent_ += ret_; \
-    } while (nsent_ < len_); \
-    nsent_ == 0 ? (__typeof__(nsent_))-1 : nsent_; \
-})
-
 #define set_iov(iov, buf, sz) ({ \
     (iov)->iov_base = (buf); \
     (iov)->iov_len = (sz); \

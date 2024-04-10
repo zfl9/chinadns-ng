@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
+const ipset = @import("ipset.zig");
 
 pub inline fn ascii_namelen(qnamelen: c_int) c_int {
     return c.dns_ascii_namelen(qnamelen);
@@ -55,7 +56,7 @@ pub inline fn truncate(msg: []const u8) []u8 {
     return _msgbuffer[0..len];
 }
 
-/// return the updated msg length
+/// return the updated msg
 pub inline fn empty_reply(msg: []u8, qnamelen: c_int) []u8 {
     const len = c.dns_empty_reply(msg.ptr, qnamelen);
     return msg[0..len];
@@ -86,12 +87,14 @@ pub const TestIpResult = enum(c_int) {
     }
 };
 
-pub inline fn test_ip(msg: []const u8, qnamelen: c_int) TestIpResult {
-    return TestIpResult.from_int(c.dns_test_ip(msg.ptr, cc.to_isize(msg.len), qnamelen));
+/// [tag:none]
+pub inline fn test_ip(msg: []const u8, qnamelen: c_int, testctx: *const ipset.testctx_t) TestIpResult {
+    return TestIpResult.from_int(c.dns_test_ip(msg.ptr, cc.to_isize(msg.len), qnamelen, testctx));
 }
 
-pub inline fn add_ip(msg: []const u8, qnamelen: c_int, is_chn: bool) void {
-    return c.dns_add_ip(msg.ptr, cc.to_isize(msg.len), qnamelen, is_chn);
+/// [tag:chn, tag:gfw, ...]
+pub inline fn add_ip(msg: []const u8, qnamelen: c_int, addctx: *ipset.addctx_t) void {
+    return c.dns_add_ip(msg.ptr, cc.to_isize(msg.len), qnamelen, addctx);
 }
 
 pub inline fn reset_opt(msg: []u8, qnamelen: c_int) ?[]u8 {
@@ -99,9 +102,9 @@ pub inline fn reset_opt(msg: []u8, qnamelen: c_int) ?[]u8 {
     return if (len > 0) msg[0..len] else null;
 }
 
-/// return null if failed or has no record
-pub inline fn get_ttl(msg: []const u8, qnamelen: c_int) ?i32 {
-    const ttl = c.dns_get_ttl(msg.ptr, cc.to_isize(msg.len), qnamelen);
+/// return `null` if there is no effective TTL
+pub inline fn get_ttl(msg: []const u8, qnamelen: c_int, nodata_ttl: i32) ?i32 {
+    const ttl = c.dns_get_ttl(msg.ptr, cc.to_isize(msg.len), qnamelen, nodata_ttl);
     return if (ttl > 0) ttl else null;
 }
 

@@ -7,7 +7,6 @@ const Level = enum {
     Info,
     Warning,
     Error,
-    Fatal,
 
     fn desc(level: Level) [:0]const u8 {
         return switch (level) {
@@ -15,7 +14,6 @@ const Level = enum {
             .Info => "I",
             .Warning => "W",
             .Error => "E",
-            .Fatal => "F",
         };
     }
 
@@ -25,7 +23,6 @@ const Level = enum {
             .Info => "32",
             .Warning => "33",
             .Error => "35",
-            .Fatal => "31",
         };
     }
 };
@@ -61,9 +58,7 @@ fn log_write(comptime level: Level, comptime src: SourceLocation, comptime in_fm
     @call(.{}, cc.printf, .{ fmt, args });
 }
 
-/// enabled for debug build only
 pub fn debug(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: anytype) void {
-    // if (comptime builtin.mode == .Debug)
     return log_write(.Debug, src, fmt, args);
 }
 
@@ -78,70 +73,3 @@ pub fn warn(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: anyt
 pub fn err(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: anytype) void {
     return log_write(.Error, src, fmt, args);
 }
-
-pub fn fatal(comptime src: SourceLocation, comptime fmt: [:0]const u8, args: anytype) noreturn {
-    log_write(.Fatal, src, fmt, args);
-    _ = cc.fflush(null);
-    cc.abort();
-}
-
-pub fn @"test: log"() !void {
-    if (cc.getenv("TEST_LOGGING") == null) return;
-    test_logging();
-}
-
-fn test_logging() void {
-    debug(@src(), "hello, %s", .{"world"});
-    debug(@src(), "hello, %s", .{"world"});
-    debug(@src(), "hello, %s", .{"world"});
-    info(@src(), "hello, %s", .{"world"});
-    info(@src(), "hello, %s", .{"world"});
-    info(@src(), "hello, %s", .{"world"});
-    warn(@src(), "hello, %s", .{"world"});
-    warn(@src(), "hello, %s", .{"world"});
-    warn(@src(), "hello, %s", .{"world"});
-    err(@src(), "hello, %s", .{"world"});
-    err(@src(), "hello, %s", .{"world"});
-    err(@src(), "hello, %s", .{"world"});
-    // fatal(@src(), "hello, %s", .{"world"});
-
-    foo.test_logging();
-}
-
-const foo = struct {
-    fn test_logging() void {
-        debug(@src(), "hello, %s", .{"world"});
-        debug(@src(), "hello, %s", .{"world"});
-        debug(@src(), "hello, %s", .{"world"});
-        info(@src(), "hello, %s", .{"world"});
-        info(@src(), "hello, %s", .{"world"});
-        info(@src(), "hello, %s", .{"world"});
-        warn(@src(), "hello, %s", .{"world"});
-        warn(@src(), "hello, %s", .{"world"});
-        warn(@src(), "hello, %s", .{"world"});
-        err(@src(), "hello, %s", .{"world"});
-        err(@src(), "hello, %s", .{"world"});
-        err(@src(), "hello, %s", .{"world"});
-        // fatal(@src(), "hello, %s", .{"world"});
-
-        bar.test_logging();
-    }
-
-    const bar = struct {
-        fn test_logging() void {
-            debug(@src(), "hello, %s", .{"world"});
-            debug(@src(), "hello, %s", .{"world"});
-            debug(@src(), "hello, %s", .{"world"});
-            info(@src(), "hello, %s", .{"world"});
-            info(@src(), "hello, %s", .{"world"});
-            info(@src(), "hello, %s", .{"world"});
-            warn(@src(), "hello, %s", .{"world"});
-            warn(@src(), "hello, %s", .{"world"});
-            warn(@src(), "hello, %s", .{"world"});
-            err(@src(), "hello, %s", .{"world"});
-            err(@src(), "hello, %s", .{"world"});
-            err(@src(), "hello, %s", .{"world"});
-            // fatal(@src(), "hello, %s", .{"world"});
-        }
-    };
-};
