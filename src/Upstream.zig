@@ -47,7 +47,7 @@ fn init(tag: Tag, proto: Proto, addr: *const cc.SockAddr, host: []const u8, ip: 
 
     var portbuf: [10]u8 = undefined;
     const url = cc.to_cstr_x(&.{
-        // https://
+        // tcp://
         proto.to_str(),
         // host@
         host,

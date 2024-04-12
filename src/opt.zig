@@ -161,21 +161,19 @@ fn opt_config(in_value: ?[]const u8) void {
     };
 
     const src = @src();
-    const value = in_value.?;
+    const filename = in_value.?;
 
     if (static.depth + 1 > 10)
-        print_exit(src, "config chain is too deep", value);
+        print_exit(src, "config chain is too deep", filename);
 
     static.depth += 1;
     defer static.depth -= 1;
 
-    if (value.len > c.PATH_MAX)
-        print_exit(src, "filename is too long", value);
+    if (filename.len > c.PATH_MAX)
+        print_exit(src, "filename is too long", filename);
 
-    const filename = cc.to_cstr(value);
-
-    const mem = cc.mmap_file(filename) orelse
-        printf_exit(src, "failed to open file: '%s' (%m)", .{filename});
+    const mem = cc.mmap_file(cc.to_cstr(filename)) orelse
+        printf_exit(src, "failed to open file: '%.*s' (%m)", .{ cc.to_int(filename.len), filename.ptr });
     defer _ = cc.munmap(mem);
 
     var line_it = std.mem.split(u8, mem, "\n");
@@ -217,7 +215,7 @@ fn opt_config(in_value: ?[]const u8) void {
         };
 
         // error handling
-        printf_exit(src, "'%s': %s: %.*s", .{ filename, err, cc.to_int(line.len), line.ptr });
+        printf_exit(src, "'%.*s': %s: %.*s", .{ cc.to_int(filename.len), filename.ptr, err, cc.to_int(line.len), line.ptr });
     }
 }
 
@@ -326,12 +324,12 @@ fn opt_ipset_name6(in_value: ?[]const u8) void {
 var _tag: Tag = .none;
 
 fn opt_group(in_value: ?[]const u8) void {
-    const group_name = cc.to_cstr(in_value.?);
+    const group_name = in_value.?;
 
     var overflow: bool = undefined;
-    _tag = Tag.register(group_name, &overflow) orelse {
+    _tag = Tag.register(cc.to_cstr(group_name), &overflow) orelse {
         const reason = cc.b2s(overflow, "overflow", "invalid");
-        printf_exit(@src(), "can't register group '%s': %s", .{ group_name, reason });
+        printf_exit(@src(), "can't register group '%.*s': %s", .{ cc.to_int(group_name.len), group_name.ptr, reason });
     };
 }
 
