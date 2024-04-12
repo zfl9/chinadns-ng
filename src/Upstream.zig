@@ -6,13 +6,13 @@ const co = @import("co.zig");
 const opt = @import("opt.zig");
 const net = @import("net.zig");
 const dns = @import("dns.zig");
-const dnl = @import("dnl.zig");
 const log = @import("log.zig");
 const server = @import("server.zig");
 const Tag = @import("tag.zig").Tag;
 const DynStr = @import("DynStr.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
+const flags_op = @import("flags_op.zig");
 const assert = std.debug.assert;
 
 // ======================================================
@@ -33,9 +33,8 @@ fdobj: ?*EvLoop.Fd = null, // udp
 // config info
 group: *const Group,
 
-host: []const u8, // DoH
-path: []const u8, // DoH
-url: [:0]const u8, // for printing
+host: ?cc.ConstStr, // DoT SNI
+url: cc.ConstStr, // for printing
 
 addr: cc.SockAddr,
 
@@ -43,18 +42,59 @@ proto: Proto,
 
 // ======================================================
 
-fn eql(self: *const Upstream, proto: Proto, addr: *const cc.SockAddr, host: []const u8, path: []const u8) bool {
+fn init(group: *const Group, proto: Proto, addr: *const cc.SockAddr, host: []const u8, ip: []const u8, port: u16) Upstream {
+    const dupe_host: ?cc.ConstStr = if (host.len > 0)
+        (g.allocator.dupeZ(u8, host) catch unreachable).ptr
+    else
+        null;
+
+    var portbuf: [10]u8 = undefined;
+    const url = cc.to_cstr_x(&.{
+        // https://
+        proto.to_str(),
+        // host@
+        host,
+        cc.b2v(host.len > 0, "@", ""),
+        // ip
+        ip,
+        // #port
+        cc.b2v(proto.is_std_port(port), "", cc.snprintf(&portbuf, "#%u", .{cc.to_uint(port)})),
+    });
+    const dupe_url = (g.allocator.dupeZ(u8, cc.strslice_c(url)) catch unreachable).ptr;
+
+    return .{
+        .group = group,
+        .proto = proto,
+        .addr = addr.*,
+        .host = dupe_host,
+        .url = dupe_url,
+    };
+}
+
+fn deinit(self: *const Upstream) void {
+    assert(self.fdobj == null);
+
+    if (self.host) |host|
+        g.allocator.free(cc.strslice_c(host));
+
+    g.allocator.free(cc.strslice_c(self.url));
+}
+
+// ======================================================
+
+fn eql(self: *const Upstream, proto: Proto, addr: *const cc.SockAddr, host: []const u8) bool {
     // zig fmt: off
     return self.proto == proto
         and self.addr.eql(addr)
-        and std.mem.eql(u8, self.host, host)
-        and std.mem.eql(u8, self.path, path);
+        and std.mem.eql(u8, cc.strslice_c(self.host orelse ""), host);
     // zig fmt: on
 }
 
-/// for udpin upstream
+// ======================================================
+
+/// for udp upstream
 fn on_eol(self: *Upstream) void {
-    assert(self.proto == .udpin);
+    assert(self.proto == .udpi or self.proto == .udp);
 
     const fdobj = self.fdobj orelse return;
     self.fdobj = null; // set to null
@@ -64,7 +104,7 @@ fn on_eol(self: *Upstream) void {
     // log.debug(
     //     @src(),
     //     "udp upstream socket(fd:%d, url:'%s', group:%s) is end-of-life ...",
-    //     .{ fdobj.fd, self.url.ptr, @tagName(self.group.tag).ptr },
+    //     .{ fdobj.fd, self.url, @tagName(self.group.tag).ptr },
     // );
 
     if (fdobj.read_frame) |frame| {
@@ -74,27 +114,31 @@ fn on_eol(self: *Upstream) void {
     }
 }
 
-/// for `udp` and `udpin` upstream
+/// for udp upstream
 fn is_eol(self: *const Upstream, in_fdobj: *EvLoop.Fd) bool {
     return self.fdobj != in_fdobj;
 }
 
+// ======================================================
+
 /// [nosuspend] send query to upstream
 fn send(self: *Upstream, qmsg: *RcMsg) void {
     switch (self.proto) {
-        .tcpin, .tcp => self.send_tcp(qmsg),
-        .udpin => self.send_udp(qmsg),
-        .https => self.send_https(qmsg),
+        .tcpi, .tcp => self.send_tcp(qmsg),
+        .udpi, .udp => self.send_udp(qmsg),
+        .tls => self.send_tls(qmsg),
         else => unreachable,
     }
 }
 
+// ======================================================
+
 fn send_tcp(self: *Upstream, qmsg: *RcMsg) void {
-    return co.create(_send_tcp, .{ self, qmsg });
+    return co.create(do_send_tcp, .{ self, qmsg });
 }
 
-fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
-    defer co.terminate(@frame(), @frameSize(_send_tcp));
+fn do_send_tcp(self: *Upstream, qmsg: *RcMsg) void {
+    defer co.terminate(@frame(), @frameSize(do_send_tcp));
 
     const fd = net.new_tcp_conn_sock(self.addr.family()) orelse return;
 
@@ -149,10 +193,12 @@ fn _send_tcp(self: *Upstream, qmsg: *RcMsg) void {
 
     const src = @src();
     if (e.msg) |msg|
-        log.err(src, "%s(%d, '%s') failed: %s", .{ e.op, fd, self.url.ptr, msg })
+        log.err(src, "%s(%d, '%s') failed: %s", .{ e.op, fd, self.url, msg })
     else
-        log.err(src, "%s(%d, '%s') failed: (%d) %m", .{ e.op, fd, self.url.ptr, cc.errno() });
+        log.err(src, "%s(%d, '%s') failed: (%d) %m", .{ e.op, fd, self.url, cc.errno() });
 }
+
+// ======================================================
 
 fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
     const fd = if (self.fdobj) |fdobj| fdobj.fd else b: {
@@ -192,7 +238,7 @@ fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
     }
 
     // error handling
-    log.err(@src(), "send_query(%d, '%s') failed: (%d) %m", .{ fd, self.url.ptr, cc.errno() });
+    log.err(@src(), "send_query(%d, '%s') failed: (%d) %m", .{ fd, self.url, cc.errno() });
 }
 
 fn recv_udp(self: *Upstream, fd: c_int) void {
@@ -220,7 +266,7 @@ fn recv_udp(self: *Upstream, fd: c_int) void {
         const rlen = while (!self.is_eol(fdobj)) {
             break cc.recv(fd, rmsg.buf(), 0) orelse {
                 if (cc.errno() != c.EAGAIN) {
-                    log.err(@src(), "recv(%d, '%s') failed: (%d) %m", .{ fd, self.url.ptr, cc.errno() });
+                    log.err(@src(), "recv(%d, '%s') failed: (%d) %m", .{ fd, self.url, cc.errno() });
                     return;
                 }
                 g.evloop.wait_readable(fdobj);
@@ -234,31 +280,33 @@ fn recv_udp(self: *Upstream, fd: c_int) void {
     }
 }
 
-fn send_https(self: *Upstream, qmsg: *RcMsg) void {
+// ======================================================
+
+fn send_tls(self: *Upstream, qmsg: *RcMsg) void {
     _ = qmsg;
 
     // TODO
-    log.warn(@src(), "currently https upstream is not supported: %s", .{self.url.ptr});
+    log.warn(@src(), "currently tls upstream is not supported: %s", .{self.url});
 }
 
 // ======================================================
 
 pub const Proto = enum {
-    raw, // "1.1.1.1" (tcpin + udpin) only exists in the parsing stage
-    tcpin, // "tcpin://1.1.1.1" (enabled when the query msg is received over tcp)
-    udpin, // "udpin://1.1.1.1" (enabled when the query msg is received over udp)
+    raw, // "1.1.1.1" (tcpi + udpi) only exists in the parsing stage
+    tcpi, // "tcpi://1.1.1.1" (enabled when the query msg is received over tcp)
+    udpi, // "udpi://1.1.1.1" (enabled when the query msg is received over udp)
 
     tcp, // "tcp://1.1.1.1"
-    https, // "https://1.1.1.1"
+    udp, // "udp://1.1.1.1"
+    tls, // "tls://1.1.1.1"
 
     /// "tcp://"
     pub fn from_str(str: []const u8) ?Proto {
-        // zig fmt: off
         const map = .{
-            .{ .str = "tcp://",   .proto = .tcp   },
-            .{ .str = "https://", .proto = .https },
+            .{ .str = "tcp://", .proto = .tcp },
+            .{ .str = "udp://", .proto = .udp },
+            .{ .str = "tls://", .proto = .tls },
         };
-        // zig fmt: on
         inline for (map) |v| {
             if (std.mem.eql(u8, str, v.str))
                 return v.proto;
@@ -269,25 +317,22 @@ pub const Proto = enum {
     /// "tcp://" (string literal)
     pub fn to_str(self: Proto) [:0]const u8 {
         return switch (self) {
-            .tcpin => "tcpin://",
-            .udpin => "udpin://",
+            .tcpi => "tcpi://",
+            .udpi => "udpi://",
             .tcp => "tcp://",
-            .https => "https://",
+            .udp => "udp://",
+            .tls => "tls://",
             else => unreachable,
         };
     }
 
     pub fn require_host(self: Proto) bool {
-        return self == .https;
-    }
-
-    pub fn require_path(self: Proto) bool {
-        return self == .https;
+        return self == .tls;
     }
 
     pub fn std_port(self: Proto) u16 {
         return switch (self) {
-            .https => 443,
+            .tls => 853,
             else => 53,
         };
     }
@@ -299,37 +344,40 @@ pub const Proto = enum {
 
 // ======================================================
 
+/// for udp upstream
+const Life = struct {
+    create_time: c.time_t = 0,
+    query_count: u8 = 0,
+
+    const LIFE_MAX = 20;
+    const QUERY_MAX = 10;
+
+    /// called before the first query
+    pub fn check_eol(self: *Life, now_time: c.time_t) bool {
+        // zig fmt: off
+        const eol = self.query_count >= QUERY_MAX
+                    or now_time < self.create_time
+                    or now_time - self.create_time >= LIFE_MAX;
+        // zig fmt: on
+        if (eol) {
+            self.create_time = now_time;
+            self.query_count = 0;
+        }
+        return eol;
+    }
+
+    pub fn on_query(self: *Life, add_count: u8) void {
+        self.query_count +|= add_count;
+    }
+};
+
+// ======================================================
+
 pub const Group = struct {
     list: std.ArrayListUnmanaged(Upstream) = .{},
+    udpi_life: Life = .{},
     udp_life: Life = .{},
     tag: Tag,
-
-    /// for udpin upstream
-    const Life = struct {
-        create_time: c.time_t = 0,
-        query_count: u8 = 0,
-
-        const LIFE_MAX = 20;
-        const QUERY_MAX = 10;
-
-        /// called before the first query
-        pub fn check_eol(self: *Life, now_time: c.time_t) bool {
-            // zig fmt: off
-            const eol = self.query_count >= QUERY_MAX
-                        or now_time < self.create_time
-                        or now_time - self.create_time >= LIFE_MAX;
-            // zig fmt: on
-            if (eol) {
-                self.create_time = now_time;
-                self.query_count = 0;
-            }
-            return eol;
-        }
-
-        pub fn on_query(self: *Life, add_count: u8) void {
-            self.query_count +|= add_count;
-        }
-    };
 
     pub fn init(tag: Tag) Group {
         return .{ .tag = tag };
@@ -343,13 +391,15 @@ pub const Group = struct {
         return self.items().len == 0;
     }
 
-    noinline fn parse_failed(msg: [:0]const u8, value: []const u8) ?void {
+    // ======================================================
+
+    fn parse_failed(msg: [:0]const u8, value: []const u8) ?void {
         opt.print(@src(), msg, value);
         return null;
     }
 
-    /// "[proto://][host@]ip[#port][path]"
-    pub noinline fn add(self: *Group, in_value: []const u8) ?void {
+    /// "[proto://][host@]ip[#port]"
+    pub fn add(self: *Group, in_value: []const u8) ?void {
         @setCold(true);
 
         var value = in_value;
@@ -365,7 +415,7 @@ pub const Group = struct {
             break :b Proto.raw;
         };
 
-        // host, only DoH needs it
+        // host, only DoT needs it
         const host = b: {
             if (std.mem.indexOf(u8, value, "@")) |i| {
                 const host = value[0..i];
@@ -375,18 +425,6 @@ pub const Group = struct {
                 if (!proto.require_host())
                     return parse_failed("no host required", host);
                 break :b host;
-            }
-            break :b "";
-        };
-
-        // path, only DoH needs it
-        const path = b: {
-            if (std.mem.indexOfScalar(u8, value, '/')) |i| {
-                const path = value[i..];
-                value = value[0..i];
-                if (!proto.require_path())
-                    return parse_failed("no path required", path);
-                break :b path;
             }
             break :b "";
         };
@@ -406,108 +444,116 @@ pub const Group = struct {
         opt.check_ip(ip) orelse return null;
 
         if (proto == .raw) {
-            self.do_add(.tcpin, host, ip, port, path);
-            self.do_add(.udpin, host, ip, port, path);
+            if (g.flags.has(.bind_tcp)) self.do_add(.tcpi, host, ip, port);
+            if (g.flags.has(.bind_udp)) self.do_add(.udpi, host, ip, port);
         } else {
-            self.do_add(proto, host, ip, port, path);
+            self.do_add(proto, host, ip, port);
         }
     }
 
-    noinline fn do_add(self: *Group, proto: Proto, host: []const u8, ip: []const u8, port: u16, path: []const u8) void {
-        @setCold(true);
-
+    fn do_add(self: *Group, proto: Proto, host: []const u8, ip: []const u8, port: u16) void {
         const addr = cc.SockAddr.from_text(cc.to_cstr(ip), port);
 
-        for (self.items()) |*v| {
-            if (v.eql(proto, &addr, host, path))
+        for (self.items()) |*upstream| {
+            if (upstream.eql(proto, &addr, host))
                 return;
         }
 
-        var url = DynStr{};
-
-        var portbuf: [10]u8 = undefined;
-
-        url.set_x(&.{
-            // https://
-            proto.to_str(),
-            // host@
-            host,
-            cc.b2v(host.len > 0, "@", ""),
-            // ip
-            ip,
-            // #port
-            cc.b2v(proto.is_std_port(port), "", cc.snprintf(&portbuf, "#%u", .{cc.to_uint(port)})),
-            // path
-            path,
-        });
-
-        var upstream = Upstream{
-            .group = self,
-            .proto = proto,
-            .addr = addr,
-            .host = host,
-            .path = path,
-            .url = url.slice(),
-        };
-
-        const raw_values = .{ host, path };
-        const field_names = .{ "host", "path" };
-        inline for (field_names) |field_name, i| {
-            const raw_v = raw_values[i];
-            if (raw_v.len > 0) {
-                const pos = std.mem.indexOfPosLinear(u8, upstream.url, 0, raw_v).?;
-                @field(upstream, field_name) = upstream.url[pos .. pos + raw_v.len]; // pointer to allocated memory
-            } else {
-                @field(upstream, field_name) = ""; // pointer to const string
-            }
-        }
-
-        self.list.append(g.allocator, upstream) catch unreachable;
+        const ptr = self.list.addOne(g.allocator) catch unreachable;
+        ptr.* = Upstream.init(self, proto, &addr, host, ip, port);
     }
 
+    pub fn rm_useless(self: *Group) void {
+        @setCold(true);
+
+        var len = self.items().len;
+        while (len > 0) : (len -= 1) {
+            const i = len - 1;
+            const upstream = &self.items()[i];
+            const rm = switch (upstream.proto) {
+                .tcpi => !g.flags.has(.bind_tcp),
+                .udpi => !g.flags.has(.bind_udp),
+                else => continue,
+            };
+            if (rm) {
+                upstream.deinit();
+                _ = self.list.orderedRemove(i);
+            }
+        }
+    }
+
+    // ======================================================
+
     /// [nosuspend]
-    /// @in_proto: `.tcpin` or `.udpin`
-    pub fn send(self: *Group, qmsg: *RcMsg, in_proto: Proto, first_query: bool) void {
+    pub fn send(self: *Group, qmsg: *RcMsg, flags: SendFlags) void {
+        const first_query = flags.has(.first_query);
+        const from_tcp = flags.has(.from_tcp);
+
         const verbose_info = if (g.verbose()) .{
             .qid = dns.get_id(qmsg.msg()),
-            .from = cc.b2s(in_proto == .tcpin, "tcp", "udp"),
+            .from = cc.b2s(from_tcp, "tcp", "udp"),
         } else undefined;
 
         const now_time = if (first_query) cc.time() else undefined;
 
+        var udpi_eol: ?bool = null;
         var udp_eol: ?bool = null;
-        var udp_touched = false;
+
+        var udpi_used = false;
+        var udp_used = false;
+
+        const in_proto: Proto = if (from_tcp) .tcpi else .udpi;
 
         for (self.items()) |*upstream| {
-            if (upstream.proto == .tcpin or upstream.proto == .udpin)
-                if (in_proto != upstream.proto) continue;
+            if (upstream.proto == .tcpi or upstream.proto == .udpi)
+                if (upstream.proto != in_proto) continue;
 
             if (g.verbose())
                 log.info(
                     @src(),
                     "forward query(qid:%u, from:%s) to upstream %s",
-                    .{ cc.to_uint(verbose_info.qid), verbose_info.from, upstream.url.ptr },
+                    .{ cc.to_uint(verbose_info.qid), verbose_info.from, upstream.url },
                 );
 
-            if (upstream.proto == .udpin) {
-                udp_touched = true;
+            if (upstream.proto == .udpi or upstream.proto == .udp) {
+                if (upstream.proto == .udpi)
+                    udpi_used = true
+                else
+                    udp_used = true;
 
                 if (first_query) {
-                    const eol = udp_eol orelse b: {
-                        const eol = self.udp_life.check_eol(now_time);
-                        udp_eol = eol;
-                        break :b eol;
-                    };
-                    if (eol) upstream.on_eol();
+                    const eol = if (upstream.proto == .udpi)
+                        udpi_eol orelse b: {
+                            const eol = self.udpi_life.check_eol(now_time);
+                            udpi_eol = eol;
+                            break :b eol;
+                        }
+                    else
+                        udp_eol orelse b: {
+                            const eol = self.udp_life.check_eol(now_time);
+                            udp_eol = eol;
+                            break :b eol;
+                        };
+
+                    if (eol)
+                        upstream.on_eol();
                 }
             }
 
             upstream.send(qmsg);
         }
 
-        if (udp_touched) {
+        if (udpi_used or udp_used) {
             const add_count = if (self.tag == .gfw) g.trustdns_packet_n else 1;
-            self.udp_life.on_query(add_count);
+            if (udpi_used) self.udpi_life.on_query(add_count);
+            if (udp_used) self.udp_life.on_query(add_count);
         }
     }
+};
+
+pub const SendFlags = enum(u8) {
+    first_query = 1 << 0, // qctx_list: empty -> non-empty
+    from_tcp = 1 << 1, // query from tcp or udp(default)
+    _,
+    usingnamespace flags_op.get(SendFlags);
 };

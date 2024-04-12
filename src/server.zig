@@ -49,7 +49,7 @@ const QueryCtx = struct {
 
     pub const Flags = enum(u8) {
         from_local = 1 << 0, // {fdobj, src_addr} have undefined values (priority over other `.from_*`)
-        from_tcp = 1 << 1,
+        from_tcp = 1 << 1, // default: from_udp
         is_china_domain = 1 << 2, // tag:none [verdict]
         non_china_domain = 1 << 3, // tag:none [verdict]
         _, // non-exhaustive enum
@@ -456,7 +456,10 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     }
 
     // for upstream_group.send()
-    var in_proto: Upstream.Proto = if (qflags.has(.from_tcp)) .tcpin else .udpin;
+    var send_flags: Upstream.SendFlags = Upstream.SendFlags.empty();
+
+    if (qflags.has(.from_tcp))
+        send_flags.add(.from_tcp);
 
     // check the cache
     var ttl: i32 = undefined;
@@ -477,8 +480,8 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
             qlog.refresh(ttl);
 
         // avoid receiving truncated response
-        if (in_proto == .udpin and cache_msg.len + 30 > c.DNS_EDNS_MINSIZE)
-            in_proto = .tcpin;
+        if (!send_flags.has(.from_tcp) and cache_msg.len + 30 > c.DNS_EDNS_MINSIZE)
+            send_flags.add(.from_tcp);
 
         // mark the qctx
         qflags.add(.from_local);
@@ -513,20 +516,23 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         &first_query,
     ) orelse return;
 
+    if (first_query)
+        send_flags.add(.first_query);
+
     if (tag == .none) {
         if (tagnone_china)
-            send_query(.chn, qmsg, in_proto, first_query, qctx, &qlog);
+            send_query(.chn, qmsg, send_flags, qctx, &qlog);
         if (tagnone_trust)
-            send_query(.gfw, qmsg, in_proto, first_query, qctx, &qlog);
+            send_query(.gfw, qmsg, send_flags, qctx, &qlog);
     } else {
-        send_query(tag, qmsg, in_proto, first_query, qctx, &qlog);
+        send_query(tag, qmsg, send_flags, qctx, &qlog);
     }
 }
 
 /// nosuspend
-fn send_query(to_tag: Tag, qmsg: *RcMsg, in_proto: Upstream.Proto, first_query: bool, qctx: *const QueryCtx, qlog: *const QueryLog) void {
+fn send_query(to_tag: Tag, qmsg: *RcMsg, send_flags: Upstream.SendFlags, qctx: *const QueryCtx, qlog: *const QueryLog) void {
     if (g.verbose()) qlog.forward(qctx, to_tag);
-    nosuspend groups.get_upstream_group(to_tag).send(qmsg, in_proto, first_query);
+    nosuspend groups.get_upstream_group(to_tag).send(qmsg, send_flags);
 }
 
 // =========================================================================
@@ -620,7 +626,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     var qnamelen: c_int = undefined;
 
     if (!dns.check_reply(msg, p_ascii_namebuf, &qnamelen)) {
-        log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url.ptr});
+        log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url});
         return;
     }
 
@@ -643,6 +649,14 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
 
     if (g.verbose())
         rlog.tag = qctx.tag;
+
+    // query from tcp client && reply is truncated
+    // NOTE: udp resolver will auto retry with TCP
+    if (dns.is_tc(msg) and qctx.flags.has(.from_tcp)) {
+        if (g.verbose())
+            rlog.reply("drop_tc", null);
+        return;
+    }
 
     var ip_test_res: ?dns.TestIpResult = null;
 

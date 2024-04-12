@@ -5,8 +5,6 @@ const cc = @import("cc.zig");
 const opt = @import("opt.zig");
 const dns = @import("dns.zig");
 const log = @import("log.zig");
-const dnl = @import("dnl.zig");
-const flags_op = @import("flags_op.zig");
 const Tag = @import("tag.zig").Tag;
 
 // ================================================

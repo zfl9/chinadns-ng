@@ -15,7 +15,7 @@ vec: SentinelVector(?cc.ConstStr, null) = .{},
 /// if the string already exists, it will not be added
 pub fn add(self: *StrList, str: []const u8) void {
     for (self.items()) |cstr| {
-        if (std.mem.eql(u8, cc.strslice(cstr), str))
+        if (std.mem.eql(u8, cc.strslice_c(cstr), str))
             return;
     }
     self.vec.append().* = (g.allocator.dupeZ(u8, str) catch unreachable).ptr;

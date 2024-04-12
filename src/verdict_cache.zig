@@ -3,7 +3,6 @@ const g = @import("g.zig");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
 const dns = @import("dns.zig");
-const Upstream = @import("Upstream.zig");
 const assert = std.debug.assert;
 
 /// for tag:none domains

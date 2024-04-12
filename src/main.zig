@@ -9,12 +9,10 @@ const g = @import("g.zig");
 const log = @import("log.zig");
 const opt = @import("opt.zig");
 const net = @import("net.zig");
-const dnl = @import("dnl.zig");
 const ipset = @import("ipset.zig");
 const server = @import("server.zig");
 const EvLoop = @import("EvLoop.zig");
 const co = @import("co.zig");
-const cache = @import("cache.zig");
 const groups = @import("groups.zig");
 
 // TODO:

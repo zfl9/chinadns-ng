@@ -139,11 +139,13 @@ pub fn on_start() void {
             else if (tag != .chn and tag != .gfw and tag != g.default_tag)
                 break :e .{ .tag = tag, .msg = "dnl_filenames is empty" };
 
+            group.upstream_group.rm_useless();
+
             if (group.upstream_group.is_empty())
                 break :e .{ .tag = tag, .msg = "upstream_group is empty" };
 
             for (group.upstream_group.items()) |*upstream|
-                log.info(src, "tag:%s upstream: %s", .{ tag.name(), upstream.url.ptr });
+                log.info(src, "tag:%s upstream: %s", .{ tag.name(), upstream.url });
 
             if (!group.ipset_name46.is_empty()) {
                 const name46 = group.ipset_name46.cstr();

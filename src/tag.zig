@@ -45,9 +45,9 @@ pub const Tag = enum(u8) {
 // ========================================================
 
 pub fn @"test: to name"() !void {
-    try testing.expectEqualStrings("chn", cc.strslice(Tag.chn.name()));
-    try testing.expectEqualStrings("gfw", cc.strslice(Tag.gfw.name()));
-    try testing.expectEqualStrings("none", cc.strslice(Tag.none.name()));
+    try testing.expectEqualStrings("chn", cc.strslice_c(Tag.chn.name()));
+    try testing.expectEqualStrings("gfw", cc.strslice_c(Tag.gfw.name()));
+    try testing.expectEqualStrings("none", cc.strslice_c(Tag.none.name()));
 }
 
 pub fn @"test: from name"() !void {
