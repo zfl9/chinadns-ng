@@ -441,8 +441,9 @@ pub const Group = struct {
         opt.check_ip(ip) orelse return null;
 
         if (proto == .raw) {
-            if (g.flags.has(.bind_tcp)) self.do_add(tag, .tcpi, host, ip, port);
-            if (g.flags.has(.bind_udp)) self.do_add(tag, .udpi, host, ip, port);
+            // `bind_tcp/bind_udp` conditions can't be checked because `opt.parse()` is being executed
+            self.do_add(tag, .tcpi, host, ip, port);
+            self.do_add(tag, .udpi, host, ip, port);
         } else {
             self.do_add(tag, proto, host, ip, port);
         }
