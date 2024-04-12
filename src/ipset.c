@@ -278,7 +278,7 @@ static int end_add_ip_nftset(const struct ipset_addctx *noalias ctx);
 
 /* testctx */
 #define t_msg(ctx, v4) \
-    (*((v4) ? &(ctx)->msg4: &(ctx)->msg6))
+    (*((v4) ? &(ctx)->msg4 : &(ctx)->msg6))
 
 /* testctx */
 #define t_ip(ctx, v4) \
@@ -429,6 +429,7 @@ static void parse_name_nftset(const char *noalias name,
 
 err:
     log_error("%s: '%s'", err, name);
+    exit(1);
 }
 
 static void init_testmsg_nftset(struct nlmsghdr *noalias nlmsg, const char *noalias name, bool v4) {
@@ -563,7 +564,10 @@ static bool init(const char *noalias name46) {
     return is_ipset;
 }
 
-static void init_testctx(struct ipset_testctx *noalias ctx, const char *noalias name4, const char *noalias name6, bool is_ipset, bool ack) {
+static void init_testctx(const struct ipset_testctx *noalias ctx,
+    const char *noalias name4, const char *noalias name6,
+    bool is_ipset, bool ack)
+{
     if (is_ipset) {
         if (ctx->msg4) init_testmsg_ipset(ctx->msg4, name4, true, ack);
         if (ctx->msg6) init_testmsg_ipset(ctx->msg6, name6, false, ack);
