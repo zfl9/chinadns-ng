@@ -74,11 +74,10 @@ pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (cache_ignore.is_ignored(msg, qnamelen))
         return false;
 
-    // e.g. remove EDNS COOKIE
-    msg = dns.reset_opt(msg, qnamelen) orelse return false;
-
     const ttl = dns.get_ttl(msg, qnamelen, g.cache_nodata_ttl) orelse return false;
     p_ttl.* = ttl;
+
+    msg = dns.minimise(msg, qnamelen) orelse return false;
 
     const res = _map.getOrPut(g.allocator, dns.question(msg, qnamelen)) catch unreachable;
     if (res.found_existing) {

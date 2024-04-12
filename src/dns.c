@@ -448,63 +448,23 @@ void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset
     ipset_end_add_ip(ctx);
 }
 
-struct reset_opt_ud {
-    void *msg;
-    ssize_t len;
-    int rr_idx;
-};
-
-static bool reset_opt(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {
-    (void)rnamelen;
-
-    struct reset_opt_ud *u = ud;
-
-    if (ntohs(record->rtype) == DNS_TYPE_OPT) {
-        *is_break = true;
-
-        // remove: DNSSEC OK bit
-        record->rttl = htonl(ntohl(record->rttl) & 0xFFFF0000);
-
-        // remove: {attribute, value} pairs
-        if (record->rdatalen != 0) {
-            record->rdatalen = 0;
-
-            struct dns_header *h = u->msg;
-            int total_count = get_records_count(h);
-            int additional_count = get_additional_count(h);
-
-            int rm_count = total_count - (u->rr_idx + 1);
-            if (rm_count > 0) {
-                unlikely_if (rm_count >= additional_count) return false;
-                h->additional_count = htons(additional_count - rm_count);
-            }
-
-            u->len = ((void *)record + sizeof(*record)) - u->msg;
-        }
-    }
-
-    u->rr_idx++;
-
-    return true;
-}
-
-u16 dns_reset_opt(void *noalias msg, ssize_t len, int qnamelen) {
+u16 dns_minimise(void *noalias msg, ssize_t len, int qnamelen) {
     if (!is_normal_msg(msg))
         return 0;
 
-    struct reset_opt_ud ud = {
-        .msg = msg,
-        .len = len,
-        .rr_idx = 0,
-    };
+    void *start = msg;
 
-    int count = get_records_count(msg);
+    int count = get_answer_count(msg);
     move_to_records(msg, len, qnamelen);
 
-    unlikely_if (!foreach_record((void **)&msg, &len, count, reset_opt, &ud))
+    unlikely_if (!skip_record(&msg, &len, count))
         return 0;
 
-    return ud.len;
+    struct dns_header *h = start;
+    h->authority_count = 0;
+    h->additional_count = 0;
+
+    return msg - start;
 }
 
 static bool get_ttl(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {

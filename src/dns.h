@@ -89,7 +89,7 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen, const struct
 void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset_addctx *noalias ctx);
 
 /* return the updated length of the msg (0 means error) */
-u16 dns_reset_opt(void *noalias msg, ssize_t len, int qnamelen);
+u16 dns_minimise(void *noalias msg, ssize_t len, int qnamelen);
 
 /* return -1 if failed */
 s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, s32 nodata_ttl);
