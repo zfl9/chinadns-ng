@@ -31,18 +31,15 @@ const Upstream = @This();
 fdobj: ?*EvLoop.Fd = null, // udp
 
 // config info
-group: *const Group,
-
 host: ?cc.ConstStr, // DoT SNI
 url: cc.ConstStr, // for printing
-
 addr: cc.SockAddr,
-
 proto: Proto,
+tag: Tag,
 
 // ======================================================
 
-fn init(group: *const Group, proto: Proto, addr: *const cc.SockAddr, host: []const u8, ip: []const u8, port: u16) Upstream {
+fn init(tag: Tag, proto: Proto, addr: *const cc.SockAddr, host: []const u8, ip: []const u8, port: u16) Upstream {
     const dupe_host: ?cc.ConstStr = if (host.len > 0)
         (g.allocator.dupeZ(u8, host) catch unreachable).ptr
     else
@@ -63,7 +60,7 @@ fn init(group: *const Group, proto: Proto, addr: *const cc.SockAddr, host: []con
     const dupe_url = (g.allocator.dupeZ(u8, cc.strslice_c(url)) catch unreachable).ptr;
 
     return .{
-        .group = group,
+        .tag = tag,
         .proto = proto,
         .addr = addr.*,
         .host = dupe_host,
@@ -208,7 +205,7 @@ fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
         break :b fd;
     };
 
-    if (self.group.tag == .gfw and g.trustdns_packet_n > 1) {
+    if (self.tag == .gfw and g.trustdns_packet_n > 1) {
         var iov = [_]cc.iovec_t{
             .{
                 .iov_base = qmsg.msg().ptr,
@@ -377,11 +374,6 @@ pub const Group = struct {
     list: std.ArrayListUnmanaged(Upstream) = .{},
     udpi_life: Life = .{},
     udp_life: Life = .{},
-    tag: Tag,
-
-    pub fn init(tag: Tag) Group {
-        return .{ .tag = tag };
-    }
 
     pub inline fn items(self: *const Group) []Upstream {
         return self.list.items;
@@ -389,6 +381,11 @@ pub const Group = struct {
 
     pub inline fn is_empty(self: *const Group) bool {
         return self.items().len == 0;
+    }
+
+    /// assume list non-empty
+    pub inline fn get_tag(self: *const Group) Tag {
+        return self.items()[0].tag;
     }
 
     // ======================================================
@@ -399,7 +396,7 @@ pub const Group = struct {
     }
 
     /// "[proto://][host@]ip[#port]"
-    pub fn add(self: *Group, in_value: []const u8) ?void {
+    pub fn add(self: *Group, tag: Tag, in_value: []const u8) ?void {
         @setCold(true);
 
         var value = in_value;
@@ -444,14 +441,14 @@ pub const Group = struct {
         opt.check_ip(ip) orelse return null;
 
         if (proto == .raw) {
-            if (g.flags.has(.bind_tcp)) self.do_add(.tcpi, host, ip, port);
-            if (g.flags.has(.bind_udp)) self.do_add(.udpi, host, ip, port);
+            if (g.flags.has(.bind_tcp)) self.do_add(tag, .tcpi, host, ip, port);
+            if (g.flags.has(.bind_udp)) self.do_add(tag, .udpi, host, ip, port);
         } else {
-            self.do_add(proto, host, ip, port);
+            self.do_add(tag, proto, host, ip, port);
         }
     }
 
-    fn do_add(self: *Group, proto: Proto, host: []const u8, ip: []const u8, port: u16) void {
+    fn do_add(self: *Group, tag: Tag, proto: Proto, host: []const u8, ip: []const u8, port: u16) void {
         const addr = cc.SockAddr.from_text(cc.to_cstr(ip), port);
 
         for (self.items()) |*upstream| {
@@ -460,7 +457,7 @@ pub const Group = struct {
         }
 
         const ptr = self.list.addOne(g.allocator) catch unreachable;
-        ptr.* = Upstream.init(self, proto, &addr, host, ip, port);
+        ptr.* = Upstream.init(tag, proto, &addr, host, ip, port);
     }
 
     pub fn rm_useless(self: *Group) void {
@@ -544,7 +541,7 @@ pub const Group = struct {
         }
 
         if (udpi_used or udp_used) {
-            const add_count = if (self.tag == .gfw) g.trustdns_packet_n else 1;
+            const add_count = if (self.get_tag() == .gfw) g.trustdns_packet_n else 1;
             if (udpi_used) self.udpi_life.on_query(add_count);
             if (udp_used) self.udp_life.on_query(add_count);
         }

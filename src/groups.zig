@@ -19,19 +19,10 @@ const testing = std.testing;
 var _tag_to_group: std.ArrayListUnmanaged(Group) = .{};
 
 const Group = struct {
-    dnl_filenames: StrList,
-    upstream_group: Upstream.Group,
-    ipset_name46: DynStr, // add ip to ipset/nftset
-    ipset_addctx: ?*ipset.addctx_t,
-
-    pub fn init(tag: Tag) Group {
-        return .{
-            .dnl_filenames = .{},
-            .upstream_group = Upstream.Group.init(tag),
-            .ipset_name46 = .{},
-            .ipset_addctx = null,
-        };
-    }
+    dnl_filenames: StrList = .{},
+    upstream_group: Upstream.Group = .{},
+    ipset_name46: DynStr = .{}, // add ip to ipset/nftset
+    ipset_addctx: ?*ipset.addctx_t = null,
 };
 
 // ========================================================
@@ -57,7 +48,7 @@ noinline fn ensure_groups_n(new_n: usize) void {
 
     var tag_v = cc.to_u8(old_n);
     while (tag_v < new_n) : (tag_v += 1)
-        _tag_to_group.addOneAssumeCapacity().* = Group.init(Tag.from_int(tag_v));
+        _tag_to_group.addOneAssumeCapacity().* = .{};
 }
 
 fn has(tag: Tag) bool {
@@ -111,7 +102,7 @@ pub noinline fn add_upstream(tag: Tag, upstreams: []const u8) ?void {
 
     var it = std.mem.split(u8, upstreams, ",");
     while (it.next()) |upstream|
-        upstream_group.add(upstream) orelse return null;
+        upstream_group.add(tag, upstream) orelse return null;
 }
 
 /// for opt.zig

@@ -662,7 +662,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
 
     // end the query context ?
     nosuspend if (qctx.tag == .none and is_qtype_A_AAAA) {
-        switch (upstream.group.tag) {
+        switch (upstream.tag) {
             .chn => {
                 if (qctx.flags.has(.is_china_domain) or use_china_reply(msg, qnamelen, &ip_test_res, &rlog)) {
                     if (g.verbose()) {

@@ -614,10 +614,10 @@ pub fn parse() void {
         g.bind_ips.add("127.0.0.1");
 
     if (groups.get_upstream_group(.chn).is_empty())
-        groups.get_upstream_group(.chn).add("114.114.114.114") orelse unreachable;
+        groups.add_upstream(.chn, "114.114.114.114") orelse unreachable;
 
     if (groups.get_upstream_group(.gfw).is_empty())
-        groups.get_upstream_group(.gfw).add("8.8.8.8") orelse unreachable;
+        groups.add_upstream(.gfw, "8.8.8.8") orelse unreachable;
 
     if (g.chnroute_name.is_null())
         g.chnroute_name.set("chnroute");
