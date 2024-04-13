@@ -50,7 +50,7 @@ const Flags = opaque {
     /// flags type
     pub const T = u16;
 
-    pub const all: T = std.math.maxInt(@TypeOf((NoAAAA{}).flags));
+    pub const all: T = std.math.maxInt(T);
     pub const all_ip: T = (1 << Rule.ip_china) | (1 << Rule.ip_non_china);
 };
 
