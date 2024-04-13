@@ -12,13 +12,10 @@
 - 可动态添加大陆域名结果IP至`ipset/nftset`，实现完美chnroute分流。
 - 可动态添加gfw域名结果IP至`ipset/nftset`，用于实现gfwlist透明代理。
 - 支持`nftables set`，并针对 add 操作进行了性能优化，避免操作延迟。
-- 更加细致的 no-ipv6(AAAA) 控制，可根据域名类型，上游类型进行过滤。
+- 更加细致的 no-ipv6(AAAA) 控制，可根据域名类型，IP测试结果进行过滤。
 - DNS 缓存、stale 缓存模式、缓存预刷新、缓存忽略名单（不缓存的域名）。
 - 支持 tag:none 域名的判定结果缓存，避免重复请求和判定，减少DNS泄露。
-
----
-
-**正在开发 2.0 版本，计划支持 ~~DNS 缓存~~、DoH 上游，以及其他常用特性。详见 [#144](https://github.com/zfl9/chinadns-ng/issues/144)**
+- 除默认的china、trust组外，还支持最多6个自定义组（上游dns、ipset）。
 
 ---
 
@@ -122,7 +119,7 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 
 如果遇到编译错误，请先执行 `zig build clean-all`，然后重新执行上述构建命令。
 
-可执行文件在 ./zig-out/bin 目录，将文件安装（复制）到目标主机 PATH 路径下即可。
+可执行文件在 `./zig-out/bin` 目录，将文件安装（复制）到目标主机 PATH 路径下即可。
 
 ## Docker
 
@@ -148,27 +145,25 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -m, --chnlist-file <paths>           path(s) of chnlist, '-' indicate stdin
  -g, --gfwlist-file <paths>           path(s) of gfwlist, '-' indicate stdin
  -M, --chnlist-first                  match chnlist first, default gfwlist first
- -d, --default-tag <tag>              domain default tag: chn,gfw,none(default)
- -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nft
+ -d, --default-tag <tag>              chn or gfw or <user-tag> or none(default)
+ -a, --add-tagchn-ip [set4,set6]      add the ip of name-tag:chn to ipset/nftset
                                       use '--ipset-name4/6' setname if no value
- -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nft
+ -A, --add-taggfw-ip <set4,set6>      add the ip of name-tag:gfw to ipset/nftset
  -4, --ipset-name4 <set4>             ip test for tag:none, default: chnroute
  -6, --ipset-name6 <set6>             ip test for tag:none, default: chnroute6
-                                      if setname contains @, then use nft-set
+                                      if setname contains @, then use nftset
                                       format: family_name@table_name@set_name
- -N, --no-ipv6 [rules]                filter AAAA query, rules can be a seq of:
-                                      rule a: filter AAAA for all domain
-                                      rule m: filter AAAA for tag:chn domain
-                                      rule g: filter AAAA for tag:gfw domain
-                                      rule n: filter AAAA for tag:none domain
-                                      rule c: filter AAAA for china upstream
-                                      rule t: filter AAAA for trust upstream
-                                      rule C: filter non-chnip reply from china
-                                      rule T: filter non-chnip reply from trust
-                                      if no rules is given, it defaults to 'a'
+ --group <name>                       define rule group: {dnl, upstream, ipset}
+ --group-dnl <paths>                  domain name list for the current group
+ --group-upstream <upstreams>         upstream dns server for the current group
+ --group-ipset <set4,set6>            add the ip of the current group to ipset
+ -N, --no-ipv6 [rules]                rule: tag:<name>, ip:china, ip:non_china
+                                      if no rules, then filter all AAAA queries
+ --filter-qtype <qtypes>              filter queries with the given qtype (u16)
  --cache <size>                       enable dns caching, size 0 means disabled
- --cache-stale <N>                    allow use the cached data with a TTL >= -N
- --cache-refresh <N>                  pre-refresh the cached data if the TTL <= N
+ --cache-stale <N>                    use stale cache: expired time <= N(second)
+ --cache-refresh <N>                  pre-refresh the cached data if TTL <= N(%)
+ --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
  --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
  --verdict-cache <size>               enable verdict caching for tag:none domains
  --hosts [path]                       load hosts file, default path is /etc/hosts
@@ -218,8 +213,9 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 上游服务器的地址格式是 `IP#端口`，如果只给出 IP，则端口默认为 53。
 - 2024.03.07 版本起，允许多次指定 `china-dns`、`trust-dns` 选项/配置。
 - 2024.03.07 版本起，每组上游的服务器数量不受限制（之前最多两个）。
-- 2024.03.07 版本起，可在上游地址前加上 `tcp://` 来强制使用 TCP DNS。
 - 2024.03.07 版本起，支持 UDP + TCP 上游（根据查询方的传入协议决定）。
+- 2024.03.07 版本起，可在上游地址前加上 `tcp://` 来强制使用 TCP DNS。
+- 2024.04.13 版本起，可在上游地址前加上 `udp://` 来强制使用 UDP DNS。
 
 ---
 
@@ -247,35 +243,84 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 参数格式：`ipv4集合名,ipv6集合名`，nftset 名称格式同 `ipset-name4/6`。
 - 如果要使用 nftset，那么在创建 nftset 时，请记得带上 `flags interval` 标志。
 - 如果 v6 集合没用到（如 -N 屏蔽了 AAAA），可以不创建，但参数中还是要指定。
+- 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用：
+  - `--add-tagchn-ip null,chnip6`：表示不需要收集 ipv4 地址
+  - `--add-tagchn-ip chnip,null`：表示不需要收集 ipv6 地址
+  - `--add-tagchn-ip chnip`：表示不需要收集 ipv6 地址
+  - 注意：仅当 ipv6 集合为 `null` 时，才可被省略
 
 ---
 
-- `ipset-name4` 用于指定存储了大陆 IPv4 地址的 ipset/nft 集合名，默认 chnroute。
-- `ipset-name6` 用于指定存储了大陆 IPv6 地址的 ipset/nft 集合名，默认 chnroute6。
-- 这两个集合只用于 tag:none 域名，用于判定 china 上游的解析结果是否为大陆 IP。
+- `ipset-name4` 指定存储了大陆 IPv4 地址的 ipset/nftset 集合名，默认 chnroute。
+- `ipset-name6` 指定存储了大陆 IPv6 地址的 ipset/nftset 集合名，默认 chnroute6。
 - nftset 名称格式：`family名@table名@set名`，自带的 nftset 数据文件使用如下名称：
   - 大陆 IPv4 地址集合：`inet@global@chnroute`
   - 大陆 IPv6 地址集合：`inet@global@chnroute6`
+- 这两个集合只用于 tag:none 域名，用于判定 china 上游的解析结果是否为大陆 IP。
+- 2024.04.13 版本起，也用于 `--no-ipv6` 的 `ip:china`、`ip:non_china` 规则。
+- 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用。
+
+---
+
+- `group` 声明一个自定义组（tag），参数值是组（tag）的名字。
+  - 支持最多 6 个自定义组，每个组都有 3 个信息可配置，其中 ipset 可选。
+  - 在域名匹配时（获取所属tag），自定义组的优先级高于内置组（chn、gfw）。
+  - 内置组的优先级逻辑没有改变，依旧默认 gfw 优先，使用 `-M` 切换为 chn 优先。
+  - 对于多个自定义组，按照命令行参数/配置的顺序，后声明的组具有更高的优先级。
+  - 用例 1：将 DDNS域名 划分出来，单独一个组，用域名提供商的 DNS 去解析。
+  - 用例 2：将 公司域名 划分出来，单独一个组，用公司内网专用的 DNS 去解析。
+- `group-dnl` 当前组的域名列表文件，多个用逗号隔开，可多次指定。
+- `group-upstream` 当前组的上游 DNS，多个用逗号隔开，可多次指定。
+- `group-ipset` 当前组的 ipset/nftset (可选)，用于收集解析出的结果 IP。
+
+以配置文件举例：
+
+```shell
+# 声明自定义组 "foo"
+group foo
+group-dnl foo.txt
+group-upstream 1.1.1.1,8.8.8.8
+group-ipset fooip,fooip6
+
+# 声明自定义组 "bar"
+group bar
+group-dnl bar.txt
+group-upstream 192.168.1.1
+# 没有 group-ipset，表示不需要 add ip
+```
 
 ---
 
 - `no-ipv6` 用于过滤 AAAA 查询（查询域名的 IPv6 地址），默认不设置此选项。
-  - 2023.02.27 版本起，允许指定一个可选的"规则串"，有如下规则：
-  - `a`：过滤 所有 域名的 AAAA 查询，同之前
-  - `m`：过滤 tag:chn 域名的 AAAA 查询
-  - `g`：过滤 tag:gfw 域名的 AAAA 查询
-  - `n`：过滤 tag:none 域名的 AAAA 查询
-  - `c`：禁止向 china 上游转发 AAAA 查询
-  - `t`：禁止向 trust 上游转发 AAAA 查询
-  - `C`：当 tag:none 域名的 AAAA 查询只存在 china 上游路径时，过滤 非大陆ip 响应
-  - `T`：当 tag:none 域名的 AAAA 查询只存在 trust 上游路径时，过滤 非大陆ip 响应
-  - 如`-N gt`/`--no-ipv6 gt`：过滤 tag:gfw 域名的 AAAA 查询、禁止向 trust 上游转发 AAAA 查询
+  - 未给出规则时，过滤所有 AAAA 查询。
+  - 2023.02.27 版本起，允许指定一个"规则串"，有如下规则：
+    - `a`：过滤 所有 域名的 AAAA 查询
+    - `m`：过滤 tag:chn 域名的 AAAA 查询
+    - `g`：过滤 tag:gfw 域名的 AAAA 查询
+    - `n`：过滤 tag:none 域名的 AAAA 查询
+    - `c`：禁止向 china 上游转发 AAAA 查询
+    - `t`：禁止向 trust 上游转发 AAAA 查询
+    - `C`：当 tag:none 域名的 AAAA 查询只存在 china 上游路径时，过滤 非大陆ip 响应
+    - `T`：当 tag:none 域名的 AAAA 查询只存在 trust 上游路径时，过滤 非大陆ip 响应
+    - 如`-N gt`：过滤 tag:gfw 域名的 AAAA 查询、禁止向 trust 上游转发 AAAA 查询
+  - 2024.04.13 版本起，规则有修改（**不兼容旧版**），多个规则使用逗号隔开：
+    - `tag:<name>`：按域名 tag 过滤，如 `tag:gfw`，支持自定义的 tag
+    - `ip:china`：若响应的 answer 中有 china IP，则过滤（空响应）
+    - `ip:non_china`：若响应的 answer 中有 non-china IP，则过滤（空响应）
+    - `ip:*` 规则的测试数据库由 `--ipset-name6` 选项提供，默认为 chnroute6
+
+- `filter-qtype` 过滤给定 qtype 的查询，多个用逗号隔开，可多次指定。
+  - `--filter-qtype 64,65`：过滤 SVCB(64)、HTTPS(65) 查询
 
 ---
 
 - `cache` 启用 DNS 缓存，参数是缓存容量（最多缓存多少个请求的响应消息）。
 - `cache-stale` 允许使用 TTL 已过期的（陈旧）缓存，参数是最大过期时长（秒）。
-- `cache-refresh` 若当前命中的缓存的 TTL 不足 N 秒，则提前在后台刷新该缓存。
+  - 向查询方返回“陈旧”缓存的同时，自动在后台刷新缓存，以便稍后能使用新数据。
+  - 2024.04.13 版本起，数据类型从 `u16` 改为 `u32`，以允许设置更大的过期时长。
+- `cache-refresh` 若当前查询的缓存的 TTL 不足 N 秒，则提前在后台刷新该缓存。
+  - 2024.04.13 版本起，单位从 **秒** 改为 **百分比**，如 30 表示 TTL 不足 30% 时提前刷新。
+- `cache-nodata-ttl` 给 NODATA 响应提供默认的缓存时长，默认 60 秒，0 表示不缓存。
 - `cache-ignore` 不要缓存给定的域名（后缀，最高支持 8 级），此选项可多次指定。
 
 ---
@@ -327,19 +372,19 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ipset -R <chnroute.ipset
 ipset -R <chnroute6.ipset
 
-# 使用 nft
+# 使用 nftset
 nft -f chnroute.nftset
 nft -f chnroute6.nftset
 ```
 
-> 只要没有从内核删除 ipset/nft 集合，下次运行就不需要再次导入了。
+> 只要没有从内核删除 ipset/nftset 集合，下次运行就不需要再次导入了。
 
 运行 chinadns-ng，我自己配了全局透明代理，所以访问 `8.8.8.8` 会走代理出去。
 
 ```bash
 # 加载 gfwlist 和 chnlist，并动态添加 tag:chn 域名解析结果至 ipset/nftset
 chinadns-ng -g gfwlist.txt -m chnlist.txt -a # 使用 ipset
-chinadns-ng -g gfwlist.txt -m chnlist.txt -a -4 inet@global@chnroute -6 inet@global@chnroute6 # 使用 nft
+chinadns-ng -g gfwlist.txt -m chnlist.txt -a -4 inet@global@chnroute -6 inet@global@chnroute6 # 使用 nftset
 ```
 
 chinadns-ng 默认监听 `127.0.0.1:65353`，可以给 chinadns-ng 带上 -v 参数，使用 dig 测试，观察其日志。
@@ -352,15 +397,17 @@ chinadns-ng 默认监听 `127.0.0.1:65353`，可以给 chinadns-ng 带上 -v 参
 
 - 被 chnlist.txt 匹配的域名归为 `tag:chn`
 - 被 gfwlist.txt 匹配的域名归为 `tag:gfw`
+- 被 `group-dnl` 匹配的域名归为 `自定义组`
 - 其它域名默认归为 `tag:none`，可通过 -d 修改
 
-**域名分流** 和 **ipset/nftset** 的核心流程，可以用三句话来描述：
+**域名分流** 和 **ipset/nftset** 的核心流程，可以用这几句话来描述：
 
 - `tag:chn`：只走 china 上游（单纯转发），如果启用 --add-tagchn-ip，则添加解析结果至 ipset/nftset
 - `tag:gfw`：只走 trust 上游（单纯转发），如果启用 --add-taggfw-ip，则添加解析结果至 ipset/nftset
+- `自定义组`：只走 所属组的 上游（单纯转发），如果启用 --group-ipset，则添加解析结果至 ipset/nftset
 - `tag:none`：同时走 china 和 trust，如果 china 上游返回国内 IP，则接受其结果，否则采纳 trust 结果
 
-> `tag:chn`和`tag:gfw`不存在任何判定/过滤；`tag:none`的判定/过滤也仅限于 china 上游的响应结果
+> `tag:chn`和`tag:gfw`和`自定义组`不存在任何判定/过滤；`tag:none`的判定/过滤也仅限于 china 上游的响应结果
 
 ---
 
@@ -591,7 +638,7 @@ yys.163.com.        1776    IN  CNAME   game-cache.nie.163.com.
 
 ### 如何以普通用户身份运行 chinadns-ng
 
-如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset/nft 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset/nft 集合需要 `CAP_NET_ADMIN` 能力，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。
+如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset/nftset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset/nftset 集合需要 `CAP_NET_ADMIN` 能力，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。
 
 那有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
 
