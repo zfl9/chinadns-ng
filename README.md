@@ -15,7 +15,7 @@
 - 更加细致的 no-ipv6(AAAA) 控制，可根据域名类型，IP测试结果进行过滤。
 - DNS 缓存、stale 缓存模式、缓存预刷新、缓存忽略名单（不缓存的域名）。
 - 支持 tag:none 域名的判定结果缓存，避免重复请求和判定，减少DNS泄露。
-- 除默认的china、trust组外，还支持最多6个自定义组（上游dns、ipset）。
+- 除默认的 china、trust 组外，还支持最多 6 个自定义组（上游DNS、ipset）。
 
 ---
 
@@ -264,7 +264,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 - `group` 声明一个自定义组（tag），参数值是组（tag）的名字。
   - 支持最多 6 个自定义组，每个组都有 3 个信息可配置，其中 ipset 可选。
-  - 在域名匹配时（获取所属tag），自定义组的优先级高于内置组（chn、gfw）。
+  - 在匹配域名时（获取所属tag），自定义组的优先级高于内置组（chn、gfw）。
   - 内置组的优先级逻辑没有改变，依旧默认 gfw 优先，使用 `-M` 切换为 chn 优先。
   - 对于多个自定义组，按照命令行参数/配置的顺序，后声明的组具有更高的优先级。
   - 用例 1：将 DDNS域名 划分出来，单独一个组，用域名提供商的 DNS 去解析。
@@ -308,6 +308,8 @@ group-upstream 192.168.1.1
     - `ip:china`：若响应的 answer 中有 china IP，则过滤（空响应）
     - `ip:non_china`：若响应的 answer 中有 non-china IP，则过滤（空响应）
     - `ip:*` 规则的测试数据库由 `--ipset-name6` 选项提供，默认为 chnroute6
+
+---
 
 - `filter-qtype` 过滤给定 qtype 的查询，多个用逗号隔开，可多次指定。
   - `--filter-qtype 64,65`：过滤 SVCB(64)、HTTPS(65) 查询
