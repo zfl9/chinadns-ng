@@ -589,11 +589,11 @@ const ReplyLog = struct {
         );
     }
 
-    pub noinline fn cache(self: *const ReplyLog, msg: []const u8, ttl: i32) void {
+    pub noinline fn cache(self: *const ReplyLog, ttl: i32, sz: usize) void {
         log.info(
             @src(),
             "add cache(qid:%u, tag:%s, qtype:%u, '%s') size:%zu ttl:%ld",
-            .{ cc.to_uint(self.qid), self.tag_name(), cc.to_uint(self.qtype), self.name, msg.len, cc.to_long(ttl) },
+            .{ cc.to_uint(self.qid), self.tag_name(), cc.to_uint(self.qtype), self.name, sz, cc.to_long(ttl) },
         );
     }
 };
@@ -733,8 +733,9 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     // add to cache (may modify the msg)
     // must come after the `send_reply()`
     var ttl: i32 = undefined;
-    if (cache.add(msg, qnamelen, &ttl))
-        if (g.verbose()) rlog.cache(msg, ttl);
+    var sz: usize = undefined;
+    if (cache.add(msg, qnamelen, &ttl, &sz))
+        if (g.verbose()) rlog.cache(ttl, sz);
 
     // must be at the end
     qctx.free();

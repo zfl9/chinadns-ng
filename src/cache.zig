@@ -61,8 +61,8 @@ pub fn unref(msg: []const u8) void {
     return CacheMsg.from_msg(msg).unref();
 }
 
-/// the `msg` should be checked by the `dns.check_reply()` first
-pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32) bool {
+/// `in_msg` will be modified and copied
+pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32, p_sz: *usize) bool {
     var msg = in_msg;
 
     if (!enabled())
@@ -78,6 +78,7 @@ pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32) bool {
     p_ttl.* = ttl;
 
     msg = dns.minimise(msg, qnamelen) orelse return false;
+    p_sz.* = msg.len;
 
     const res = _map.getOrPut(g.allocator, dns.question(msg, qnamelen)) catch unreachable;
     if (res.found_existing) {
