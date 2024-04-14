@@ -131,6 +131,7 @@ fn send(self: *Upstream, qmsg: *RcMsg) void {
 // ======================================================
 
 fn send_tcp(self: *Upstream, qmsg: *RcMsg) void {
+    // TODO: pipeline && retry the unanswered query
     return co.create(do_send_tcp, .{ self, qmsg });
 }
 

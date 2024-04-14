@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const build_opts = @import("build_opts");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
 const g = @import("g.zig");
@@ -54,6 +56,39 @@ const help =
     \\ -h, --help                           print `chinadns-ng` help information and exit
     \\bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
 ;
+
+const version: cc.ConstStr = b: {
+    var target: [:0]const u8 = @tagName(builtin.cpu.arch) ++ "-" ++ @tagName(builtin.os.tag) ++ "-" ++ @tagName(builtin.abi);
+
+    if (builtin.target.isGnuLibC())
+        target = target ++ std.fmt.comptimePrint(".{}", .{builtin.os.version_range.linux.glibc});
+
+    if (!std.mem.eql(u8, target, build_opts.target))
+        @compileError("target-triple mismatch: " ++ target ++ " != " ++ build_opts.target);
+
+    const cpu_model = builtin.cpu.model.name;
+
+    if (!std.mem.startsWith(u8, build_opts.cpu, cpu_model))
+        @compileError("cpu-model mismatch: " ++ cpu_model ++ " != " ++ build_opts.cpu);
+
+    var prefix: [:0]const u8 = "ChinaDNS-NG " ++ build_opts.version;
+
+    if (build_opts.enable_openssl)
+        prefix = prefix ++ " | openssl-" ++ build_opts.openssl_version;
+
+    if (build_opts.enable_mimalloc)
+        prefix = prefix ++ " | mimalloc-" ++ build_opts.mimalloc_version;
+
+    break :b std.fmt.comptimePrint("{s} | target:{s} | cpu:{s} | mode:{s} | {s}", .{
+        prefix,
+        build_opts.target,
+        build_opts.cpu,
+        build_opts.mode,
+        "<https://github.com/zfl9/chinadns-ng>",
+    });
+};
+
+// ================================================================
 
 comptime {
     // @compileLog("sizeof(OptDef):", @sizeOf(OptDef), "alignof(OptDef):", @alignOf(OptDef));
@@ -487,7 +522,7 @@ fn opt_verbose(_: ?[]const u8) void {
 }
 
 fn opt_version(_: ?[]const u8) void {
-    cc.printf("%s\n", .{g.VERSION});
+    cc.printf("%s\n", .{version});
     cc.exit(0);
 }
 
