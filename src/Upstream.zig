@@ -28,7 +28,7 @@ comptime {
 const Upstream = @This();
 
 // runtime info
-fdobj: ?*EvLoop.Fd = null, // udp
+ctx: ?*anyopaque = null,
 
 // config info
 host: ?cc.ConstStr, // DoT SNI
@@ -69,7 +69,7 @@ fn init(tag: Tag, proto: Proto, addr: *const cc.SockAddr, host: []const u8, ip: 
 }
 
 fn deinit(self: *const Upstream) void {
-    assert(self.fdobj == null);
+    assert(self.ctx == null);
 
     if (self.host) |host|
         g.allocator.free(cc.strslice_c(host));
@@ -87,122 +87,33 @@ fn eql(self: *const Upstream, proto: Proto, addr: *const cc.SockAddr, host: []co
     // zig fmt: on
 }
 
-// ======================================================
-
-/// for udp upstream
-fn on_eol(self: *Upstream) void {
-    assert(self.proto == .udpi or self.proto == .udp);
-
-    const fdobj = self.fdobj orelse return;
-    self.fdobj = null; // set to null
-
-    assert(fdobj.write_frame == null);
-
-    // log.debug(
-    //     @src(),
-    //     "udp upstream socket(fd:%d, url:'%s', group:%s) is end-of-life ...",
-    //     .{ fdobj.fd, self.url, @tagName(self.group.tag).ptr },
-    // );
-
-    if (fdobj.read_frame) |frame| {
-        co.do_resume(frame);
-    } else {
-        // this coroutine may be sending a response to the tcp client (suspended)
-    }
-}
-
-/// for udp upstream
-fn is_eol(self: *const Upstream, in_fdobj: *EvLoop.Fd) bool {
-    return self.fdobj != in_fdobj;
-}
-
-// ======================================================
-
 /// [nosuspend] send query to upstream
 fn send(self: *Upstream, qmsg: *RcMsg) void {
     switch (self.proto) {
-        .tcpi, .tcp => self.send_tcp(qmsg),
-        .udpi, .udp => self.send_udp(qmsg),
-        .tls => self.send_tls(qmsg),
+        .tcpi, .tcp => self.tcp_send(qmsg),
+        .udpi, .udp => self.udp_send(qmsg),
+        .tls => self.tls_send(qmsg),
         else => unreachable,
     }
 }
 
 // ======================================================
 
-fn send_tcp(self: *Upstream, qmsg: *RcMsg) void {
-    // TODO: pipeline && retry the unanswered query
-    return co.create(do_send_tcp, .{ self, qmsg });
+fn udp_get_fdobj(self: *const Upstream) ?*EvLoop.Fd {
+    assert(self.proto == .udpi or self.proto == .udp);
+    return cc.ptrcast(?*EvLoop.Fd, self.ctx);
 }
 
-fn do_send_tcp(self: *Upstream, qmsg: *RcMsg) void {
-    defer co.terminate(@frame(), @frameSize(do_send_tcp));
-
-    const fd = net.new_tcp_conn_sock(self.addr.family()) orelse return;
-
-    const fdobj = EvLoop.Fd.new(fd);
-    defer fdobj.free();
-
-    // must be exec before the suspend point
-    _ = qmsg.ref();
-    defer qmsg.unref();
-
-    const e: struct { op: cc.ConstStr, msg: ?cc.ConstStr = null } = e: {
-        g.evloop.connect(fdobj, &self.addr) orelse break :e .{ .op = "connect" };
-
-        var iov = [_]cc.iovec_t{
-            .{
-                .iov_base = std.mem.asBytes(&cc.htons(qmsg.len)),
-                .iov_len = @sizeOf(u16),
-            },
-            .{
-                .iov_base = qmsg.msg().ptr,
-                .iov_len = qmsg.len,
-            },
-        };
-        const msg = cc.msghdr_t{
-            .msg_iov = &iov,
-            .msg_iovlen = iov.len,
-        };
-        g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e .{ .op = "send_query" };
-
-        // read the len
-        var rlen: u16 = undefined;
-        g.evloop.recv_exactly(fdobj, std.mem.asBytes(&rlen), 0) orelse
-            break :e .{ .op = "read_len", .msg = if (cc.errno() == 0) "connection closed" else null };
-
-        rlen = cc.ntohs(rlen);
-        if (rlen == 0)
-            break :e .{ .op = "read_len", .msg = "length field is 0" };
-
-        const rmsg = RcMsg.new(rlen);
-        defer rmsg.free();
-
-        // read the msg
-        rmsg.len = rlen;
-        g.evloop.recv_exactly(fdobj, rmsg.msg(), 0) orelse
-            break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
-
-        // send to requester
-        server.on_reply(rmsg, self);
-
-        return;
-    };
-
-    const src = @src();
-    if (e.msg) |msg|
-        log.err(src, "%s(%d, '%s') failed: %s", .{ e.op, fd, self.url, msg })
-    else
-        log.err(src, "%s(%d, '%s') failed: (%d) %m", .{ e.op, fd, self.url, cc.errno() });
+fn udp_set_fdobj(self: *Upstream, fdobj: ?*EvLoop.Fd) void {
+    assert(self.proto == .udpi or self.proto == .udp);
+    self.ctx = fdobj;
 }
 
-// ======================================================
-
-fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
-    const fd = if (self.fdobj) |fdobj| fdobj.fd else b: {
+fn udp_send(self: *Upstream, qmsg: *RcMsg) void {
+    const fd = if (self.udp_get_fdobj()) |fdobj| fdobj.fd else b: {
         const fd = net.new_sock(self.addr.family(), .udp) orelse return;
-        co.create(recv_udp, .{ self, fd });
-        assert(self.fdobj != null);
+        co.create(udp_recv, .{ self, fd });
+        assert(self.udp_get_fdobj() != null);
         break :b fd;
     };
 
@@ -239,18 +150,18 @@ fn send_udp(self: *Upstream, qmsg: *RcMsg) void {
     log.err(@src(), "send_query(%d, '%s') failed: (%d) %m", .{ fd, self.url, cc.errno() });
 }
 
-fn recv_udp(self: *Upstream, fd: c_int) void {
-    defer co.terminate(@frame(), @frameSize(recv_udp));
+fn udp_recv(self: *Upstream, fd: c_int) void {
+    defer co.terminate(@frame(), @frameSize(udp_recv));
 
     const fdobj = EvLoop.Fd.new(fd);
     defer fdobj.free();
 
-    self.fdobj = fdobj;
+    self.udp_set_fdobj(fdobj);
 
     var free_rmsg: ?*RcMsg = null;
     defer if (free_rmsg) |rmsg| rmsg.free();
 
-    while (!self.is_eol(fdobj)) {
+    while (!self.udp_is_eol(fdobj)) {
         const rmsg = free_rmsg orelse RcMsg.new(c.DNS_EDNS_MAXSIZE);
         free_rmsg = null;
 
@@ -261,7 +172,7 @@ fn recv_udp(self: *Upstream, fd: c_int) void {
                 rmsg.unref();
         }
 
-        const rlen = while (!self.is_eol(fdobj)) {
+        const rlen = while (!self.udp_is_eol(fdobj)) {
             break cc.recv(fd, rmsg.buf(), 0) orelse {
                 if (cc.errno() != c.EAGAIN) {
                     log.err(@src(), "recv(%d, '%s') failed: (%d) %m", .{ fd, self.url, cc.errno() });
@@ -278,9 +189,332 @@ fn recv_udp(self: *Upstream, fd: c_int) void {
     }
 }
 
+/// for udp upstream
+fn udp_is_eol(self: *const Upstream, in_fdobj: *EvLoop.Fd) bool {
+    return self.udp_get_fdobj() != in_fdobj;
+}
+
+/// for udp upstream
+fn udp_on_eol(self: *Upstream) void {
+    const fdobj = self.udp_get_fdobj() orelse return;
+    self.udp_set_fdobj(null); // set to null
+
+    assert(fdobj.write_frame == null);
+
+    // log.debug(
+    //     @src(),
+    //     "udp upstream socket(fd:%d, url:'%s', group:%s) is end-of-life ...",
+    //     .{ fdobj.fd, self.url, @tagName(self.group.tag).ptr },
+    // );
+
+    if (fdobj.read_frame) |frame| {
+        co.do_resume(frame);
+    } else {
+        // this coroutine may be sending a response to the tcp client (suspended)
+    }
+}
+
 // ======================================================
 
-fn send_tls(self: *Upstream, qmsg: *RcMsg) void {
+const TcpCtx = struct {
+    upstream: *const Upstream,
+    fdobj: ?*EvLoop.Fd = null,
+    send_queue: MsgQueue = .{},
+    ack_list: std.AutoHashMapUnmanaged(u16, *RcMsg) = .{},
+
+    const MsgQueue = struct {
+        head: ?*Node = null,
+        tail: ?*Node = null,
+        waiter: ?anyframe = null,
+
+        const Node = struct {
+            msg: *RcMsg,
+            next: *Node,
+        };
+
+        /// `null`: cancel wait
+        var _pushed_msg: ?*RcMsg = null;
+
+        fn do_push(self: *MsgQueue, msg: *RcMsg, pos: enum { front, back }) void {
+            if (self.waiter) |waiter| {
+                assert(self.is_empty());
+                _pushed_msg = msg;
+                co.do_resume(waiter);
+                return;
+            }
+
+            const node = g.allocator.create(Node) catch unreachable;
+            node.* = .{
+                .msg = msg,
+                .next = undefined,
+            };
+
+            if (self.is_empty()) {
+                self.head = node;
+                self.tail = node;
+            } else switch (pos) {
+                .front => {
+                    node.next = self.head.?;
+                    self.head = node;
+                },
+                .back => {
+                    self.tail.?.next = node;
+                    self.tail = node;
+                },
+            }
+        }
+
+        pub fn push(self: *MsgQueue, msg: *RcMsg) void {
+            return self.do_push(msg, .back);
+        }
+
+        pub fn push_front(self: *MsgQueue, msg: *RcMsg) void {
+            return self.do_push(msg, .front);
+        }
+
+        /// `null`: cancel wait
+        pub fn pop(self: *MsgQueue, blocking: bool) ?*RcMsg {
+            if (self.head) |node| {
+                defer g.allocator.destroy(node);
+                if (node == self.tail) {
+                    self.head = null;
+                    self.tail = null;
+                } else {
+                    self.head = node.next;
+                    assert(self.tail != null);
+                }
+                return node.msg;
+            } else {
+                if (!blocking)
+                    return null;
+                self.waiter = @frame();
+                suspend {}
+                self.waiter = null;
+                return _pushed_msg;
+            }
+        }
+
+        pub fn cancel_wait(self: *MsgQueue) void {
+            if (self.waiter) |waiter| {
+                assert(self.is_empty());
+                _pushed_msg = null;
+                co.do_resume(waiter);
+            }
+        }
+
+        pub fn is_empty(self: *const MsgQueue) bool {
+            return self.head == null;
+        }
+
+        /// clear && msg.unref()
+        pub fn clear(self: *MsgQueue) void {
+            while (self.pop(false)) |msg|
+                msg.unref();
+        }
+    };
+
+    pub fn new(upstream: *const Upstream) *TcpCtx {
+        const self = g.allocator.create(TcpCtx) catch unreachable;
+        self.* = .{
+            .upstream = upstream,
+        };
+        return self;
+    }
+
+    /// [tcp_send] add to send queue, `qmsg.ref++`
+    pub fn push_qmsg(self: *TcpCtx, qmsg: *RcMsg) void {
+        self.send_queue.push(qmsg.ref());
+
+        if (self.fdobj == null)
+            self.start();
+    }
+
+    /// [async] used to send qmsg to upstream
+    /// pop from send_queue && add to ack_list
+    fn pop_qmsg(self: *TcpCtx, in_fdobj: *EvLoop.Fd) ?*RcMsg {
+        if (self.restarted(in_fdobj)) return null;
+        const qmsg = self.send_queue.pop(true) orelse return null;
+        self.on_sending(qmsg);
+        return qmsg;
+    }
+
+    fn clear_ack_list(self: *TcpCtx, op: enum { resend, unref }) void {
+        var it = self.ack_list.valueIterator();
+        while (it.next()) |value_ptr| {
+            const qmsg = value_ptr.*;
+            switch (op) {
+                .resend => self.send_queue.push_front(qmsg),
+                .unref => qmsg.unref(),
+            }
+        }
+        self.ack_list.clearRetainingCapacity();
+    }
+
+    /// add qmsg to ack_list
+    fn on_sending(self: *TcpCtx, qmsg: *RcMsg) void {
+        const qid = dns.get_id(qmsg.msg());
+        self.ack_list.putNoClobber(g.allocator, qid, qmsg) catch unreachable;
+    }
+
+    /// remove qmsg from ack_list && qmsg.unref()
+    fn on_reply(self: *TcpCtx, rmsg: *const RcMsg) void {
+        const qid = dns.get_id(rmsg.msg());
+        if (self.ack_list.fetchRemove(qid)) |kv| {
+            const qmsg = kv.value;
+            qmsg.unref();
+        } else {
+            log.warn(@src(), "unexpected msg_id:%u from %s", .{ cc.to_uint(qid), self.upstream.url });
+        }
+    }
+
+    /// [fatal error] clear all qmsg and unref them
+    fn on_fatal(self: *TcpCtx) void {
+        self.clear_ack_list(.unref);
+        self.send_queue.clear();
+    }
+
+    fn start(self: *TcpCtx) void {
+        assert(self.fdobj == null);
+
+        co.create(TcpCtx.send, .{self});
+    }
+
+    fn restart(self: *TcpCtx) void {
+        self.fdobj = null;
+        self.send_queue.cancel_wait();
+
+        // ack_list => send_queue
+        self.clear_ack_list(.resend);
+
+        if (!self.send_queue.is_empty())
+            self.start();
+    }
+
+    fn restarted(self: *const TcpCtx, in_fdobj: *const EvLoop.Fd) bool {
+        return self.fdobj != in_fdobj;
+    }
+
+    fn send(self: *TcpCtx) void {
+        defer co.terminate(@frame(), @frameSize(TcpCtx.send));
+
+        // nosuspend
+        const fd = net.new_tcp_conn_sock(self.upstream.addr.family()) orelse return self.on_fatal();
+
+        const fdobj = EvLoop.Fd.new(fd);
+        self.fdobj = fdobj;
+
+        defer {
+            if (fdobj == self.fdobj)
+                self.restart();
+            fdobj.free();
+        }
+
+        // async
+        const err: cc.ConstStr = e: {
+            g.evloop.connect(fdobj, &self.upstream.addr) orelse {
+                self.on_fatal();
+                break :e "connect";
+            };
+
+            co.create(recv, .{self});
+
+            while (self.pop_qmsg(fdobj)) |qmsg| {
+                var iov = [_]cc.iovec_t{
+                    .{
+                        .iov_base = std.mem.asBytes(&cc.htons(qmsg.len)),
+                        .iov_len = @sizeOf(u16),
+                    },
+                    .{
+                        .iov_base = qmsg.msg().ptr,
+                        .iov_len = qmsg.len,
+                    },
+                };
+                const msg = cc.msghdr_t{
+                    .msg_iov = &iov,
+                    .msg_iovlen = iov.len,
+                };
+                g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e "send_query";
+            }
+
+            return;
+        };
+
+        log.err(@src(), "%s(%d, '%s') failed: (%d) %m", .{ err, fdobj.fd, self.upstream.url, cc.errno() });
+    }
+
+    fn recv(self: *TcpCtx) void {
+        defer co.terminate(@frame(), @frameSize(recv));
+
+        // nosuspend
+        const fdobj = self.fdobj.?.ref();
+
+        defer {
+            if (fdobj == self.fdobj)
+                self.restart();
+            fdobj.unref();
+        }
+
+        const src = @src();
+
+        // async
+        const err: struct { op: cc.ConstStr, msg: ?cc.ConstStr = null } = e: {
+            var free_rmsg: ?*RcMsg = null;
+            defer if (free_rmsg) |rmsg| rmsg.free();
+
+            while (!self.restarted(fdobj)) {
+                // read the len
+                var rlen: u16 = undefined;
+                g.evloop.recv_exactly(fdobj, std.mem.asBytes(&rlen), 0) orelse
+                    if (cc.errno() == 0) return else break :e .{ .op = "read_len" };
+
+                rlen = cc.ntohs(rlen);
+                if (rlen < c.DNS_MSG_MINSIZE)
+                    break :e .{ .op = "read_len", .msg = "invalid msg len" };
+
+                const rmsg: *RcMsg = if (free_rmsg) |rmsg| rmsg.realloc(rlen) else RcMsg.new(rlen);
+                free_rmsg = null;
+
+                defer {
+                    if (rmsg.is_unique())
+                        free_rmsg = rmsg
+                    else
+                        rmsg.unref();
+                }
+
+                // read the msg
+                rmsg.len = rlen;
+                g.evloop.recv_exactly(fdobj, rmsg.msg(), 0) orelse
+                    break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
+
+                self.on_reply(rmsg);
+
+                server.on_reply(rmsg, self.upstream);
+            }
+
+            return;
+        };
+
+        if (err.msg) |msg|
+            log.err(src, "%s(%d, '%s') failed: %s", .{ err.op, fdobj.fd, self.upstream.url, msg })
+        else
+            log.err(src, "%s(%d, '%s') failed: (%d) %m", .{ err.op, fdobj.fd, self.upstream.url, cc.errno() });
+    }
+};
+
+fn tcp_ctx(self: *Upstream) *TcpCtx {
+    assert(self.proto == .tcpi or self.proto == .tcp);
+    if (self.ctx == null)
+        self.ctx = TcpCtx.new(self);
+    return cc.ptrcast(*TcpCtx, self.ctx.?);
+}
+
+fn tcp_send(self: *Upstream, qmsg: *RcMsg) void {
+    self.tcp_ctx().push_qmsg(qmsg);
+}
+
+// ======================================================
+
+fn tls_send(self: *Upstream, qmsg: *RcMsg) void {
     _ = qmsg;
 
     // TODO
@@ -535,7 +769,7 @@ pub const Group = struct {
                         };
 
                     if (eol)
-                        upstream.on_eol();
+                        upstream.udp_on_eol();
                 }
             }
 
