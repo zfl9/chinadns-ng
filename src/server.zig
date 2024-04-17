@@ -854,7 +854,7 @@ noinline fn do_start(ip: cc.ConstStr, socktype: net.SockType) void {
         cc.bind(fd, &addr) orelse break :e "bind";
         switch (socktype) {
             .tcp => {
-                cc.listen(fd, 256) orelse break :e "listen";
+                cc.listen(fd, 1024) orelse break :e "listen";
                 co.create(listen_tcp, .{ fd, ip });
             },
             .udp => {

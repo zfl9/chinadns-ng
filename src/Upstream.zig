@@ -189,12 +189,10 @@ fn udp_recv(self: *Upstream, fd: c_int) void {
     }
 }
 
-/// for udp upstream
 fn udp_is_eol(self: *const Upstream, in_fdobj: *EvLoop.Fd) bool {
     return self.udp_get_fdobj() != in_fdobj;
 }
 
-/// for udp upstream
 fn udp_on_eol(self: *Upstream) void {
     const fdobj = self.udp_get_fdobj() orelse return;
     self.udp_set_fdobj(null); // set to null
@@ -219,8 +217,13 @@ fn udp_on_eol(self: *Upstream) void {
 const TcpCtx = struct {
     upstream: *const Upstream,
     fdobj: ?*EvLoop.Fd = null,
-    send_queue: MsgQueue = .{},
-    ack_list: std.AutoHashMapUnmanaged(u16, *RcMsg) = .{},
+    send_list: MsgQueue = .{}, // qmsg to be sent
+    ack_list: std.AutoHashMapUnmanaged(u16, *RcMsg) = .{}, // qmsg to be ack
+    pending_n: u16 = 0, // outstanding queries: send_list + ack_list
+    healthy: bool = false, // current connection processed at least one query ?
+
+    /// must <= u16_max
+    const PENDING_MAX = 1000;
 
     const MsgQueue = struct {
         head: ?*Node = null,
@@ -323,31 +326,25 @@ const TcpCtx = struct {
 
     /// [tcp_send] add to send queue, `qmsg.ref++`
     pub fn push_qmsg(self: *TcpCtx, qmsg: *RcMsg) void {
-        self.send_queue.push(qmsg.ref());
+        if (self.pending_n >= PENDING_MAX) {
+            log.warn(@src(), "too many pending queries: %u", .{cc.to_uint(self.pending_n)});
+            return;
+        }
+
+        self.pending_n += 1;
+        self.send_list.push(qmsg.ref());
 
         if (self.fdobj == null)
             self.start();
     }
 
     /// [async] used to send qmsg to upstream
-    /// pop from send_queue && add to ack_list
+    /// pop from send_list && add to ack_list
     fn pop_qmsg(self: *TcpCtx, in_fdobj: *EvLoop.Fd) ?*RcMsg {
-        if (self.restarted(in_fdobj)) return null;
-        const qmsg = self.send_queue.pop(true) orelse return null;
+        if (!self.fdobj_ok(in_fdobj)) return null;
+        const qmsg = self.send_list.pop(true) orelse return null;
         self.on_sending(qmsg);
         return qmsg;
-    }
-
-    fn clear_ack_list(self: *TcpCtx, op: enum { resend, unref }) void {
-        var it = self.ack_list.valueIterator();
-        while (it.next()) |value_ptr| {
-            const qmsg = value_ptr.*;
-            switch (op) {
-                .resend => self.send_queue.push_front(qmsg),
-                .unref => qmsg.unref(),
-            }
-        }
-        self.ack_list.clearRetainingCapacity();
     }
 
     /// add qmsg to ack_list
@@ -360,6 +357,8 @@ const TcpCtx = struct {
     fn on_reply(self: *TcpCtx, rmsg: *const RcMsg) void {
         const qid = dns.get_id(rmsg.msg());
         if (self.ack_list.fetchRemove(qid)) |kv| {
+            self.healthy = true;
+            self.pending_n -= 1;
             const qmsg = kv.value;
             qmsg.unref();
         } else {
@@ -367,54 +366,66 @@ const TcpCtx = struct {
         }
     }
 
-    /// [fatal error] clear all qmsg and unref them
-    fn on_fatal(self: *TcpCtx) void {
-        self.clear_ack_list(.unref);
-        self.send_queue.clear();
+    /// network/socket error
+    fn on_failed(self: *TcpCtx) void {
+        self.fdobj = null;
+        self.send_list.cancel_wait();
+
+        if (self.healthy) {
+            self.clear_ack_list(.resend);
+            if (!self.send_list.is_empty()) self.start();
+        } else {
+            self.clear_ack_list(.unref);
+            self.send_list.clear();
+            self.pending_n = 0;
+        }
+    }
+
+    fn clear_ack_list(self: *TcpCtx, op: enum { resend, unref }) void {
+        var it = self.ack_list.valueIterator();
+        while (it.next()) |value_ptr| {
+            const qmsg = value_ptr.*;
+            switch (op) {
+                .resend => self.send_list.push_front(qmsg),
+                .unref => qmsg.unref(),
+            }
+        }
+        self.ack_list.clearRetainingCapacity();
+    }
+
+    /// check if disconnected or reconnected
+    fn fdobj_ok(self: *const TcpCtx, in_fdobj: *const EvLoop.Fd) bool {
+        return in_fdobj == self.fdobj;
     }
 
     fn start(self: *TcpCtx) void {
         assert(self.fdobj == null);
+        assert(self.pending_n > 0);
+        assert(!self.send_list.is_empty());
+        assert(self.ack_list.count() == 0);
 
+        self.healthy = false;
         co.create(TcpCtx.send, .{self});
-    }
-
-    fn restart(self: *TcpCtx) void {
-        self.fdobj = null;
-        self.send_queue.cancel_wait();
-
-        // ack_list => send_queue
-        self.clear_ack_list(.resend);
-
-        if (!self.send_queue.is_empty())
-            self.start();
-    }
-
-    fn restarted(self: *const TcpCtx, in_fdobj: *const EvLoop.Fd) bool {
-        return self.fdobj != in_fdobj;
     }
 
     fn send(self: *TcpCtx) void {
         defer co.terminate(@frame(), @frameSize(TcpCtx.send));
 
         // nosuspend
-        const fd = net.new_tcp_conn_sock(self.upstream.addr.family()) orelse return self.on_fatal();
+        const fd = net.new_tcp_conn_sock(self.upstream.addr.family()) orelse return self.on_failed();
 
         const fdobj = EvLoop.Fd.new(fd);
         self.fdobj = fdobj;
 
         defer {
-            if (fdobj == self.fdobj)
-                self.restart();
+            if (self.fdobj_ok(fdobj))
+                self.on_failed();
             fdobj.free();
         }
 
         // async
         const err: cc.ConstStr = e: {
-            g.evloop.connect(fdobj, &self.upstream.addr) orelse {
-                self.on_fatal();
-                break :e "connect";
-            };
+            g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e "connect";
 
             co.create(recv, .{self});
 
@@ -449,19 +460,17 @@ const TcpCtx = struct {
         const fdobj = self.fdobj.?.ref();
 
         defer {
-            if (fdobj == self.fdobj)
-                self.restart();
+            if (self.fdobj_ok(fdobj))
+                self.on_failed();
             fdobj.unref();
         }
-
-        const src = @src();
 
         // async
         const err: struct { op: cc.ConstStr, msg: ?cc.ConstStr = null } = e: {
             var free_rmsg: ?*RcMsg = null;
             defer if (free_rmsg) |rmsg| rmsg.free();
 
-            while (!self.restarted(fdobj)) {
+            while (self.fdobj_ok(fdobj)) {
                 // read the len
                 var rlen: u16 = undefined;
                 g.evloop.recv_exactly(fdobj, std.mem.asBytes(&rlen), 0) orelse
@@ -486,7 +495,8 @@ const TcpCtx = struct {
                 g.evloop.recv_exactly(fdobj, rmsg.msg(), 0) orelse
                     break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
 
-                self.on_reply(rmsg);
+                if (self.fdobj_ok(fdobj))
+                    self.on_reply(rmsg);
 
                 server.on_reply(rmsg, self.upstream);
             }
@@ -494,6 +504,7 @@ const TcpCtx = struct {
             return;
         };
 
+        const src = @src();
         if (err.msg) |msg|
             log.err(src, "%s(%d, '%s') failed: %s", .{ err.op, fdobj.fd, self.upstream.url, msg })
         else
@@ -577,7 +588,7 @@ pub const Proto = enum {
 // ======================================================
 
 /// for udp upstream
-const Life = struct {
+const UdpLife = struct {
     create_time: c.time_t = 0,
     query_count: u8 = 0,
 
@@ -585,7 +596,7 @@ const Life = struct {
     const QUERY_MAX = 10;
 
     /// called before the first query
-    pub fn check_eol(self: *Life, now_time: c.time_t) bool {
+    pub fn check_eol(self: *UdpLife, now_time: c.time_t) bool {
         // zig fmt: off
         const eol = self.query_count >= QUERY_MAX
                     or now_time < self.create_time
@@ -598,7 +609,7 @@ const Life = struct {
         return eol;
     }
 
-    pub fn on_query(self: *Life, add_count: u8) void {
+    pub fn on_query(self: *UdpLife, add_count: u8) void {
         self.query_count +|= add_count;
     }
 };
@@ -607,8 +618,8 @@ const Life = struct {
 
 pub const Group = struct {
     list: std.ArrayListUnmanaged(Upstream) = .{},
-    udpi_life: Life = .{},
-    udp_life: Life = .{},
+    udpi_life: UdpLife = .{},
+    udp_life: UdpLife = .{},
 
     pub inline fn items(self: *const Group) []Upstream {
         return self.list.items;
