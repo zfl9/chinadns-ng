@@ -4,3 +4,4 @@ zig-out/
 zig-cache/
 dep/openssl-*
 dep/mimalloc-*
+dep/wolfssl-*
