@@ -1,5 +1,8 @@
 {
     "files.associations": {
         "*.h": "c",
+        "*.i": "c",
+        "*.in": "c",
+        "*.S": "c",
     },
 }
