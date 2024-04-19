@@ -454,14 +454,14 @@ u16 dns_minimise(void *noalias msg, ssize_t len, int qnamelen) {
 
     void *start = msg;
 
-    int count = get_answer_count(msg);
+    int answer_count = get_answer_count(msg);
+    int authority_count = get_authority_count(msg);
     move_to_records(msg, len, qnamelen);
 
-    unlikely_if (!skip_record(&msg, &len, count))
+    unlikely_if (!skip_record(&msg, &len, answer_count + authority_count))
         return 0;
 
     struct dns_header *h = start;
-    h->authority_count = 0;
     h->additional_count = 0;
 
     return msg - start;
