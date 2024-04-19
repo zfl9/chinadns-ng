@@ -1,4 +1,5 @@
 const std = @import("std");
+const build_opts = @import("build_opts");
 const g = @import("g.zig");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
@@ -214,6 +215,11 @@ fn udp_on_eol(self: *Upstream) void {
 
 // ======================================================
 
+const has_ssl = build_opts.enable_wolfssl;
+
+const SSL = if (has_ssl) ?*c.SSL else void;
+const SSL_null: SSL = if (has_ssl) null else {};
+
 const TcpCtx = struct {
     upstream: *const Upstream,
     fdobj: ?*EvLoop.Fd = null,
@@ -221,6 +227,7 @@ const TcpCtx = struct {
     ack_list: std.AutoHashMapUnmanaged(u16, *RcMsg) = .{}, // qmsg to be ack
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     healthy: bool = false, // current connection processed at least one query ?
+    ssl: SSL = SSL_null,
 
     /// must <= u16_max
     const PENDING_MAX = 1000;
@@ -366,8 +373,13 @@ const TcpCtx = struct {
         }
     }
 
-    /// network/socket error
-    fn on_failed(self: *TcpCtx) void {
+    /// connection closed
+    fn on_close(self: *TcpCtx) void {
+        if (has_ssl) if (self.ssl) |ssl| {
+            c.SSL_free(ssl);
+            self.ssl = null;
+        };
+
         self.fdobj = null;
         self.send_list.cancel_wait();
 
@@ -412,20 +424,21 @@ const TcpCtx = struct {
         defer co.terminate(@frame(), @frameSize(TcpCtx.send));
 
         // nosuspend
-        const fd = net.new_tcp_conn_sock(self.upstream.addr.family()) orelse return self.on_failed();
+        const fd = net.new_tcp_conn_sock(self.upstream.addr.family()) orelse return self.on_close();
 
         const fdobj = EvLoop.Fd.new(fd);
         self.fdobj = fdobj;
 
         defer {
             if (self.fdobj_ok(fdobj))
-                self.on_failed();
+                self.on_close();
             fdobj.free();
         }
 
         // async
         const err: cc.ConstStr = e: {
-            g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e "connect";
+            self.do_connect() orelse break :e "connect";
+            // g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e "connect";
 
             co.create(recv, .{self});
 
@@ -444,7 +457,8 @@ const TcpCtx = struct {
                     .msg_iov = &iov,
                     .msg_iovlen = iov.len,
                 };
-                g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e "send_query";
+                // g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e "send_query";
+                self.do_sendmsg(&msg, 0) orelse break :e "send_query";
             }
 
             return;
@@ -461,7 +475,7 @@ const TcpCtx = struct {
 
         defer {
             if (self.fdobj_ok(fdobj))
-                self.on_failed();
+                self.on_close();
             fdobj.unref();
         }
 
@@ -473,7 +487,8 @@ const TcpCtx = struct {
             while (self.fdobj_ok(fdobj)) {
                 // read the len
                 var rlen: u16 = undefined;
-                g.evloop.recv_exactly(fdobj, std.mem.asBytes(&rlen), 0) orelse
+                // g.evloop.recv_exactly(fdobj, std.mem.asBytes(&rlen), 0) orelse
+                self.recv_exactly(std.mem.asBytes(&rlen), 0) orelse
                     if (cc.errno() == 0) return else break :e .{ .op = "read_len" };
 
                 rlen = cc.ntohs(rlen);
@@ -492,7 +507,8 @@ const TcpCtx = struct {
 
                 // read the msg
                 rmsg.len = rlen;
-                g.evloop.recv_exactly(fdobj, rmsg.msg(), 0) orelse
+                // g.evloop.recv_exactly(fdobj, rmsg.msg(), 0) orelse
+                self.recv_exactly(rmsg.msg(), 0) orelse
                     break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
 
                 if (self.fdobj_ok(fdobj))
@@ -510,10 +526,131 @@ const TcpCtx = struct {
         else
             log.err(src, "%s(%d, '%s') failed: (%d) %m", .{ err.op, fdobj.fd, self.upstream.url, cc.errno() });
     }
+
+    fn do_connect(self: *TcpCtx) ?void {
+        g.evloop.connect(self.fdobj.?, &self.upstream.addr) orelse return null;
+
+        if (has_ssl and self.upstream.proto == .tls) {
+            const static = struct {
+                var ssl_ctx: ?*c.SSL_CTX = null;
+
+                fn get_ssl_ctx() *c.SSL_CTX {
+                    if (ssl_ctx == null) {
+                        ssl_ctx = c.wolfSSL_CTX_new(c.TLS_client_method());
+                        assert(ssl_ctx != null);
+                        load_ca_certs();
+                    }
+                    return ssl_ctx.?;
+                }
+
+                fn load_ca_certs() void {
+                    const file_list = [_][*:0]const u8{
+                        "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu/Gentoo etc.
+                        "/etc/pki/tls/certs/ca-bundle.crt", // Fedora/RHEL 6
+                        "/etc/ssl/ca-bundle.pem", // OpenSUSE
+                        "/etc/pki/tls/cacert.pem", // OpenELEC
+                        "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7
+                        "/etc/ssl/cert.pem", // Alpine Linux
+                    };
+                    const dir_list = [_][*:0]const u8{
+                        "/etc/ssl/certs", // SLES10/SLES11, https://golang.org/issue/12139
+                        "/etc/pki/tls/certs", // Fedora/RHEL
+                    };
+                    for (file_list) |path| {
+                        if (c.SSL_CTX_load_verify_locations(ssl_ctx, path, null) == 1) {
+                            if (g.verbose())
+                                log.info(@src(), "CA certs: %s", .{path});
+                            return;
+                        }
+                    }
+                    for (dir_list) |path| {
+                        if (c.SSL_CTX_load_verify_locations(ssl_ctx, null, path) == 1) {
+                            if (g.verbose())
+                                log.info(@src(), "CA certs: %s", .{path});
+                            return;
+                        }
+                    }
+                    log.err(@src(), "can't load CA certs, TODO: add option", .{});
+                    cc.exit(1);
+                }
+            };
+
+            self.ssl = c.SSL_new(static.get_ssl_ctx());
+            assert(c.SSL_set_fd(self.ssl, self.fdobj.?.fd) == 1);
+            assert(c.SSL_set_tlsext_host_name(self.ssl, self.upstream.host) == 1); // SNI (client hello)
+            assert(c.SSL_set1_host(self.ssl, self.upstream.host) == 1); // host check (server hello)
+
+            while (true) {
+                const res = c.SSL_connect(self.ssl);
+                if (res == 1) break;
+                self.on_ssl_error(res) orelse return null;
+            }
+        }
+    }
+
+    fn do_sendmsg(self: *TcpCtx, msg: *const cc.msghdr_t, flags: c_int) ?void {
+        if (!has_ssl or self.upstream.proto != .tls)
+            return g.evloop.sendmsg(self.fdobj.?, msg, flags);
+
+        for (msg.iov_items()) |iov| {
+            while (true) {
+                const res = c.SSL_write(self.ssl, iov.iov_base, cc.to_int(iov.iov_len));
+                if (res > 0) break;
+                self.on_ssl_error(res) orelse return null;
+            }
+        }
+    }
+
+    fn recv_exactly(self: *TcpCtx, buf: []u8, flags: c_int) ?void {
+        if (!has_ssl or self.upstream.proto != .tls)
+            return g.evloop.recv_exactly(self.fdobj.?, buf, flags);
+
+        var nread: usize = 0;
+        while (nread < buf.len) {
+            const res = c.SSL_read(self.ssl, buf.ptr + nread, cc.to_int(buf.len - nread));
+            if (res > 0) {
+                nread += cc.to_usize(res);
+            } else {
+                self.on_ssl_error(res) orelse return null;
+            }
+        }
+    }
+
+    /// null && errno=0 => EOF
+    fn on_ssl_error(self: *TcpCtx, res: c_int) ?void {
+        const err = c.SSL_get_error(self.ssl, res);
+        switch (err) {
+            c.SSL_ERROR_ZERO_RETURN => {
+                cc.set_errno(0);
+                return null;
+            },
+            c.SSL_ERROR_WANT_READ => {
+                g.evloop.wait_readable(self.fdobj.?);
+            },
+            c.SSL_ERROR_WANT_WRITE => {
+                g.evloop.wait_writable(self.fdobj.?);
+            },
+            else => {
+                log.err(@src(), "ssl error: %s", .{get_ssl_errstr(@bitCast(c_ulong, @as(c_long, err)))});
+                return null;
+            },
+        }
+    }
+
+    /// static buffer
+    fn get_ssl_errstr(err: c_ulong) cc.ConstStr {
+        const static = struct {
+            var buf: [50]u8 = undefined;
+        };
+        return cc.ptrcast(
+            cc.ConstStr,
+            c.ERR_error_string(err, &static.buf),
+        );
+    }
 };
 
 fn tcp_ctx(self: *Upstream) *TcpCtx {
-    assert(self.proto == .tcpi or self.proto == .tcp);
+    assert(self.proto == .tcpi or self.proto == .tcp or self.proto == .tls);
     if (self.ctx == null)
         self.ctx = TcpCtx.new(self);
     return cc.ptrcast(*TcpCtx, self.ctx.?);
@@ -526,10 +663,7 @@ fn tcp_send(self: *Upstream, qmsg: *RcMsg) void {
 // ======================================================
 
 fn tls_send(self: *Upstream, qmsg: *RcMsg) void {
-    _ = qmsg;
-
-    // TODO
-    log.warn(@src(), "currently tls upstream is not supported: %s", .{self.url});
+    self.tcp_ctx().push_qmsg(qmsg);
 }
 
 // ======================================================
@@ -545,10 +679,13 @@ pub const Proto = enum {
 
     /// "tcp://"
     pub fn from_str(str: []const u8) ?Proto {
-        const map = .{
+        const map = if (has_ssl) .{
             .{ .str = "tcp://", .proto = .tcp },
             .{ .str = "udp://", .proto = .udp },
             .{ .str = "tls://", .proto = .tls },
+        } else .{
+            .{ .str = "tcp://", .proto = .tcp },
+            .{ .str = "udp://", .proto = .udp },
         };
         inline for (map) |v| {
             if (std.mem.eql(u8, str, v.str))
@@ -668,7 +805,8 @@ pub const Group = struct {
                 if (!proto.require_host())
                     return parse_failed("no host required", host);
                 break :b host;
-            }
+            } else if (proto.require_host())
+                return parse_failed("host required", in_value);
             break :b "";
         };
 

@@ -73,8 +73,8 @@ const version: cc.ConstStr = b: {
 
     var prefix: [:0]const u8 = "ChinaDNS-NG " ++ build_opts.version;
 
-    if (build_opts.enable_openssl)
-        prefix = prefix ++ " | openssl-" ++ build_opts.openssl_version;
+    if (build_opts.enable_wolfssl)
+        prefix = prefix ++ " | wolfssl-" ++ build_opts.wolfssl_version;
 
     if (build_opts.enable_mimalloc)
         prefix = prefix ++ " | mimalloc-" ++ build_opts.mimalloc_version;

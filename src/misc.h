@@ -48,7 +48,7 @@ typedef int64_t s64;
 #define S32C INT32_C
 #define S64C INT64_C
 
-typedef signed char byte; /* >= 8 bits */
+// typedef signed char byte; /* >= 8 bits */
 typedef unsigned char ubyte; /* >= 8 bits */
 typedef unsigned short ushort; /* >= 16 bits */
 typedef unsigned int uint; /* >= 16 bits */
