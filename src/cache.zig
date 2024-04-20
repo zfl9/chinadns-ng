@@ -61,7 +61,6 @@ pub fn unref(msg: []const u8) void {
     return CacheMsg.from_msg(msg).unref();
 }
 
-/// `in_msg` will be modified and copied
 pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (!enabled())
         return false;
