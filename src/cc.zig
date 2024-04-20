@@ -124,6 +124,14 @@ pub const to_u64 = IntCast(u64).cast;
 
 // ==============================================================
 
+pub inline fn calc_hashv(mem: []const u8) c_uint {
+    return c.calc_hashv(mem.ptr, mem.len);
+}
+
+pub inline fn memeql(a: []const u8, b: []const u8) bool {
+    return a.len == b.len and c.memcmp(a.ptr, b.ptr, a.len) == 0;
+}
+
 /// convert to C string (static buffer)
 pub inline fn to_cstr(str: []const u8) Str {
     return to_cstr_x(&.{str});

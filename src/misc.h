@@ -127,3 +127,5 @@ const void *SIG_DEFAULT(void);
 const void *SIG_ERROR(void);
 
 ssize_t fstat_size(int fd);
+
+uint calc_hashv(const void *ptr, size_t len);

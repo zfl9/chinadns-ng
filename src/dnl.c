@@ -109,12 +109,6 @@ static u32 alloc(u32 sz, u32 align) {
 
 /* ======================== name ======================== */
 
-static uint calc_hashv(const char *noalias name, u8 namelen) {
-    uint hashv = 0;
-    HASH_FUNCTION(name, namelen, hashv); /* uthash.h */
-    return hashv;
-}
-
 #define get_hashv(nameaddr) \
     (ptr_name(nameaddr)->hashv)
 

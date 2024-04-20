@@ -6,19 +6,136 @@ const dns = @import("dns.zig");
 const ListNode = @import("ListNode.zig");
 const CacheMsg = @import("CacheMsg.zig");
 const cache_ignore = @import("cache_ignore.zig");
+const log = @import("log.zig");
 const assert = std.debug.assert;
 const Bytes = cc.Bytes;
 
-/// question => CacheMsg
-var _map: std.StringHashMapUnmanaged(*CacheMsg) = .{};
+/// LRU
 var _list: ListNode = undefined;
 
 pub fn module_init() void {
     _list.init();
 }
 
+const map = opaque {
+    var _buckets: []?*CacheMsg = &.{};
+    var _nitems: usize = 0;
+
+    fn calc_hashv(question: []const u8) c_uint {
+        return cc.calc_hashv(question);
+    }
+
+    fn calc_idx(hashv: c_uint) usize {
+        return hashv & (_buckets.len - 1);
+    }
+
+    fn get(question: []const u8, hashv: c_uint) ?*CacheMsg {
+        if (_buckets.len == 0)
+            return null;
+
+        const idx = calc_idx(hashv);
+
+        var prev: ?*CacheMsg = null;
+        var current = _buckets[idx];
+        while (current) |cur| {
+            if (cur.hashv == hashv and cc.memeql(cur.question(), question)) {
+                if (prev) |p| {
+                    // move to head (easy to del it)
+                    p.next = cur.next;
+                    cur.next = _buckets[idx];
+                    _buckets[idx] = cur;
+                }
+                return cur;
+            }
+            prev = cur;
+            current = cur.next;
+        }
+
+        return null;
+    }
+
+    fn del(cmsg: *CacheMsg) void {
+        if (_buckets.len == 0)
+            return;
+
+        const idx = calc_idx(cmsg.hashv);
+
+        var prev: ?*CacheMsg = null;
+        var current = _buckets[idx];
+        while (current) |cur| {
+            if (cmsg == cur) {
+                if (prev) |p|
+                    p.next = cur.next
+                else
+                    _buckets[idx] = cur.next;
+                _nitems -= 1;
+                return;
+            }
+            prev = cur;
+            current = cur.next;
+        }
+    }
+
+    /// assume not exists
+    fn add(cmsg: *CacheMsg) void {
+        try_resize();
+
+        const idx = calc_idx(cmsg.hashv);
+
+        cmsg.next = _buckets[idx];
+        _buckets[idx] = cmsg;
+
+        _nitems += 1;
+    }
+
+    const load_factor = 75;
+
+    /// call before add()
+    fn try_resize() void {
+        const max_nitems = @divTrunc(_buckets.len * load_factor, 100);
+        if (_nitems < max_nitems)
+            return;
+
+        const old_len = _buckets.len;
+        const new_len = std.math.max(old_len << 1, 1 << 4);
+        _buckets = g.allocator.realloc(_buckets, new_len) catch unreachable;
+
+        // init
+        const part2 = std.mem.sliceAsBytes(_buckets.ptr[0..new_len][old_len..]);
+        @memset(part2.ptr, 0, part2.len);
+
+        var idx: usize = 0;
+        while (idx < old_len) : (idx += 1) {
+            var prev: ?*CacheMsg = null;
+            var current = _buckets[idx];
+            while (current) |cur| {
+                current = cur.next;
+                const new_idx = calc_idx(cur.hashv);
+                if (new_idx != idx) {
+                    assert(new_idx >= old_len);
+                    // remove from part 1
+                    if (prev) |p|
+                        p.next = cur.next
+                    else
+                        _buckets[idx] = cur.next;
+                    // add to part 2
+                    cur.next = _buckets[new_idx];
+                    _buckets[new_idx] = cur;
+                } else {
+                    prev = cur;
+                }
+            }
+        }
+    }
+};
+
 fn enabled() bool {
     return g.cache_size > 0;
+}
+
+fn del_nofree(cache_msg: *CacheMsg) void {
+    map.del(cache_msg);
+    cache_msg.list_node.unlink();
 }
 
 /// return the cached reply msg
@@ -26,8 +143,9 @@ pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32, p_ttl_r: *i32) ?[]con
     if (!enabled())
         return null;
 
-    const entry = _map.getEntry(dns.question(qmsg, qnamelen)) orelse return null;
-    const cache_msg = entry.value_ptr.*;
+    const question = dns.question(qmsg, qnamelen);
+    const hashv = map.calc_hashv(question);
+    const cache_msg = map.get(question, hashv) orelse return null;
 
     // update ttl
     const ttl = cache_msg.update_ttl();
@@ -40,15 +158,10 @@ pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32, p_ttl_r: *i32) ?[]con
         return cache_msg.msg();
     } else {
         // expired
-        on_expired(entry.key_ptr, cache_msg);
+        del_nofree(cache_msg);
+        cache_msg.free();
         return null;
     }
-}
-
-fn on_expired(key_ptr: *[]const u8, cache_msg: *CacheMsg) void {
-    _map.removeByPtr(key_ptr);
-    cache_msg.list_node.unlink();
-    cache_msg.free();
 }
 
 /// call before using the cache msg
@@ -74,35 +187,26 @@ pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     const ttl = dns.get_ttl(msg, qnamelen, g.cache_nodata_ttl) orelse return false;
     p_ttl.* = ttl;
 
-    const res = _map.getOrPut(g.allocator, dns.question(msg, qnamelen)) catch unreachable;
-    if (res.found_existing) {
-        // check ttl, avoid duplicate add
-        const old_ttl = res.value_ptr.*.get_ttl();
-        if (std.math.absCast(ttl - old_ttl) <= 2) return false;
-    }
-
-    // create cache msg
     const cache_msg = b: {
-        if (res.found_existing) {
-            const old = res.value_ptr.*;
-            old.list_node.unlink(); // unlink from list
-            break :b old.reuse_or_new(msg, qnamelen, ttl);
-        } else if (_map.count() <= g.cache_size) {
-            break :b CacheMsg.new(msg, qnamelen, ttl);
+        const question = dns.question(msg, qnamelen);
+        const hashv = map.calc_hashv(question);
+        const old_msg = map.get(question, hashv);
+        if (old_msg) |old| {
+            // avoid duplicate add
+            const old_ttl = old.get_ttl();
+            if (std.math.absCast(ttl - old_ttl) <= 2) return false;
+            del_nofree(old);
+            break :b old.reuse_or_new(msg, qnamelen, ttl, hashv);
+        } else if (map._nitems < g.cache_size) {
+            break :b CacheMsg.new(msg, qnamelen, ttl, hashv);
         } else {
             const old = CacheMsg.from_list_node(_list.tail());
-            assert(_map.remove(old.question())); // remove from map
-            assert(_map.count() == g.cache_size);
-            old.list_node.unlink(); // unlink from list
-            break :b old.reuse_or_new(msg, qnamelen, ttl);
+            del_nofree(old);
+            break :b old.reuse_or_new(msg, qnamelen, ttl, hashv);
         }
     };
 
-    // update key/value
-    res.key_ptr.* = cache_msg.question(); // ptr to `cache_msg`
-    res.value_ptr.* = cache_msg;
-
-    // link to list
+    map.add(cache_msg);
     _list.link_to_head(&cache_msg.list_node);
 
     return true;
