@@ -62,9 +62,7 @@ pub fn unref(msg: []const u8) void {
 }
 
 /// `in_msg` will be modified and copied
-pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32, p_sz: *usize) bool {
-    var msg = in_msg;
-
+pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (!enabled())
         return false;
 
@@ -76,9 +74,6 @@ pub fn add(in_msg: []u8, qnamelen: c_int, p_ttl: *i32, p_sz: *usize) bool {
 
     const ttl = dns.get_ttl(msg, qnamelen, g.cache_nodata_ttl) orelse return false;
     p_ttl.* = ttl;
-
-    msg = dns.minimise(msg, qnamelen) orelse return false;
-    p_sz.* = msg.len;
 
     const res = _map.getOrPut(g.allocator, dns.question(msg, qnamelen)) catch unreachable;
     if (res.found_existing) {

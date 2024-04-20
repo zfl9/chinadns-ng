@@ -140,8 +140,7 @@ static bool check_msg(bool is_query,
         unlikely_if (!decode_name(ascii_name, msg, qnamelen))
             return false;
     }
-    if (p_qnamelen)
-        *p_qnamelen = qnamelen;
+    *p_qnamelen = qnamelen;
 
     /* move to `struct dns_question` */
     msg += qnamelen;
@@ -360,12 +359,41 @@ u16 dns_empty_reply(void *noalias msg, int qnamelen) {
     return msg_minlen(qnamelen);
 }
 
+// return newlen (0 if failed)
+static u16 rm_additional(void *noalias msg, ssize_t len, int qnamelen) {
+    if (!is_normal_msg(msg))
+        return len;
+
+    void *start = msg;
+
+    int answer_count = get_answer_count(msg);
+    int authority_count = get_authority_count(msg);
+    move_to_records(msg, len, qnamelen);
+
+    unlikely_if (!skip_record(&msg, &len, answer_count + authority_count))
+        return 0;
+
+    struct dns_header *h = start;
+    h->additional_count = 0;
+
+    return msg - start;
+}
+
 bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen) {
     return check_msg(true, msg, len, ascii_name, p_qnamelen);
 }
 
-bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen) {
-    return check_msg(false, msg, len, ascii_name, p_qnamelen);
+bool dns_check_reply(void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen, u16 *noalias p_newlen) {
+    unlikely_if (!check_msg(false, msg, len, ascii_name, p_qnamelen))
+        return false;
+
+    unlikely_if ((*p_newlen = rm_additional(msg, len, *p_qnamelen)) == 0)
+        return false;
+
+    struct dns_header *h = msg;
+    h->ra = 1;
+
+    return true;
 }
 
 static bool check_ip_datalen(u16 rtype, const struct dns_record *noalias record) {
@@ -446,25 +474,6 @@ void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset
 
     foreach_record((void **)&msg, &len, count, add_ip, ctx);
     ipset_end_add_ip(ctx);
-}
-
-u16 dns_minimise(void *noalias msg, ssize_t len, int qnamelen) {
-    if (!is_normal_msg(msg))
-        return 0;
-
-    void *start = msg;
-
-    int answer_count = get_answer_count(msg);
-    int authority_count = get_authority_count(msg);
-    move_to_records(msg, len, qnamelen);
-
-    unlikely_if (!skip_record(&msg, &len, answer_count + authority_count))
-        return 0;
-
-    struct dns_header *h = start;
-    h->additional_count = 0;
-
-    return msg - start;
 }
 
 static bool get_ttl(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {

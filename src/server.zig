@@ -625,10 +625,15 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     const p_ascii_namebuf: ?[*]u8 = if (g.verbose()) &ascii_namebuf else null;
     var qnamelen: c_int = undefined;
 
-    if (!dns.check_reply(msg, p_ascii_namebuf, &qnamelen)) {
+    var newlen: u16 = undefined;
+
+    if (!dns.check_reply(msg, p_ascii_namebuf, &qnamelen, &newlen)) {
         log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url});
         return;
     }
+
+    rmsg.len = newlen;
+    msg = rmsg.msg();
 
     const qtype = dns.get_qtype(msg, qnamelen);
     const is_qtype_A_AAAA = qtype == c.DNS_TYPE_A or qtype == c.DNS_TYPE_AAAA;
@@ -733,9 +738,8 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     // add to cache (may modify the msg)
     // must come after the `send_reply()`
     var ttl: i32 = undefined;
-    var sz: usize = undefined;
-    if (cache.add(msg, qnamelen, &ttl, &sz))
-        if (g.verbose()) rlog.cache(ttl, sz);
+    if (cache.add(msg, qnamelen, &ttl))
+        if (g.verbose()) rlog.cache(ttl, msg.len);
 
     // must be at the end
     qctx.free();

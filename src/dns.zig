@@ -65,15 +65,15 @@ pub inline fn empty_reply(msg: []u8, qnamelen: c_int) []u8 {
 /// check if the query msg is valid
 /// `ascii_name`: the buffer used to get the domain-name (ASCII-format)
 /// `p_qnamelen`: used to get the length of the domain-name (wire-format)
-pub inline fn check_query(msg: []const u8, ascii_name: ?[*]u8, p_qnamelen: ?*c_int) bool {
+pub inline fn check_query(msg: []const u8, ascii_name: ?[*]u8, p_qnamelen: *c_int) bool {
     return c.dns_check_query(msg.ptr, cc.to_isize(msg.len), ascii_name, p_qnamelen);
 }
 
 /// check if the reply msg is valid
 /// `ascii_name`: the buffer used to get the domain-name (ASCII-format)
 /// `p_qnamelen`: used to get the length of the domain-name (wire-format)
-pub inline fn check_reply(msg: []const u8, ascii_name: ?[*]u8, p_qnamelen: ?*c_int) bool {
-    return c.dns_check_reply(msg.ptr, cc.to_isize(msg.len), ascii_name, p_qnamelen);
+pub inline fn check_reply(msg: []u8, ascii_name: ?[*]u8, p_qnamelen: *c_int, p_newlen: *u16) bool {
+    return c.dns_check_reply(msg.ptr, cc.to_isize(msg.len), ascii_name, p_qnamelen, p_newlen);
 }
 
 pub const TestIpResult = enum(c_int) {
@@ -95,12 +95,6 @@ pub inline fn test_ip(msg: []const u8, qnamelen: c_int, testctx: *const ipset.te
 /// [tag:chn, tag:gfw, ...]
 pub inline fn add_ip(msg: []const u8, qnamelen: c_int, addctx: *ipset.addctx_t) void {
     return c.dns_add_ip(msg.ptr, cc.to_isize(msg.len), qnamelen, addctx);
-}
-
-/// [dns cache]
-pub inline fn minimise(msg: []u8, qnamelen: c_int) ?[]u8 {
-    const len = c.dns_minimise(msg.ptr, cc.to_isize(msg.len), qnamelen);
-    return if (len > 0) msg[0..len] else null;
 }
 
 /// return `null` if there is no effective TTL
