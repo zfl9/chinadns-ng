@@ -21,10 +21,6 @@ const map = opaque {
     var _buckets: []?*CacheMsg = &.{};
     var _nitems: usize = 0;
 
-    fn calc_hashv(question: []const u8) c_uint {
-        return cc.calc_hashv(question);
-    }
-
     fn calc_idx(hashv: c_uint) usize {
         return hashv & (_buckets.len - 1);
     }
@@ -35,20 +31,17 @@ const map = opaque {
 
         const idx = calc_idx(hashv);
 
-        var prev: ?*CacheMsg = null;
-        var current = _buckets[idx];
-        while (current) |cur| {
+        var p: *?*CacheMsg = &_buckets[idx];
+        while (p.*) |cur| : (p = &cur.next) {
             if (cur.hashv == hashv and cc.memeql(cur.question(), question)) {
-                if (prev) |p| {
-                    // move to head (easy to del it)
-                    p.next = cur.next;
+                // move to head (easy to del it)
+                if (cur != _buckets[idx]) {
+                    p.* = cur.next;
                     cur.next = _buckets[idx];
                     _buckets[idx] = cur;
                 }
                 return cur;
             }
-            prev = cur;
-            current = cur.next;
         }
 
         return null;
@@ -60,19 +53,13 @@ const map = opaque {
 
         const idx = calc_idx(cmsg.hashv);
 
-        var prev: ?*CacheMsg = null;
-        var current = _buckets[idx];
-        while (current) |cur| {
-            if (cmsg == cur) {
-                if (prev) |p|
-                    p.next = cur.next
-                else
-                    _buckets[idx] = cur.next;
+        var p: *?*CacheMsg = &_buckets[idx];
+        while (p.*) |cur| : (p = &cur.next) {
+            if (cur == cmsg) {
+                p.* = cur.next;
                 _nitems -= 1;
                 return;
             }
-            prev = cur;
-            current = cur.next;
         }
     }
 
@@ -106,23 +93,18 @@ const map = opaque {
 
         var idx: usize = 0;
         while (idx < old_len) : (idx += 1) {
-            var prev: ?*CacheMsg = null;
-            var current = _buckets[idx];
-            while (current) |cur| {
-                current = cur.next;
+            var p: *?*CacheMsg = &_buckets[idx];
+            while (p.*) |cur| {
                 const new_idx = calc_idx(cur.hashv);
                 if (new_idx != idx) {
                     assert(new_idx >= old_len);
                     // remove from part 1
-                    if (prev) |p|
-                        p.next = cur.next
-                    else
-                        _buckets[idx] = cur.next;
+                    p.* = cur.next;
                     // add to part 2
                     cur.next = _buckets[new_idx];
                     _buckets[new_idx] = cur;
                 } else {
-                    prev = cur;
+                    p = &cur.next;
                 }
             }
         }
@@ -144,7 +126,7 @@ pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32, p_ttl_r: *i32) ?[]con
         return null;
 
     const question = dns.question(qmsg, qnamelen);
-    const hashv = map.calc_hashv(question);
+    const hashv = cc.calc_hashv(question);
     const cache_msg = map.get(question, hashv) orelse return null;
 
     // update ttl
@@ -189,7 +171,7 @@ pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
 
     const cache_msg = b: {
         const question = dns.question(msg, qnamelen);
-        const hashv = map.calc_hashv(question);
+        const hashv = cc.calc_hashv(question);
         const old_msg = map.get(question, hashv);
         if (old_msg) |old| {
             // avoid duplicate add
