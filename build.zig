@@ -141,6 +141,7 @@ fn option_lto() void {
         else => false,
     };
     _lto = _b.option(bool, "lto", "enable LTO, default to true if in fast/small/safe mode") orelse default;
+    _lto = false;
 }
 
 fn option_strip() void {
