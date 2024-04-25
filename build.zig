@@ -141,7 +141,6 @@ fn option_lto() void {
         else => false,
     };
     _lto = _b.option(bool, "lto", "enable LTO, default to true if in fast/small/safe mode") orelse default;
-    _lto = false;
 }
 
 fn option_strip() void {
@@ -532,7 +531,8 @@ fn build_wolfssl() *Step {
         \\  [ "$target_triple" ] && host="--host=$target_triple" || host=""
         \\
         \\  ./autogen.sh
-        \\  ./configure $host \
+        \\  ./configure \
+        \\      $host \
         \\      --prefix="$install_dir" \
         \\      --enable-static \
         \\      --disable-shared \
@@ -545,7 +545,8 @@ fn build_wolfssl() *Step {
         \\      --enable-openssl-compatible-defaults \
         \\      --enable-opensslextra --enable-opensslall \
         \\      --disable-dtls --disable-oldtls --enable-tls13 \
-        \\      --enable-chacha --enable-poly1305 --enable-aesgcm \
+        \\      --enable-chacha --enable-poly1305 \
+        \\      --enable-aesgcm --disable-aescbc \
         \\      --enable-ecc --enable-sni --enable-session-ticket \
         \\      --disable-crypttests --disable-benchmark --disable-examples \
         \\      EXTRA_CFLAGS="-include $cwd/src/wolfssl_opt.h"

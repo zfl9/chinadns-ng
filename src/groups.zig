@@ -120,6 +120,7 @@ pub fn on_start() void {
 
     const err: struct { tag: Tag, msg: cc.ConstStr } = e: {
         var tag_to_filenames = [_]?dnl.filenames_t{null} ** (c.TAG__MAX + 1);
+        var has_tls_upstream = false;
 
         for (_tag_to_group.items) |*group_, tag_v| {
             const group: *Group = group_;
@@ -135,8 +136,10 @@ pub fn on_start() void {
             if (group.upstream_group.is_empty())
                 break :e .{ .tag = tag, .msg = "upstream_group is empty" };
 
-            for (group.upstream_group.items()) |*upstream|
+            for (group.upstream_group.items()) |*upstream| {
                 log.info(src, "tag:%s upstream: %s", .{ tag.name(), upstream.url });
+                has_tls_upstream = has_tls_upstream or upstream.proto == .tls;
+            }
 
             if (!group.ipset_name46.is_empty()) {
                 const name46 = group.ipset_name46.cstr();
@@ -144,6 +147,9 @@ pub fn on_start() void {
                 log.info(src, "tag:%s add ip to: %s", .{ tag.name(), name46 });
             }
         }
+
+        if (Upstream.has_tls and has_tls_upstream)
+            Upstream.TLS.init();
 
         dnl.init(&tag_to_filenames);
 

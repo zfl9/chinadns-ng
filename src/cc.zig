@@ -791,7 +791,7 @@ pub fn SSL_error_name(err: c_int) ConstStr {
         c.SSL_ERROR_WANT_ACCEPT => "SSL_ERROR_WANT_ACCEPT",
         c.SSL_ERROR_WANT_X509_LOOKUP => "SSL_ERROR_WANT_X509_LOOKUP",
         c.SSL_ERROR_SSL => "SSL_ERROR_SSL",
-        else => snprintf(static_buf(30), "SSL_ERROR_UNKNOWN(%d)", .{err}).ptr,
+        else => snprintf(static_buf(30), "SSL_ERROR(%d)", .{err}).ptr,
     };
 }
 

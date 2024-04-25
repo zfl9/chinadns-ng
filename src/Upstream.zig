@@ -215,15 +215,15 @@ fn udp_on_eol(self: *Upstream) void {
 
 // ======================================================
 
-const has_ssl = build_opts.enable_wolfssl;
+pub const has_tls = build_opts.enable_wolfssl;
 
-const ssl_info_t = struct {
+pub const TLS = struct {
     ssl: ?*c.SSL = null,
     session: ?*c.SSL_SESSION = null,
 
     var _ctx: ?*c.SSL_CTX = null;
 
-    pub fn init_ctx() void {
+    pub fn init() void {
         if (_ctx != null) return;
 
         const ctx = cc.SSL_CTX_new();
@@ -233,7 +233,7 @@ const ssl_info_t = struct {
         const ca_certs = b: {
             if (g.ca_certs.is_null()) {
                 if (cc.SSL_CTX_load_sys_CA_certs(ctx)) |ca_certs| break :b ca_certs;
-                log.err(src, "please specify the CA certs path manually", .{});
+                log.err(src, "please specify the CA certs path", .{});
                 cc.exit(1);
             } else {
                 const ca_certs = g.ca_certs.cstr();
@@ -247,12 +247,12 @@ const ssl_info_t = struct {
                 cc.exit(1);
             }
         };
-        log.info(src, "loaded CA certs: %s", .{ca_certs});
+        log.info(src, "%s", .{ca_certs});
 
         cc.SSL_ERR_clear();
     }
 
-    pub fn new_ssl(self: *SSL_INFO, fd: c_int, host: cc.ConstStr) ?void {
+    pub fn new_ssl(self: *tls_t, fd: c_int, host: cc.ConstStr) ?void {
         assert(self.ssl == null);
 
         const ssl = cc.SSL_new(_ctx.?);
@@ -281,12 +281,12 @@ const ssl_info_t = struct {
     }
 
     /// on EOF
-    pub fn on_eof(self: *SSL_INFO) void {
+    pub fn on_eof(self: *tls_t) void {
         return cc.SSL_set_shutdown(self.ssl.?);
     }
 
     // free the ssl obj
-    pub fn on_close(self: *SSL_INFO) void {
+    pub fn on_close(self: *tls_t) void {
         const ssl = self.ssl orelse return;
         self.ssl = null;
 
@@ -308,7 +308,7 @@ const ssl_info_t = struct {
     }
 };
 
-const SSL_INFO = if (has_ssl) ssl_info_t else struct {};
+const tls_t = if (has_tls) TLS else struct {};
 
 const TcpCtx = struct {
     upstream: *const Upstream,
@@ -317,7 +317,7 @@ const TcpCtx = struct {
     ack_list: std.AutoHashMapUnmanaged(u16, *RcMsg) = .{}, // qmsg to be ack
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     healthy: bool = false, // current connection processed at least one query ?
-    ssl_info: SSL_INFO = .{}, // for DoT upstream
+    tls: tls_t = .{}, // for DoT upstream
 
     /// must <= u16_max
     const PENDING_MAX = 1000;
@@ -470,7 +470,7 @@ const TcpCtx = struct {
     /// connection closed by peer
     fn on_close(self: *TcpCtx) void {
         self.fdobj = null;
-        if (has_ssl) self.ssl_info.on_close();
+        if (has_tls) self.tls.on_close();
 
         self.send_list.cancel_wait();
 
@@ -596,14 +596,14 @@ const TcpCtx = struct {
         else
             log.warn(src, "%s(%s) failed: (%d) %m", .{ op, self.upstream.url, cc.errno() });
 
-        if (has_ssl and self.upstream.proto == .tls)
+        if (has_tls and self.upstream.proto == .tls)
             cc.SSL_ERR_print(src);
 
         return null;
     }
 
     fn ssl(self: *const TcpCtx) *c.SSL {
-        return self.ssl_info.ssl.?;
+        return self.tls.ssl.?;
     }
 
     fn do_connect(self: *TcpCtx, fdobj: *EvLoop.Fd) ?void {
@@ -611,8 +611,8 @@ const TcpCtx = struct {
         const errmsg: ?cc.ConstStr = e: {
             g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e null;
 
-            if (has_ssl and self.upstream.proto == .tls) {
-                self.ssl_info.new_ssl(fdobj.fd, self.upstream.host.?) orelse break :e "ubable to create ssl object";
+            if (has_tls and self.upstream.proto == .tls) {
+                self.tls.new_ssl(fdobj.fd, self.upstream.host.?) orelse break :e "ubable to create ssl object";
 
                 while (true) {
                     var err: c_int = undefined;
@@ -637,7 +637,7 @@ const TcpCtx = struct {
                         self.upstream.url,
                         cc.SSL_get_version(self.ssl()),
                         cc.SSL_get_cipher(self.ssl()),
-                        cc.b2s(cc.SSL_session_reused(self.ssl()), "reused", "non-reused"),
+                        cc.b2s(cc.SSL_session_reused(self.ssl()), "resume", "full"),
                     });
                 }
             }
@@ -659,7 +659,7 @@ const TcpCtx = struct {
                     .msg_iovlen = iov.len,
                 };
                 g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e null; // async
-            } else if (has_ssl) {
+            } else if (has_tls) {
                 for (iov) |*v| {
                     while (true) {
                         if (!self.fdobj_ok(fdobj)) return null;
@@ -695,7 +695,7 @@ const TcpCtx = struct {
                     error.eof => return null,
                     error.other => break :e null,
                 };
-            } else if (has_ssl) {
+            } else if (has_tls) {
                 var nread: usize = 0;
                 while (nread < buf.len) {
                     if (!self.fdobj_ok(fdobj)) return null;
@@ -703,7 +703,7 @@ const TcpCtx = struct {
                     var err: c_int = undefined;
                     const n = cc.SSL_read(self.ssl(), buf[nread..], &err) orelse switch (err) {
                         c.SSL_ERROR_ZERO_RETURN => {
-                            self.ssl_info.on_eof();
+                            self.tls.on_eof();
                             return null;
                         },
                         c.SSL_ERROR_WANT_READ => {
@@ -713,7 +713,7 @@ const TcpCtx = struct {
                         else => {
                             // SSL_OP_IGNORE_UNEXPECTED_EOF (wolfssl does not support this)
                             if (err == c.SSL_ERROR_SYSCALL and cc.errno() == 0) {
-                                self.ssl_info.on_eof();
+                                self.tls.on_eof();
                                 return null;
                             }
                             break :e if (err == c.SSL_ERROR_SYSCALL) null else cc.SSL_error_name(err);
@@ -760,7 +760,7 @@ pub const Proto = enum {
 
     /// "tcp://"
     pub fn from_str(str: []const u8) ?Proto {
-        const map = if (has_ssl) .{
+        const map = if (has_tls) .{
             .{ .str = "tcp://", .proto = .tcp },
             .{ .str = "udp://", .proto = .udp },
             .{ .str = "tls://", .proto = .tls },
@@ -924,9 +924,6 @@ pub const Group = struct {
 
         const ptr = self.list.addOne(g.allocator) catch unreachable;
         ptr.* = Upstream.init(tag, proto, &addr, host, ip, port);
-
-        if (has_ssl and proto == .tls)
-            SSL_INFO.init_ctx();
     }
 
     pub fn rm_useless(self: *Group) void {
