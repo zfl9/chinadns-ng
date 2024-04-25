@@ -190,8 +190,8 @@ fn udp_recv(self: *Upstream, fd: c_int) void {
     }
 }
 
-fn udp_is_eol(self: *const Upstream, in_fdobj: *EvLoop.Fd) bool {
-    return self.udp_get_fdobj() != in_fdobj;
+fn udp_is_eol(self: *const Upstream, fdobj: *EvLoop.Fd) bool {
+    return self.udp_get_fdobj() != fdobj;
 }
 
 fn udp_on_eol(self: *Upstream) void {
@@ -217,8 +217,98 @@ fn udp_on_eol(self: *Upstream) void {
 
 const has_ssl = build_opts.enable_wolfssl;
 
-const SSL = if (has_ssl) ?*c.SSL else void;
-const SSL_null: SSL = if (has_ssl) null else {};
+const ssl_info_t = struct {
+    ssl: ?*c.SSL = null,
+    session: ?*c.SSL_SESSION = null,
+
+    var _ctx: ?*c.SSL_CTX = null;
+
+    pub fn init_ctx() void {
+        if (_ctx != null) return;
+
+        const ctx = cc.SSL_CTX_new();
+        _ctx = ctx;
+
+        const src = @src();
+        const ca_certs = b: {
+            if (g.ca_certs.is_null()) {
+                if (cc.SSL_CTX_load_sys_CA_certs(ctx)) |ca_certs| break :b ca_certs;
+                log.err(src, "please specify the CA certs path manually", .{});
+                cc.exit(1);
+            } else {
+                const ca_certs = g.ca_certs.cstr();
+                const ok = if (cc.is_dir(ca_certs))
+                    cc.SSL_CTX_load_CA_certs(ctx, null, ca_certs)
+                else
+                    cc.SSL_CTX_load_CA_certs(ctx, ca_certs, null);
+                if (ok) break :b ca_certs;
+                log.err(src, "failed to load CA certs: %s", .{ca_certs});
+                cc.SSL_ERR_print(src);
+                cc.exit(1);
+            }
+        };
+        log.info(src, "loaded CA certs: %s", .{ca_certs});
+
+        cc.SSL_ERR_clear();
+    }
+
+    pub fn new_ssl(self: *SSL_INFO, fd: c_int, host: cc.ConstStr) ?void {
+        assert(self.ssl == null);
+
+        const ssl = cc.SSL_new(_ctx.?);
+
+        var ok = false;
+        defer if (!ok) {
+            const src = @src();
+            log.err(src, "failed to create ssl", .{});
+            cc.SSL_ERR_print(src);
+            cc.SSL_free(ssl);
+        };
+
+        cc.SSL_set_fd(ssl, fd) orelse return null;
+        cc.SSL_set_host(ssl, host) orelse return null;
+
+        if (self.session) |session| {
+            defer {
+                cc.SSL_SESSION_free(session);
+                self.session = null;
+            }
+            cc.SSL_set_session(ssl, session) orelse return null;
+        }
+
+        ok = true;
+        self.ssl = ssl;
+    }
+
+    /// on EOF
+    pub fn on_eof(self: *SSL_INFO) void {
+        return cc.SSL_set_shutdown(self.ssl.?);
+    }
+
+    // free the ssl obj
+    pub fn on_close(self: *SSL_INFO) void {
+        const ssl = self.ssl orelse return;
+        self.ssl = null;
+
+        // the session should be free after it has been set into an ssl object
+        assert(self.session == null);
+
+        // close the session
+        // cc.SSL_set_shutdown(ssl);
+
+        // check if the session is resumable
+        if (cc.SSL_get1_session(ssl)) |session| {
+            if (cc.SSL_SESSION_is_resumable(session))
+                self.session = session
+            else
+                cc.SSL_SESSION_free(session);
+        }
+
+        cc.SSL_free(ssl);
+    }
+};
+
+const SSL_INFO = if (has_ssl) ssl_info_t else struct {};
 
 const TcpCtx = struct {
     upstream: *const Upstream,
@@ -227,7 +317,7 @@ const TcpCtx = struct {
     ack_list: std.AutoHashMapUnmanaged(u16, *RcMsg) = .{}, // qmsg to be ack
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     healthy: bool = false, // current connection processed at least one query ?
-    ssl: SSL = SSL_null,
+    ssl_info: SSL_INFO = .{}, // for DoT upstream
 
     /// must <= u16_max
     const PENDING_MAX = 1000;
@@ -347,10 +437,14 @@ const TcpCtx = struct {
 
     /// [async] used to send qmsg to upstream
     /// pop from send_list && add to ack_list
-    fn pop_qmsg(self: *TcpCtx, in_fdobj: *EvLoop.Fd) ?*RcMsg {
-        if (!self.fdobj_ok(in_fdobj)) return null;
+    fn pop_qmsg(self: *TcpCtx, fdobj: *EvLoop.Fd) ?*RcMsg {
+        if (!self.fdobj_ok(fdobj)) return null;
+
         const qmsg = self.send_list.pop(true) orelse return null;
         self.on_sending(qmsg);
+
+        if (!self.fdobj_ok(fdobj)) return null;
+
         return qmsg;
     }
 
@@ -373,14 +467,11 @@ const TcpCtx = struct {
         }
     }
 
-    /// connection closed
+    /// connection closed by peer
     fn on_close(self: *TcpCtx) void {
-        if (has_ssl) if (self.ssl) |ssl| {
-            c.SSL_free(ssl);
-            self.ssl = null;
-        };
-
         self.fdobj = null;
+        if (has_ssl) self.ssl_info.on_close();
+
         self.send_list.cancel_wait();
 
         if (self.healthy) {
@@ -406,8 +497,8 @@ const TcpCtx = struct {
     }
 
     /// check if disconnected or reconnected
-    fn fdobj_ok(self: *const TcpCtx, in_fdobj: *const EvLoop.Fd) bool {
-        return in_fdobj == self.fdobj;
+    fn fdobj_ok(self: *const TcpCtx, fdobj: *const EvLoop.Fd) bool {
+        return fdobj == self.fdobj;
     }
 
     fn start(self: *TcpCtx) void {
@@ -423,229 +514,219 @@ const TcpCtx = struct {
     fn send(self: *TcpCtx) void {
         defer co.terminate(@frame(), @frameSize(TcpCtx.send));
 
-        // nosuspend
         const fd = net.new_tcp_conn_sock(self.upstream.addr.family()) orelse return self.on_close();
-
         const fdobj = EvLoop.Fd.new(fd);
         self.fdobj = fdobj;
-
         defer {
             if (self.fdobj_ok(fdobj))
                 self.on_close();
             fdobj.free();
         }
 
-        // async
-        const err: cc.ConstStr = e: {
-            self.do_connect() orelse break :e "connect";
-            // g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e "connect";
+        self.do_connect(fdobj) orelse return;
 
-            co.create(recv, .{self});
+        co.create(recv, .{self});
 
-            while (self.pop_qmsg(fdobj)) |qmsg| {
-                var iov = [_]cc.iovec_t{
-                    .{
-                        .iov_base = std.mem.asBytes(&cc.htons(qmsg.len)),
-                        .iov_len = @sizeOf(u16),
-                    },
-                    .{
-                        .iov_base = qmsg.msg().ptr,
-                        .iov_len = qmsg.len,
-                    },
-                };
-                const msg = cc.msghdr_t{
-                    .msg_iov = &iov,
-                    .msg_iovlen = iov.len,
-                };
-                // g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e "send_query";
-                self.do_sendmsg(&msg, 0) orelse break :e "send_query";
-            }
-
-            return;
-        };
-
-        log.err(@src(), "%s(%d, '%s') failed: (%d) %m", .{ err, fdobj.fd, self.upstream.url, cc.errno() });
+        while (self.pop_qmsg(fdobj)) |qmsg| {
+            var iov = [_]cc.iovec_t{
+                .{
+                    .iov_base = std.mem.asBytes(&cc.htons(qmsg.len)),
+                    .iov_len = @sizeOf(u16),
+                },
+                .{
+                    .iov_base = qmsg.msg().ptr,
+                    .iov_len = qmsg.len,
+                },
+            };
+            self.do_send(fdobj, &iov) orelse return;
+        }
     }
 
     fn recv(self: *TcpCtx) void {
         defer co.terminate(@frame(), @frameSize(recv));
 
-        // nosuspend
         const fdobj = self.fdobj.?.ref();
-
         defer {
             if (self.fdobj_ok(fdobj))
                 self.on_close();
             fdobj.unref();
         }
 
-        // async
-        const err: struct { op: cc.ConstStr, msg: ?cc.ConstStr = null } = e: {
-            var free_rmsg: ?*RcMsg = null;
-            defer if (free_rmsg) |rmsg| rmsg.free();
+        var free_rmsg: ?*RcMsg = null;
+        defer if (free_rmsg) |rmsg| rmsg.free();
 
-            while (self.fdobj_ok(fdobj)) {
-                // read the len
-                var rlen: u16 = undefined;
-                // g.evloop.recv_exactly(fdobj, std.mem.asBytes(&rlen), 0) orelse
-                self.recv_exactly(std.mem.asBytes(&rlen), 0) orelse
-                    if (cc.errno() == 0) return else break :e .{ .op = "read_len" };
+        while (true) {
+            // read the len
+            var rlen: u16 = undefined;
+            self.do_recv(fdobj, std.mem.asBytes(&rlen), 0) orelse return;
 
-                rlen = cc.ntohs(rlen);
-                if (rlen < c.DNS_MSG_MINSIZE)
-                    break :e .{ .op = "read_len", .msg = "invalid msg len" };
+            // check the len
+            rlen = cc.ntohs(rlen);
+            if (rlen < c.DNS_MSG_MINSIZE) {
+                log.warn(@src(), "read_len(%d, '%s') failed: invalid len:%u", .{ fdobj.fd, self.upstream.url, cc.to_uint(rlen) });
+                return;
+            }
 
-                const rmsg: *RcMsg = if (free_rmsg) |rmsg| rmsg.realloc(rlen) else RcMsg.new(rlen);
-                free_rmsg = null;
+            const rmsg: *RcMsg = if (free_rmsg) |rmsg| rmsg.realloc(rlen) else RcMsg.new(rlen);
+            free_rmsg = null;
+            defer {
+                if (rmsg.is_unique())
+                    free_rmsg = rmsg
+                else
+                    rmsg.unref();
+            }
 
-                defer {
-                    if (rmsg.is_unique())
-                        free_rmsg = rmsg
-                    else
-                        rmsg.unref();
+            // read the msg
+            rmsg.len = rlen;
+            self.do_recv(fdobj, rmsg.msg(), 0) orelse return;
+
+            if (self.fdobj_ok(fdobj))
+                self.on_reply(rmsg);
+
+            server.on_reply(rmsg, self.upstream);
+        }
+    }
+
+    /// `errmsg`: null means strerror(errno)
+    noinline fn on_error(self: *const TcpCtx, op: cc.ConstStr, errmsg: ?cc.ConstStr) ?void {
+        const src = @src();
+
+        if (errmsg) |msg|
+            log.warn(src, "%s(%s) failed: %s", .{ op, self.upstream.url, msg })
+        else
+            log.warn(src, "%s(%s) failed: (%d) %m", .{ op, self.upstream.url, cc.errno() });
+
+        if (has_ssl and self.upstream.proto == .tls)
+            cc.SSL_ERR_print(src);
+
+        return null;
+    }
+
+    fn ssl(self: *const TcpCtx) *c.SSL {
+        return self.ssl_info.ssl.?;
+    }
+
+    fn do_connect(self: *TcpCtx, fdobj: *EvLoop.Fd) ?void {
+        // null means strerror(errno)
+        const errmsg: ?cc.ConstStr = e: {
+            g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e null;
+
+            if (has_ssl and self.upstream.proto == .tls) {
+                self.ssl_info.new_ssl(fdobj.fd, self.upstream.host.?) orelse break :e "ubable to create ssl object";
+
+                while (true) {
+                    var err: c_int = undefined;
+                    cc.SSL_connect(self.ssl(), &err) orelse switch (err) {
+                        c.SSL_ERROR_WANT_READ => {
+                            g.evloop.wait_readable(fdobj);
+                            continue;
+                        },
+                        c.SSL_ERROR_WANT_WRITE => {
+                            g.evloop.wait_writable(fdobj);
+                            continue;
+                        },
+                        else => {
+                            break :e if (err == c.SSL_ERROR_SYSCALL) null else cc.SSL_error_name(err);
+                        },
+                    };
+                    break;
                 }
 
-                // read the msg
-                rmsg.len = rlen;
-                // g.evloop.recv_exactly(fdobj, rmsg.msg(), 0) orelse
-                self.recv_exactly(rmsg.msg(), 0) orelse
-                    break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
-
-                if (self.fdobj_ok(fdobj))
-                    self.on_reply(rmsg);
-
-                server.on_reply(rmsg, self.upstream);
+                if (g.verbose()) {
+                    log.info(@src(), "%s | %s | %s | %s", .{
+                        self.upstream.url,
+                        cc.SSL_get_version(self.ssl()),
+                        cc.SSL_get_cipher(self.ssl()),
+                        cc.b2s(cc.SSL_session_reused(self.ssl()), "reused", "non-reused"),
+                    });
+                }
             }
 
             return;
         };
 
-        const src = @src();
-        if (err.msg) |msg|
-            log.err(src, "%s(%d, '%s') failed: %s", .{ err.op, fdobj.fd, self.upstream.url, msg })
-        else
-            log.err(src, "%s(%d, '%s') failed: (%d) %m", .{ err.op, fdobj.fd, self.upstream.url, cc.errno() });
+        return self.on_error("connect", errmsg);
     }
 
-    fn do_connect(self: *TcpCtx) ?void {
-        g.evloop.connect(self.fdobj.?, &self.upstream.addr) orelse return null;
+    fn do_send(self: *TcpCtx, fdobj: *EvLoop.Fd, iov: []cc.iovec_t) ?void {
+        // null means strerror(errno)
+        const errmsg: ?cc.ConstStr = e: {
+            if (!self.fdobj_ok(fdobj)) return null;
 
-        if (has_ssl and self.upstream.proto == .tls) {
-            const static = struct {
-                var ssl_ctx: ?*c.SSL_CTX = null;
+            if (self.upstream.proto != .tls) {
+                const msg = cc.msghdr_t{
+                    .msg_iov = iov.ptr,
+                    .msg_iovlen = iov.len,
+                };
+                g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e null; // async
+            } else if (has_ssl) {
+                for (iov) |*v| {
+                    while (true) {
+                        if (!self.fdobj_ok(fdobj)) return null;
 
-                fn get_ssl_ctx() *c.SSL_CTX {
-                    if (ssl_ctx == null) {
-                        ssl_ctx = c.wolfSSL_CTX_new(c.TLS_client_method());
-                        assert(ssl_ctx != null);
-                        load_ca_certs();
+                        var err: c_int = undefined;
+                        cc.SSL_write(self.ssl(), v.iov_base[0..v.iov_len], &err) orelse switch (err) {
+                            c.SSL_ERROR_WANT_WRITE => {
+                                g.evloop.wait_writable(fdobj); // async
+                                continue;
+                            },
+                            else => {
+                                break :e if (err == c.SSL_ERROR_SYSCALL) null else cc.SSL_error_name(err);
+                            },
+                        };
+                        break;
                     }
-                    return ssl_ctx.?;
                 }
+            } else unreachable;
 
-                fn load_ca_certs() void {
-                    const file_list = [_][*:0]const u8{
-                        "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu/Gentoo etc.
-                        "/etc/pki/tls/certs/ca-bundle.crt", // Fedora/RHEL 6
-                        "/etc/ssl/ca-bundle.pem", // OpenSUSE
-                        "/etc/pki/tls/cacert.pem", // OpenELEC
-                        "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7
-                        "/etc/ssl/cert.pem", // Alpine Linux
-                    };
-                    const dir_list = [_][*:0]const u8{
-                        "/etc/ssl/certs", // SLES10/SLES11, https://golang.org/issue/12139
-                        "/etc/pki/tls/certs", // Fedora/RHEL
-                    };
-                    for (file_list) |path| {
-                        if (c.SSL_CTX_load_verify_locations(ssl_ctx, path, null) == 1) {
-                            if (g.verbose())
-                                log.info(@src(), "CA certs: %s", .{path});
-                            return;
-                        }
-                    }
-                    for (dir_list) |path| {
-                        if (c.SSL_CTX_load_verify_locations(ssl_ctx, null, path) == 1) {
-                            if (g.verbose())
-                                log.info(@src(), "CA certs: %s", .{path});
-                            return;
-                        }
-                    }
-                    log.err(@src(), "can't load CA certs, TODO: add option", .{});
-                    cc.exit(1);
-                }
-            };
-
-            self.ssl = c.SSL_new(static.get_ssl_ctx());
-            assert(c.SSL_set_fd(self.ssl, self.fdobj.?.fd) == 1);
-            assert(c.SSL_set_tlsext_host_name(self.ssl, self.upstream.host) == 1); // SNI (client hello)
-            assert(c.SSL_set1_host(self.ssl, self.upstream.host) == 1); // host check (server hello)
-
-            while (true) {
-                const res = c.SSL_connect(self.ssl);
-                if (res == 1) break;
-                self.on_ssl_error(res) orelse return null;
-            }
-        }
-    }
-
-    fn do_sendmsg(self: *TcpCtx, msg: *const cc.msghdr_t, flags: c_int) ?void {
-        if (!has_ssl or self.upstream.proto != .tls)
-            return g.evloop.sendmsg(self.fdobj.?, msg, flags);
-
-        for (msg.iov_items()) |iov| {
-            while (true) {
-                const res = c.SSL_write(self.ssl, iov.iov_base, cc.to_int(iov.iov_len));
-                if (res > 0) break;
-                self.on_ssl_error(res) orelse return null;
-            }
-        }
-    }
-
-    fn recv_exactly(self: *TcpCtx, buf: []u8, flags: c_int) ?void {
-        if (!has_ssl or self.upstream.proto != .tls)
-            return g.evloop.recv_exactly(self.fdobj.?, buf, flags);
-
-        var nread: usize = 0;
-        while (nread < buf.len) {
-            const res = c.SSL_read(self.ssl, buf.ptr + nread, cc.to_int(buf.len - nread));
-            if (res > 0) {
-                nread += cc.to_usize(res);
-            } else {
-                self.on_ssl_error(res) orelse return null;
-            }
-        }
-    }
-
-    /// null && errno=0 => EOF
-    fn on_ssl_error(self: *TcpCtx, res: c_int) ?void {
-        const err = c.SSL_get_error(self.ssl, res);
-        switch (err) {
-            c.SSL_ERROR_ZERO_RETURN => {
-                cc.set_errno(0);
-                return null;
-            },
-            c.SSL_ERROR_WANT_READ => {
-                g.evloop.wait_readable(self.fdobj.?);
-            },
-            c.SSL_ERROR_WANT_WRITE => {
-                g.evloop.wait_writable(self.fdobj.?);
-            },
-            else => {
-                log.err(@src(), "ssl error: %s", .{get_ssl_errstr(@bitCast(c_ulong, @as(c_long, err)))});
-                return null;
-            },
-        }
-    }
-
-    /// static buffer
-    fn get_ssl_errstr(err: c_ulong) cc.ConstStr {
-        const static = struct {
-            var buf: [50]u8 = undefined;
+            return;
         };
-        return cc.ptrcast(
-            cc.ConstStr,
-            c.ERR_error_string(err, &static.buf),
-        );
+
+        return self.on_error("send", errmsg);
+    }
+
+    fn do_recv(self: *TcpCtx, fdobj: *EvLoop.Fd, buf: []u8, flags: c_int) ?void {
+        // null means strerror(errno)
+        const errmsg: ?cc.ConstStr = e: {
+            if (!self.fdobj_ok(fdobj)) return null;
+
+            if (self.upstream.proto != .tls) {
+                g.evloop.recv_exactly(fdobj, buf, flags) catch |err| switch (err) {
+                    error.eof => return null,
+                    error.other => break :e null,
+                };
+            } else if (has_ssl) {
+                var nread: usize = 0;
+                while (nread < buf.len) {
+                    if (!self.fdobj_ok(fdobj)) return null;
+
+                    var err: c_int = undefined;
+                    const n = cc.SSL_read(self.ssl(), buf[nread..], &err) orelse switch (err) {
+                        c.SSL_ERROR_ZERO_RETURN => {
+                            self.ssl_info.on_eof();
+                            return null;
+                        },
+                        c.SSL_ERROR_WANT_READ => {
+                            g.evloop.wait_readable(fdobj); //async
+                            continue;
+                        },
+                        else => {
+                            // SSL_OP_IGNORE_UNEXPECTED_EOF (wolfssl does not support this)
+                            if (err == c.SSL_ERROR_SYSCALL and cc.errno() == 0) {
+                                self.ssl_info.on_eof();
+                                return null;
+                            }
+                            break :e if (err == c.SSL_ERROR_SYSCALL) null else cc.SSL_error_name(err);
+                        },
+                    };
+                    nread += n;
+                }
+            } else unreachable;
+
+            return;
+        };
+
+        return self.on_error("recv", errmsg);
     }
 };
 
@@ -843,6 +924,9 @@ pub const Group = struct {
 
         const ptr = self.list.addOne(g.allocator) catch unreachable;
         ptr.* = Upstream.init(tag, proto, &addr, host, ip, port);
+
+        if (has_ssl and proto == .tls)
+            SSL_INFO.init_ctx();
     }
 
     pub fn rm_useless(self: *Group) void {

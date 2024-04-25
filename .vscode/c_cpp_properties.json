@@ -5,16 +5,13 @@
             "intelliSenseMode": "linux-clang-x64",
             "compilerPath": "/usr/bin/clang",
             "compilerArgs": [
-                "-I${workspaceFolder}/src/wolfssl",
-                "-I${workspaceFolder}/dep/wolfssl-5.7.0",
-                "-I${workspaceFolder}/dep/openssl-3.2.0@x86_64-linux-musl@x86_64+native@fast+lto/include",
+                "-I${workspaceFolder}/dep/wolfssl-5.7.0-stable",
                 "-I${workspaceFolder}/dep/mimalloc-2.1.2/include"
             ],
             "defines": [
                 "MUSL",
                 "TEST",
-                "BUILDING_WOLFSSL",
-                "WOLFSSL_USER_SETTINGS",
+                "ENABLE_WOLFSSL"
             ],
             "cStandard": "c11",
             "cppStandard": "c++17"

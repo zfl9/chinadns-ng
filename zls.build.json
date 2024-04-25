@@ -1,7 +1,7 @@
 {
     "build_options": [
         {
-            "name": "openssl",
+            "name": "wolfssl",
             "value": "true"
         },
         {

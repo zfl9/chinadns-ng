@@ -1,15 +1,8 @@
 {
     "files.associations": {
-        "*.config": "lua",
         "*.h": "c",
         "*.i": "c",
         "*.in": "c",
         "*.S": "c",
-        "*.inc": "c",
-        "chrono": "c",
-        "typeinfo": "c",
-        "complex": "c",
-        "format": "c",
-        "random": "c"
     },
 }

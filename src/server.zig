@@ -215,8 +215,10 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
         while (true) {
             // read len (be16)
             var len: u16 = undefined;
-            g.evloop.recv_exactly(fdobj, std.mem.asBytes(&len), 0) orelse
-                if (cc.errno() == 0) return else break :e .{ .op = "read_len" };
+            g.evloop.recv_exactly(fdobj, std.mem.asBytes(&len), 0) catch |err| switch (err) {
+                error.eof => return,
+                error.other => break :e .{ .op = "read_len" },
+            };
 
             len = cc.ntohs(len);
             if (len < c.DNS_MSG_MINSIZE or len > c.DNS_QMSG_MAXSIZE) {
@@ -236,8 +238,10 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
 
             // read msg
             qmsg.len = len;
-            g.evloop.recv_exactly(fdobj, qmsg.msg(), 0) orelse
-                break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
+            g.evloop.recv_exactly(fdobj, qmsg.msg(), 0) catch |err| switch (err) {
+                error.eof => break :e .{ .op = "read_msg", .msg = "connection closed" },
+                error.other => break :e .{ .op = "read_msg" },
+            };
 
             on_query(qmsg, fdobj, &src_addr, .from_tcp);
         }

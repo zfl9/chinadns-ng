@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <sys/types.h>
 
 #define likely(x)	__builtin_expect(!!(x), 1)
@@ -126,6 +127,10 @@ const void *SIG_IGNORE(void);
 const void *SIG_DEFAULT(void);
 const void *SIG_ERROR(void);
 
+bool is_dir(const char *path);
+
 ssize_t fstat_size(int fd);
 
 uint calc_hashv(const void *ptr, size_t len);
+
+bool has_aes(void);

@@ -46,6 +46,7 @@ const help =
     \\ --verdict-cache <size>               enable verdict caching for tag:none domains
     \\ --hosts [path]                       load hosts file, default path is /etc/hosts
     \\ --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
+    \\ --ca-certs <path>                    CA certs path for SSL certificate validation
     \\ -o, --timeout-sec <sec>              response timeout of upstream, default: 5
     \\ -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
     \\ -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -135,6 +136,7 @@ const optdef_array = [_]OptDef{
     .{ .short = "",  .long = "verdict-cache",    .value = .required, .optfn = opt_verdict_cache,    },
     .{ .short = "",  .long = "hosts",            .value = .optional, .optfn = opt_hosts,            },
     .{ .short = "",  .long = "dns-rr-ip",        .value = .required, .optfn = opt_dns_rr_ip,        },
+    .{ .short = "",  .long = "ca-certs",         .value = .required, .optfn = opt_ca_certs,         },
     .{ .short = "o", .long = "timeout-sec",      .value = .required, .optfn = opt_timeout_sec,      },
     .{ .short = "p", .long = "repeat-times",     .value = .required, .optfn = opt_repeat_times,     },
     .{ .short = "n", .long = "noip-as-chnip",    .value = .no_value, .optfn = opt_noip_as_chnip,    },
@@ -490,6 +492,10 @@ fn opt_dns_rr_ip(in_value: ?[]const u8) void {
         while (ip_it.next()) |ip|
             local_rr.add_ip(name, ip) orelse invalid_optvalue(src, value);
     }
+}
+
+fn opt_ca_certs(in_value: ?[]const u8) void {
+    g.ca_certs.set(in_value.?);
 }
 
 fn opt_timeout_sec(in_value: ?[]const u8) void {

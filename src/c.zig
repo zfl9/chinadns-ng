@@ -2,19 +2,11 @@
 // because it saves the compiler from invoking clang multiple times,
 // and prevents inline functions from being duplicated.
 
-const build_opts = @import("build_opts");
-
 // import into the current namespace (c.zig)
 // mainly used to access C constants, C typedefs
 // please give priority to using functions in the `cc` namespace
-pub usingnamespace @cImport({
+usingnamespace @cImport({
     @cDefine("_GNU_SOURCE", {});
-
-    if (build_opts.enable_wolfssl) {
-        @cInclude("wolfssl/options.h");
-        @cInclude("wolfssl/openssl/ssl.h");
-        @cInclude("wolfssl/openssl/err.h");
-    }
 
     @cInclude("stdio.h");
     @cInclude("stdlib.h");
@@ -40,6 +32,7 @@ pub usingnamespace @cImport({
     @cInclude("src/dnl.h");
     @cInclude("src/ipset.h");
     @cInclude("src/misc.h");
+    @cInclude("src/wolfssl.h");
 });
 
 /// assuming CHAR_BIT=8

@@ -71,3 +71,6 @@ pub var evloop: EvLoop = undefined;
 
 /// global memory allocator
 pub var allocator: std.mem.Allocator = undefined;
+
+/// the location of CA certs
+pub var ca_certs: DynStr = .{};

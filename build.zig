@@ -141,6 +141,7 @@ fn option_lto() void {
         else => false,
     };
     _lto = _b.option(bool, "lto", "enable LTO, default to true if in fast/small/safe mode") orelse default;
+    _lto = false;
 }
 
 fn option_strip() void {
@@ -515,6 +516,7 @@ fn build_wolfssl() *Step {
         \\  zig_cache_dir='{s}'
         \\  is_musl='{s}'
         \\  lto='{s}'
+        \\  cwd="$PWD"
         \\
         \\  cd "$src_dir"
         \\
@@ -530,9 +532,23 @@ fn build_wolfssl() *Step {
         \\  [ "$target_triple" ] && host="--host=$target_triple" || host=""
         \\
         \\  ./autogen.sh
-        \\  ./configure $host --prefix="$install_dir" --enable-opensslall --enable-static --disable-shared \
-        \\      --enable-staticmemory --disable-crypttests --disable-benchmark --disable-examples \
-        \\      --enable-singlethreaded
+        \\  ./configure $host \
+        \\      --prefix="$install_dir" \
+        \\      --enable-static \
+        \\      --disable-shared \
+        \\      --disable-harden \
+        \\      --enable-staticmemory \
+        \\      --enable-singlethreaded \
+        \\      --disable-threadlocal \
+        \\      --disable-asyncthreads \
+        \\      --disable-error-queue-per-thread \
+        \\      --enable-openssl-compatible-defaults \
+        \\      --enable-opensslextra --enable-opensslall \
+        \\      --disable-dtls --disable-oldtls --enable-tls13 \
+        \\      --enable-chacha --enable-poly1305 --enable-aesgcm \
+        \\      --enable-ecc --enable-sni --enable-session-ticket \
+        \\      --disable-crypttests --disable-benchmark --disable-examples \
+        \\      EXTRA_CFLAGS="-include $cwd/src/wolfssl_opt.h"
         \\  make install
     ;
 
@@ -684,8 +700,10 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
             obj.defineCMacroRaw("MUSL");
 
         // wolfssl lib
-        if (_enable_wolfssl)
+        if (_enable_wolfssl) {
+            obj.defineCMacroRaw("ENABLE_WOLFSSL");
             obj.addIncludePath(_dep_wolfssl.include_dir);
+        }
 
         // for log.h
         obj.defineCMacroRaw(fmt("LOG_FILENAME=\"{s}\"", .{file.name}));
