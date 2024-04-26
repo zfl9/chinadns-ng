@@ -568,7 +568,7 @@ const ReplyLog = struct {
 
     /// string literal
     fn tag_name(self: *const ReplyLog) cc.ConstStr {
-        return if (self.tag) |tag| tag.name() else "null";
+        return if (self.tag) |tag| tag.name() else "(null)";
     }
 
     pub noinline fn reply(self: *const ReplyLog, action: cc.ConstStr, alt_url: ?cc.ConstStr) void {
