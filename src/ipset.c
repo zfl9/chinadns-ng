@@ -737,9 +737,22 @@ static void add_ip_nftset(const struct ipset_addctx *noalias ctx, bool v4, const
     }
 }
 
+static bool in_blacklist(const ubyte *noalias ip, bool v4) {
+    if (v4) {
+        if (ip[0] == 127) return true;
+        if (ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0) return true;
+    } else {
+        const ubyte zeros[15] = {0};
+        if (memcmp(ip, zeros, 15) == 0 && (ip[15] == 0 || ip[15] == 1)) return true;
+    }
+    return false;
+}
+
 void ipset_add_ip(struct ipset_addctx *noalias ctx, const void *noalias ip, bool v4) {
     struct nlmsghdr *msg = a_msg(ctx, v4);
     if (!msg) return;
+
+    if (in_blacklist(ip, v4)) return;
 
     int n = a_ipcnt(ctx, v4);
     if (n <= 0)
