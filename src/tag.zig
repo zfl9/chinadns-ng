@@ -24,6 +24,10 @@ pub const Tag = enum(u8) {
         return c.tag_is_valid(tag.int());
     }
 
+    pub inline fn is_null(tag: Tag) bool {
+        return cc.memeql(cc.strslice_c(tag.name()), "null");
+    }
+
     pub inline fn from_int(v: u8) Tag {
         return @intToEnum(Tag, v);
     }

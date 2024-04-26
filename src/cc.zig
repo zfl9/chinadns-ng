@@ -184,7 +184,7 @@ pub inline fn strslice(str: anytype) StrSlice(@TypeOf(str), false) {
     const S = @TypeOf(str);
     if (comptime isManyItemPtr(S)) {
         comptime assert(meta.sentinel(S).? == 0);
-        return std.mem.sliceTo(str, 0);
+        return str[0..c.strlen(str) :0];
     }
     return str;
 }

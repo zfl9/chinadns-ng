@@ -98,6 +98,9 @@ pub noinline fn add_dnl(tag: Tag, filenames: []const u8) ?void {
 
 /// for opt.zig
 pub noinline fn add_upstream(tag: Tag, upstreams: []const u8) ?void {
+    if (tag.is_null())
+        return null;
+
     const upstream_group = &get_or_add(tag).upstream_group;
 
     var it = std.mem.split(u8, upstreams, ",");
@@ -106,10 +109,11 @@ pub noinline fn add_upstream(tag: Tag, upstreams: []const u8) ?void {
 }
 
 /// for opt.zig
-pub noinline fn set_ipset(tag: Tag, name46: []const u8) void {
-    const ipset_name46 = &get_or_add(tag).ipset_name46;
+pub noinline fn set_ipset(tag: Tag, name46: []const u8) ?void {
+    if (tag.is_null())
+        return null;
 
-    ipset_name46.set(name46);
+    get_or_add(tag).ipset_name46.set(name46);
 }
 
 // ========================================================
@@ -130,6 +134,9 @@ pub fn on_start() void {
                 tag_to_filenames[tag_v] = group.dnl_filenames.items_z().ptr
             else if (tag != .chn and tag != .gfw and tag != g.default_tag)
                 break :e .{ .tag = tag, .msg = "dnl_filenames is empty" };
+
+            if (tag.is_null())
+                continue;
 
             group.upstream_group.rm_useless();
 

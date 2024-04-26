@@ -343,11 +343,11 @@ fn opt_default_tag(in_value: ?[]const u8) void {
 
 fn opt_add_tagchn_ip(in_value: ?[]const u8) void {
     // empty string means 'no_value'
-    groups.set_ipset(.chn, in_value orelse "");
+    groups.set_ipset(.chn, in_value orelse "").?;
 }
 
 fn opt_add_taggfw_ip(in_value: ?[]const u8) void {
-    groups.set_ipset(.gfw, in_value.?);
+    groups.set_ipset(.gfw, in_value.?).?;
 }
 
 fn opt_ipset_name4(in_value: ?[]const u8) void {
@@ -396,7 +396,7 @@ fn opt_group_ipset(in_value: ?[]const u8) void {
     const src = @src();
 
     check_group_context(src, value);
-    groups.set_ipset(_tag, value);
+    groups.set_ipset(_tag, value) orelse invalid_optvalue(src, value);
 }
 
 fn opt_no_ipv6(in_value: ?[]const u8) void {
@@ -592,7 +592,7 @@ const Parser = struct {
         const argv = std.os.argv;
 
         return if (self.idx < argv.len)
-            std.mem.sliceTo(argv[self.idx], 0)
+            cc.strslice_c(argv[self.idx])
         else
             null;
     }

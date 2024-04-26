@@ -320,11 +320,16 @@ const QueryLog = struct {
         );
     }
 
-    pub noinline fn filter(self: *const QueryLog) void {
+    pub noinline fn filter(self: *const QueryLog, rule: enum { tag_null, qtype }) void {
+        var buf: [20]u8 = undefined;
+        const rule_str: cc.ConstStr = switch (rule) {
+            .tag_null => "tag:null",
+            .qtype => cc.snprintf(&buf, "qtype:%u", .{cc.to_uint(self.qtype)}).ptr,
+        };
         log.info(
             @src(),
-            "query(id:%u, tag:%s, qtype:%u, '%s') filtered by rule: qtype_%u",
-            .{ cc.to_uint(self.id), self.tag.name(), cc.to_uint(self.qtype), self.name, cc.to_uint(self.qtype) },
+            "query(id:%u, tag:%s, qtype:%u, '%s') filtered by rule: %s",
+            .{ cc.to_uint(self.id), self.tag.name(), cc.to_uint(self.qtype), self.name, rule_str },
         );
     }
 
@@ -411,6 +416,13 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     else
         dns.get_bufsz(msg, qnamelen);
 
+    // tag:null filter
+    if (tag.is_null()) {
+        if (g.verbose()) qlog.filter(.tag_null);
+        const rmsg = dns.empty_reply(msg, qnamelen);
+        return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
+    }
+
     // AAAA filter
     if (qtype == c.DNS_TYPE_AAAA)
         if (g.noaaaa_rule.by_tag(tag)) |rule| {
@@ -421,7 +433,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
     // qtype filter
     if (std.mem.indexOfScalar(u16, g.filter_qtypes, qtype) != null) {
-        if (g.verbose()) qlog.filter();
+        if (g.verbose()) qlog.filter(.qtype);
         const rmsg = dns.empty_reply(msg, qnamelen);
         return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
     }
