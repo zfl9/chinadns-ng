@@ -499,7 +499,7 @@ void dnl_init(const filenames_t tag_to_filenames[TAG__MAX + 1], bool gfwlist_fir
         if (tag_to_count[tag] > 0) {
             u32 added = add_list(tag_to_addr0[tag], tag_to_count[tag]);
             total_added += added;
-            log_info("%s_list loaded:%lu added:%lu cost:%.3fk",
+            log_info("tag:%s loaded:%lu added:%lu cost:%.3fk",
                 tag_to_name(tag), (ulong)tag_to_count[tag], (ulong)added, tag_to_cost[tag]/1024.0);
         }
     }
