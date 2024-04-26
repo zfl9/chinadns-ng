@@ -227,6 +227,9 @@ static const char *ipset_strerror(int errcode) {
 
 /* ====================================================== */
 
+/* add ip */
+bool ipset_blacklist = true;
+
 static int s_sock   = -1; /* netlink socket fd */
 static u32 s_portid = 0; /* local address (port-id) */
 
@@ -739,8 +742,7 @@ static void add_ip_nftset(const struct ipset_addctx *noalias ctx, bool v4, const
 
 static bool in_blacklist(const ubyte *noalias ip, bool v4) {
     if (v4) {
-        if (ip[0] == 127) return true;
-        if (ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0) return true;
+        if (ip[0] == 127 || ip[0] == 0) return true;
     } else {
         const ubyte zeros[15] = {0};
         if (memcmp(ip, zeros, 15) == 0 && (ip[15] == 0 || ip[15] == 1)) return true;
@@ -752,7 +754,7 @@ void ipset_add_ip(struct ipset_addctx *noalias ctx, const void *noalias ip, bool
     struct nlmsghdr *msg = a_msg(ctx, v4);
     if (!msg) return;
 
-    if (in_blacklist(ip, v4)) return;
+    if (ipset_blacklist && in_blacklist(ip, v4)) return;
 
     int n = a_ipcnt(ctx, v4);
     if (n <= 0)

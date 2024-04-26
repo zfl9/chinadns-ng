@@ -3,6 +3,8 @@
 #include "misc.h"
 #include <stdbool.h>
 
+extern bool ipset_blacklist;
+
 struct ipset_testctx;
 struct ipset_addctx;
 
