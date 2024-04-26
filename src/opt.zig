@@ -72,7 +72,7 @@ const version: cc.ConstStr = b: {
     if (!std.mem.startsWith(u8, build_opts.cpu, cpu_model))
         @compileError("cpu-model mismatch: " ++ cpu_model ++ " != " ++ build_opts.cpu);
 
-    var prefix: [:0]const u8 = "ChinaDNS-NG " ++ build_opts.version;
+    var prefix: [:0]const u8 = "ChinaDNS-NG " ++ build_opts.version ++ " " ++ build_opts.commit_id;
 
     if (build_opts.enable_wolfssl)
         prefix = prefix ++ " | wolfssl-" ++ build_opts.wolfssl_version;

@@ -97,6 +97,7 @@ fn init(b: *Builder) void {
     _build_opts.addOption(bool, "enable_wolfssl", _enable_wolfssl);
     _build_opts.addOption(bool, "enable_mimalloc", _enable_mimalloc);
     _build_opts.addOption([]const u8, "version", chinadns_version);
+    _build_opts.addOption([]const u8, "commit_id", get_commit_id());
     _build_opts.addOption([]const u8, "wolfssl_version", _dep_wolfssl.version);
     _build_opts.addOption([]const u8, "mimalloc_version", _dep_mimalloc.version);
     _build_opts.addOption([]const u8, "target", desc_target());
@@ -234,30 +235,32 @@ fn add_tar_extract(tarball_path: []const u8, to_dir: []const u8) *Step {
 var _first_error: bool = true;
 
 /// print to stderr, auto append '\n'
-fn _print(comptime format: []const u8, args: anytype) void {
+fn print(comptime format: []const u8, args: anytype) void {
     _ = std.io.getStdErr().write(fmt(format ++ "\n", args)) catch unreachable;
 }
 
 fn newline() void {
-    return _print("", .{});
+    return print("", .{});
 }
 
-fn _print_err(comptime format: []const u8, args: anytype) void {
+/// print("> ERROR: msg")
+fn print_err(comptime format: []const u8, args: anytype) void {
     if (_first_error) {
         _first_error = false;
         newline();
     }
-    _print("> ERROR: " ++ format, args);
+    print("> ERROR: " ++ format, args);
 }
 
-/// print err msg and mark user input as invalid
+/// print("> ERROR: msg") && mark user_input as invalid
 fn err_invalid(comptime format: []const u8, args: anytype) void {
-    _print_err(format, args);
+    print_err(format, args);
     _b.invalid_user_input = true;
 }
 
+/// print("> ERROR: msg") && std.os.exit(1)
 fn err_exit(comptime format: []const u8, args: anytype) noreturn {
-    _print_err(format, args);
+    print_err(format, args);
     newline();
     std.os.exit(1);
 }
@@ -276,6 +279,7 @@ fn path_exists(rel_path: []const u8) bool {
     return if (std.fs.cwd().access(rel_path, .{})) true else |_| false;
 }
 
+/// caller owns the returned memory `_b.allocator.free(mem)`
 fn string_concat(str_list: []const []const u8, sep: []const u8) []const u8 {
     return std.mem.join(_b.allocator, sep, str_list) catch unreachable;
 }
@@ -305,6 +309,18 @@ fn get_optval_cpu() ?[]const u8 {
     return get_optval("cpu");
 }
 
+/// caller owns the returned stdout `_b.allocator.free(mem)`
+fn exec_command(argv: []const []const u8, exit_code: ?*u8) Builder.ExecError![]u8 {
+    var code: u8 = undefined;
+    const p_code = exit_code orelse &code;
+    return _b.execAllowFail(argv, p_code, .Inherit) catch |err| {
+        const cmd = string_concat(argv, " ");
+        defer _b.allocator.free(cmd);
+        print_err("failed to execute: {s} ({s} exit_code:{d})", .{ cmd, @errorName(err), p_code.* });
+        return err;
+    };
+}
+
 // =========================================================================
 
 const ModeOpt = enum { fast, small, safe, debug };
@@ -327,7 +343,7 @@ fn to_mode_opt(mode: BuildMode) ModeOpt {
     };
 }
 
-/// caller owns the returned stdout (_b.allocator.free(mem))
+/// caller owns the returned stdout `_b.allocator.free(mem)`
 fn show_builtin() []const u8 {
     var argv = std.ArrayList([]const u8).init(_b.allocator);
     defer argv.deinit();
@@ -342,10 +358,7 @@ fn show_builtin() []const u8 {
 
     argv.append("--show-builtin") catch unreachable;
 
-    var code: u8 = undefined;
-    return _b.execAllowFail(argv.items, &code, .Inherit) catch |err| {
-        err_exit("failed to show builtin for the given target: {s} (exit-code: {d})", .{ @errorName(err), code });
-    };
+    return exec_command(argv.items, null) catch unreachable;
 }
 
 fn get_glibc_version() std.builtin.Version {
@@ -435,6 +448,11 @@ fn get_target_mcpu() []const u8 {
         fmt("-target {s} -mcpu={s}", .{ target, cpu })
     else
         fmt("-target {s}", .{target});
+}
+
+fn get_commit_id() []const u8 {
+    const str = exec_command(&.{ "git", "rev-parse", "--short", "HEAD" }, null) catch "unknown";
+    return trim_whitespace(str);
 }
 
 fn gen_modules_zig() void {
