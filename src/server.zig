@@ -126,7 +126,7 @@ const QueryCtx = struct {
             first_query: *bool,
         ) ?*QueryCtx {
             if (self.len() >= std.math.maxInt(u16) + 1) {
-                log.err(@src(), "too many pending requests: %zu", .{self.len()});
+                log.warn(@src(), "too many pending requests: %zu", .{self.len()});
                 return null;
             }
 
@@ -182,7 +182,7 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
     while (true) {
         var src_addr: cc.SockAddr = undefined;
         const conn_fd = g.evloop.accept(fdobj, &src_addr) orelse {
-            log.err(@src(), "accept(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(g.bind_port), cc.errno() });
+            log.warn(@src(), "accept(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(g.bind_port), cc.errno() });
             continue;
         };
         net.setup_tcp_conn_sock(conn_fd);
@@ -222,7 +222,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
 
             len = cc.ntohs(len);
             if (len < c.DNS_MSG_MINSIZE or len > c.DNS_QMSG_MAXSIZE) {
-                log.err(src, "invalid query_msg length: %u", .{cc.to_uint(len)});
+                log.warn(src, "invalid query_msg length: %u", .{cc.to_uint(len)});
                 break :e .{ .op = "read_len", .msg = "invalid query_msg length" };
             }
 
@@ -252,9 +252,9 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
     if (!g.verbose()) src_addr.to_text(&ip, &port);
 
     if (e.msg) |msg|
-        log.err(src, "%s(fd:%d, %s#%u) failed: %s", .{ e.op, fd, &ip, cc.to_uint(port), msg })
+        log.warn(src, "%s(fd:%d, %s#%u) failed: %s", .{ e.op, fd, &ip, cc.to_uint(port), msg })
     else
-        log.err(src, "%s(fd:%d, %s#%u) failed: (%d) %m", .{ e.op, fd, &ip, cc.to_uint(port), cc.errno() });
+        log.warn(src, "%s(fd:%d, %s#%u) failed: (%d) %m", .{ e.op, fd, &ip, cc.to_uint(port), cc.errno() });
 }
 
 fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
@@ -279,7 +279,7 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
 
         var src_addr: cc.SockAddr = undefined;
         const len = g.evloop.recvfrom(fdobj, qmsg.buf(), 0, &src_addr) orelse {
-            log.err(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
+            log.warn(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
             continue;
         };
         qmsg.len = cc.to_u16(len);
@@ -388,7 +388,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     var qnamelen: c_int = undefined;
 
     if (!dns.check_query(msg, p_ascii_namebuf, &qnamelen)) {
-        log.err(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
+        log.warn(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
         return;
     }
 
@@ -644,7 +644,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     var newlen: u16 = undefined;
 
     if (!dns.check_reply(msg, p_ascii_namebuf, &qnamelen, &newlen)) {
-        log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url});
+        log.warn(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url});
         return;
     }
 
@@ -811,7 +811,7 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
     var port: u16 = undefined;
     src_addr.to_text(&ip, &port);
 
-    log.err(
+    log.warn(
         @src(),
         "reply(id:%u, size:%zu) to %s://%s#%u failed: (%d) %m",
         .{ cc.to_uint(dns.get_id(msg)), msg.len, proto, &ip, cc.to_uint(port), cc.errno() },

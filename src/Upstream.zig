@@ -148,7 +148,7 @@ fn udp_send(self: *Upstream, qmsg: *RcMsg) void {
     }
 
     // error handling
-    log.err(@src(), "send_query(%d, '%s') failed: (%d) %m", .{ fd, self.url, cc.errno() });
+    log.warn(@src(), "send(%s) failed: (%d) %m", .{ self.url, cc.errno() });
 }
 
 fn udp_recv(self: *Upstream, fd: c_int) void {
@@ -176,7 +176,7 @@ fn udp_recv(self: *Upstream, fd: c_int) void {
         const rlen = while (!self.udp_is_eol(fdobj)) {
             break cc.recv(fd, rmsg.buf(), 0) orelse {
                 if (cc.errno() != c.EAGAIN) {
-                    log.err(@src(), "recv(%d, '%s') failed: (%d) %m", .{ fd, self.url, cc.errno() });
+                    log.warn(@src(), "recv(%s) failed: (%d) %m", .{ self.url, cc.errno() });
                     return;
                 }
                 g.evloop.wait_readable(fdobj);
@@ -199,12 +199,6 @@ fn udp_on_eol(self: *Upstream) void {
     self.udp_set_fdobj(null); // set to null
 
     assert(fdobj.write_frame == null);
-
-    // log.debug(
-    //     @src(),
-    //     "udp upstream socket(fd:%d, url:'%s', group:%s) is end-of-life ...",
-    //     .{ fdobj.fd, self.url, @tagName(self.group.tag).ptr },
-    // );
 
     if (fdobj.read_frame) |frame| {
         co.do_resume(frame);
@@ -563,7 +557,7 @@ const TcpCtx = struct {
             // check the len
             rlen = cc.ntohs(rlen);
             if (rlen < c.DNS_MSG_MINSIZE) {
-                log.warn(@src(), "read_len(%d, '%s') failed: invalid len:%u", .{ fdobj.fd, self.upstream.url, cc.to_uint(rlen) });
+                log.warn(@src(), "recv(%s) failed: invalid len:%u", .{ self.upstream.url, cc.to_uint(rlen) });
                 return;
             }
 

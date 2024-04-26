@@ -395,7 +395,7 @@ static bool load_list(u8 tag, filenames_t filenames,
         } else {
             fp = fopen(fname, "rb");
             unlikely_if (!fp) {
-                log_error("failed to open '%s': (%d) %m", fname, errno);
+                log_warning("failed to open '%s': (%d) %m", fname, errno);
                 continue;
             }
         }
