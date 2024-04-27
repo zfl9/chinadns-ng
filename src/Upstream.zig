@@ -287,9 +287,6 @@ pub const TLS = struct {
         // the session should be free after it has been set into an ssl object
         assert(self.session == null);
 
-        // close the session
-        // cc.SSL_set_shutdown(ssl);
-
         // check if the session is resumable
         if (cc.SSL_get1_session(ssl)) |session| {
             if (cc.SSL_SESSION_is_resumable(session))
@@ -697,6 +694,7 @@ const TCP = struct {
                     var err: c_int = undefined;
                     const n = cc.SSL_read(self.ssl(), buf[nread..], &err) orelse switch (err) {
                         c.SSL_ERROR_ZERO_RETURN => {
+                            cc.SSL_ERR_clear();
                             self.tls.on_eof();
                             return null;
                         },
@@ -707,6 +705,7 @@ const TCP = struct {
                         else => {
                             // SSL_OP_IGNORE_UNEXPECTED_EOF (wolfssl does not support this)
                             if (err == c.SSL_ERROR_SYSCALL and cc.errno() == 0) {
+                                cc.SSL_ERR_clear();
                                 self.tls.on_eof();
                                 return null;
                             }
