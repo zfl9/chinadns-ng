@@ -246,7 +246,7 @@ pub const TLS = struct {
         cc.SSL_ERR_clear();
     }
 
-    pub fn new_ssl(self: *tls_t, fd: c_int, host: cc.ConstStr) ?void {
+    pub fn new_ssl(self: *TLS, fd: c_int, host: cc.ConstStr) ?void {
         assert(self.ssl == null);
 
         const ssl = cc.SSL_new(_ctx.?);
@@ -275,12 +275,12 @@ pub const TLS = struct {
     }
 
     /// on EOF
-    pub fn on_eof(self: *tls_t) void {
+    pub fn on_eof(self: *TLS) void {
         return cc.SSL_set_shutdown(self.ssl.?);
     }
 
     // free the ssl obj
-    pub fn on_close(self: *tls_t) void {
+    pub fn on_close(self: *TLS) void {
         const ssl = self.ssl orelse return;
         self.ssl = null;
 
@@ -302,9 +302,7 @@ pub const TLS = struct {
     }
 };
 
-const tls_t = if (has_tls) TLS else struct {};
-
-const TcpCtx = struct {
+const TCP = struct {
     upstream: *const Upstream,
     fdobj: ?*EvLoop.Fd = null,
     send_list: MsgQueue = .{}, // qmsg to be sent
@@ -312,6 +310,8 @@ const TcpCtx = struct {
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     healthy: bool = false, // current connection processed at least one query ?
     tls: tls_t = .{}, // for DoT upstream
+
+    const tls_t = if (has_tls) TLS else struct {};
 
     /// must <= u16_max
     const PENDING_MAX = 1000;
@@ -407,8 +407,8 @@ const TcpCtx = struct {
         }
     };
 
-    pub fn new(upstream: *const Upstream) *TcpCtx {
-        const self = g.allocator.create(TcpCtx) catch unreachable;
+    pub fn new(upstream: *const Upstream) *TCP {
+        const self = g.allocator.create(TCP) catch unreachable;
         self.* = .{
             .upstream = upstream,
         };
@@ -416,7 +416,7 @@ const TcpCtx = struct {
     }
 
     /// [tcp_send] add to send queue, `qmsg.ref++`
-    pub fn push_qmsg(self: *TcpCtx, qmsg: *RcMsg) void {
+    pub fn push_qmsg(self: *TCP, qmsg: *RcMsg) void {
         if (self.pending_n >= PENDING_MAX) {
             log.warn(@src(), "too many pending queries: %u", .{cc.to_uint(self.pending_n)});
             return;
@@ -431,7 +431,7 @@ const TcpCtx = struct {
 
     /// [async] used to send qmsg to upstream
     /// pop from send_list && add to ack_list
-    fn pop_qmsg(self: *TcpCtx, fdobj: *EvLoop.Fd) ?*RcMsg {
+    fn pop_qmsg(self: *TCP, fdobj: *EvLoop.Fd) ?*RcMsg {
         if (!self.fdobj_ok(fdobj)) return null;
 
         const qmsg = self.send_list.pop(true) orelse return null;
@@ -443,13 +443,13 @@ const TcpCtx = struct {
     }
 
     /// add qmsg to ack_list
-    fn on_sending(self: *TcpCtx, qmsg: *RcMsg) void {
+    fn on_sending(self: *TCP, qmsg: *RcMsg) void {
         const qid = dns.get_id(qmsg.msg());
         self.ack_list.putNoClobber(g.allocator, qid, qmsg) catch unreachable;
     }
 
     /// remove qmsg from ack_list && qmsg.unref()
-    fn on_reply(self: *TcpCtx, rmsg: *const RcMsg) void {
+    fn on_reply(self: *TCP, rmsg: *const RcMsg) void {
         const qid = dns.get_id(rmsg.msg());
         if (self.ack_list.fetchRemove(qid)) |kv| {
             self.healthy = true;
@@ -462,7 +462,7 @@ const TcpCtx = struct {
     }
 
     /// connection closed by peer
-    fn on_close(self: *TcpCtx) void {
+    fn on_close(self: *TCP) void {
         self.fdobj = null;
         if (has_tls) self.tls.on_close();
 
@@ -478,7 +478,7 @@ const TcpCtx = struct {
         }
     }
 
-    fn clear_ack_list(self: *TcpCtx, op: enum { resend, unref }) void {
+    fn clear_ack_list(self: *TCP, op: enum { resend, unref }) void {
         var it = self.ack_list.valueIterator();
         while (it.next()) |value_ptr| {
             const qmsg = value_ptr.*;
@@ -491,22 +491,22 @@ const TcpCtx = struct {
     }
 
     /// check if disconnected or reconnected
-    fn fdobj_ok(self: *const TcpCtx, fdobj: *const EvLoop.Fd) bool {
+    fn fdobj_ok(self: *const TCP, fdobj: *const EvLoop.Fd) bool {
         return fdobj == self.fdobj;
     }
 
-    fn start(self: *TcpCtx) void {
+    fn start(self: *TCP) void {
         assert(self.fdobj == null);
         assert(self.pending_n > 0);
         assert(!self.send_list.is_empty());
         assert(self.ack_list.count() == 0);
 
         self.healthy = false;
-        co.create(TcpCtx.send, .{self});
+        co.create(TCP.send, .{self});
     }
 
-    fn send(self: *TcpCtx) void {
-        defer co.terminate(@frame(), @frameSize(TcpCtx.send));
+    fn send(self: *TCP) void {
+        defer co.terminate(@frame(), @frameSize(TCP.send));
 
         const fd = net.new_tcp_conn_sock(self.upstream.addr.family()) orelse return self.on_close();
         const fdobj = EvLoop.Fd.new(fd);
@@ -536,7 +536,7 @@ const TcpCtx = struct {
         }
     }
 
-    fn recv(self: *TcpCtx) void {
+    fn recv(self: *TCP) void {
         defer co.terminate(@frame(), @frameSize(recv));
 
         const fdobj = self.fdobj.?.ref();
@@ -582,7 +582,7 @@ const TcpCtx = struct {
     }
 
     /// `errmsg`: null means strerror(errno)
-    noinline fn on_error(self: *const TcpCtx, op: cc.ConstStr, errmsg: ?cc.ConstStr) ?void {
+    noinline fn on_error(self: *const TCP, op: cc.ConstStr, errmsg: ?cc.ConstStr) ?void {
         const src = @src();
 
         if (errmsg) |msg|
@@ -596,11 +596,11 @@ const TcpCtx = struct {
         return null;
     }
 
-    fn ssl(self: *const TcpCtx) *c.SSL {
+    fn ssl(self: *const TCP) *c.SSL {
         return self.tls.ssl.?;
     }
 
-    fn do_connect(self: *TcpCtx, fdobj: *EvLoop.Fd) ?void {
+    fn do_connect(self: *TCP, fdobj: *EvLoop.Fd) ?void {
         // null means strerror(errno)
         const errmsg: ?cc.ConstStr = e: {
             g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e null;
@@ -642,7 +642,7 @@ const TcpCtx = struct {
         return self.on_error("connect", errmsg);
     }
 
-    fn do_send(self: *TcpCtx, fdobj: *EvLoop.Fd, iov: []cc.iovec_t) ?void {
+    fn do_send(self: *TCP, fdobj: *EvLoop.Fd, iov: []cc.iovec_t) ?void {
         // null means strerror(errno)
         const errmsg: ?cc.ConstStr = e: {
             if (!self.fdobj_ok(fdobj)) return null;
@@ -679,7 +679,7 @@ const TcpCtx = struct {
         return self.on_error("send", errmsg);
     }
 
-    fn do_recv(self: *TcpCtx, fdobj: *EvLoop.Fd, buf: []u8, flags: c_int) ?void {
+    fn do_recv(self: *TCP, fdobj: *EvLoop.Fd, buf: []u8, flags: c_int) ?void {
         // null means strerror(errno)
         const errmsg: ?cc.ConstStr = e: {
             if (!self.fdobj_ok(fdobj)) return null;
@@ -724,11 +724,11 @@ const TcpCtx = struct {
     }
 };
 
-fn tcp_ctx(self: *Upstream) *TcpCtx {
+fn tcp_ctx(self: *Upstream) *TCP {
     assert(self.proto == .tcpi or self.proto == .tcp or self.proto == .tls);
     if (self.ctx == null)
-        self.ctx = TcpCtx.new(self);
-    return cc.ptrcast(*TcpCtx, self.ctx.?);
+        self.ctx = TCP.new(self);
+    return cc.ptrcast(*TCP, self.ctx.?);
 }
 
 fn tcp_send(self: *Upstream, qmsg: *RcMsg) void {
