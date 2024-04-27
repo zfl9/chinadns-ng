@@ -274,8 +274,7 @@ pub const TLS = struct {
         self.ssl = ssl;
     }
 
-    /// on EOF
-    pub fn on_eof(self: *TLS) void {
+    pub fn on_eof(self: *const TLS) void {
         return cc.SSL_set_shutdown(self.ssl.?);
     }
 
@@ -385,7 +384,7 @@ const TCP = struct {
             }
         }
 
-        pub fn cancel_wait(self: *MsgQueue) void {
+        pub fn cancel_wait(self: *const MsgQueue) void {
             if (self.waiter) |waiter| {
                 assert(self.is_empty());
                 _pushed_msg = null;
@@ -603,7 +602,7 @@ const TCP = struct {
             g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e null;
 
             if (has_tls and self.upstream.proto == .tls) {
-                self.tls.new_ssl(fdobj.fd, self.upstream.host.?) orelse break :e "ubable to create ssl object";
+                self.tls.new_ssl(fdobj.fd, self.upstream.host.?) orelse break :e "unable to create ssl object";
 
                 while (true) {
                     var err: c_int = undefined;
