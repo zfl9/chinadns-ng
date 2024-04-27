@@ -533,6 +533,9 @@ fn build_wolfssl() *Step {
         \\  zig_cache_dir='{s}'
         \\  is_musl='{s}'
         \\  lto='{s}'
+        \\  aesni='{s}'
+        \\  intelasm='{s}'
+        \\  armasm='{s}'
         \\  cwd="$PWD"
         \\
         \\  cd "$src_dir"
@@ -551,10 +554,17 @@ fn build_wolfssl() *Step {
         \\  ./autogen.sh
         \\  ./configure \
         \\      $host \
+        \\      $aesni \
+        \\      $intelasm \
+        \\      $armasm \
         \\      --prefix="$install_dir" \
         \\      --enable-static \
         \\      --disable-shared \
+        \\      --enable-asm \
         \\      --disable-harden \
+        \\      --disable-ocsp \
+        \\      --disable-oldnames \
+        \\      --disable-sys-ca-certs \
         \\      --enable-staticmemory \
         \\      --enable-singlethreaded \
         \\      --disable-threadlocal \
@@ -573,6 +583,18 @@ fn build_wolfssl() *Step {
 
     const str_musl: [:0]const u8 = if (is_musl()) "1" else "0";
     const str_lto: [:0]const u8 = if (_lto) "-flto" else "";
+    const str_aesni: [:0]const u8 = switch (_target.getCpuArch()) {
+        .x86_64 => "--enable-aesni",
+        else => "",
+    };
+    const str_intelasm: [:0]const u8 = switch (_target.getCpuArch()) {
+        .x86_64 => "--enable-intelasm",
+        else => "",
+    };
+    const str_armasm: [:0]const u8 = switch (_target.getCpuArch()) {
+        .aarch64 => "--enable-armasm",
+        else => "",
+    };
 
     const cmd = fmt(cmd_, .{
         _b.pathFromRoot(_dep_wolfssl.base_dir),
@@ -583,6 +605,9 @@ fn build_wolfssl() *Step {
         _b.pathFromRoot(_b.cache_root),
         str_musl,
         str_lto,
+        str_aesni,
+        str_intelasm,
+        str_armasm,
     });
 
     wolfssl.dependOn(add_sh_cmd_x(cmd));
