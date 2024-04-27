@@ -153,10 +153,26 @@ fn option_strip() void {
 }
 
 fn option_name() void {
-    const default = with_target_desc(if (_test) "test" else "chinadns-ng", null);
+    var vec = std.ArrayList(u8).init(_b.allocator);
+    defer vec.deinit();
+
+    if (_test)
+        vec.appendSlice("test") catch unreachable
+    else
+        vec.appendSlice("chinadns-ng") catch unreachable;
+
+    if (_enable_wolfssl)
+        vec.appendSlice("+wolfssl") catch unreachable;
+
+    if (_enable_mimalloc)
+        vec.appendSlice("+mimalloc") catch unreachable;
+
+    const default = with_target_desc(vec.items(), null);
     const desc = fmt("executable name, default: '{s}'", .{default});
+
     const name = _b.option([]const u8, "name", desc) orelse default;
     const trimmed = trim_whitespace(name);
+
     if (trimmed.len > 0 and std.mem.eql(u8, trimmed, name)) {
         _exe_name = name;
     } else {
