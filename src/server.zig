@@ -126,7 +126,7 @@ const QueryCtx = struct {
             first_query: *bool,
         ) ?*QueryCtx {
             if (self.len() >= std.math.maxInt(u16) + 1) {
-                log.err(@src(), "too many pending requests: %zu", .{self.len()});
+                log.warn(@src(), "too many pending requests: %zu", .{self.len()});
                 return null;
             }
 
@@ -182,7 +182,7 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
     while (true) {
         var src_addr: cc.SockAddr = undefined;
         const conn_fd = g.evloop.accept(fdobj, &src_addr) orelse {
-            log.err(@src(), "accept(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(g.bind_port), cc.errno() });
+            log.warn(@src(), "accept(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(g.bind_port), cc.errno() });
             continue;
         };
         net.setup_tcp_conn_sock(conn_fd);
@@ -215,12 +215,14 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
         while (true) {
             // read len (be16)
             var len: u16 = undefined;
-            g.evloop.recv_exactly(fdobj, std.mem.asBytes(&len), 0) orelse
-                if (cc.errno() == 0) return else break :e .{ .op = "read_len" };
+            g.evloop.recv_exactly(fdobj, std.mem.asBytes(&len), 0) catch |err| switch (err) {
+                error.eof => return,
+                error.other => break :e .{ .op = "read_len" },
+            };
 
             len = cc.ntohs(len);
             if (len < c.DNS_MSG_MINSIZE or len > c.DNS_QMSG_MAXSIZE) {
-                log.err(src, "invalid query_msg length: %u", .{cc.to_uint(len)});
+                log.warn(src, "invalid query_msg length: %u", .{cc.to_uint(len)});
                 break :e .{ .op = "read_len", .msg = "invalid query_msg length" };
             }
 
@@ -236,8 +238,10 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
 
             // read msg
             qmsg.len = len;
-            g.evloop.recv_exactly(fdobj, qmsg.msg(), 0) orelse
-                break :e .{ .op = "read_msg", .msg = if (cc.errno() == 0) "connection closed" else null };
+            g.evloop.recv_exactly(fdobj, qmsg.msg(), 0) catch |err| switch (err) {
+                error.eof => break :e .{ .op = "read_msg", .msg = "connection closed" },
+                error.other => break :e .{ .op = "read_msg" },
+            };
 
             on_query(qmsg, fdobj, &src_addr, .from_tcp);
         }
@@ -248,9 +252,9 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
     if (!g.verbose()) src_addr.to_text(&ip, &port);
 
     if (e.msg) |msg|
-        log.err(src, "%s(fd:%d, %s#%u) failed: %s", .{ e.op, fd, &ip, cc.to_uint(port), msg })
+        log.warn(src, "%s(fd:%d, %s#%u) failed: %s", .{ e.op, fd, &ip, cc.to_uint(port), msg })
     else
-        log.err(src, "%s(fd:%d, %s#%u) failed: (%d) %m", .{ e.op, fd, &ip, cc.to_uint(port), cc.errno() });
+        log.warn(src, "%s(fd:%d, %s#%u) failed: (%d) %m", .{ e.op, fd, &ip, cc.to_uint(port), cc.errno() });
 }
 
 fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
@@ -275,7 +279,7 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
 
         var src_addr: cc.SockAddr = undefined;
         const len = g.evloop.recvfrom(fdobj, qmsg.buf(), 0, &src_addr) orelse {
-            log.err(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
+            log.warn(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
             continue;
         };
         qmsg.len = cc.to_u16(len);
@@ -316,11 +320,16 @@ const QueryLog = struct {
         );
     }
 
-    pub noinline fn filter(self: *const QueryLog) void {
+    pub noinline fn filter(self: *const QueryLog, rule: enum { tag_null, qtype }) void {
+        var buf: [20]u8 = undefined;
+        const rule_str: cc.ConstStr = switch (rule) {
+            .tag_null => "tag:null",
+            .qtype => cc.snprintf(&buf, "qtype:%u", .{cc.to_uint(self.qtype)}).ptr,
+        };
         log.info(
             @src(),
-            "query(id:%u, tag:%s, qtype:%u, '%s') filtered by rule: qtype_%u",
-            .{ cc.to_uint(self.id), self.tag.name(), cc.to_uint(self.qtype), self.name, cc.to_uint(self.qtype) },
+            "query(id:%u, tag:%s, qtype:%u, '%s') filtered by rule: %s",
+            .{ cc.to_uint(self.id), self.tag.name(), cc.to_uint(self.qtype), self.name, rule_str },
         );
     }
 
@@ -379,7 +388,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     var qnamelen: c_int = undefined;
 
     if (!dns.check_query(msg, p_ascii_namebuf, &qnamelen)) {
-        log.err(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
+        log.warn(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
         return;
     }
 
@@ -407,6 +416,13 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     else
         dns.get_bufsz(msg, qnamelen);
 
+    // tag:null filter
+    if (tag.is_null()) {
+        if (g.verbose()) qlog.filter(.tag_null);
+        const rmsg = dns.empty_reply(msg, qnamelen);
+        return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
+    }
+
     // AAAA filter
     if (qtype == c.DNS_TYPE_AAAA)
         if (g.noaaaa_rule.by_tag(tag)) |rule| {
@@ -417,7 +433,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
     // qtype filter
     if (std.mem.indexOfScalar(u16, g.filter_qtypes, qtype) != null) {
-        if (g.verbose()) qlog.filter();
+        if (g.verbose()) qlog.filter(.qtype);
         const rmsg = dns.empty_reply(msg, qnamelen);
         return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
     }
@@ -552,7 +568,7 @@ const ReplyLog = struct {
 
     /// string literal
     fn tag_name(self: *const ReplyLog) cc.ConstStr {
-        return if (self.tag) |tag| tag.name() else "null";
+        return if (self.tag) |tag| tag.name() else "(null)";
     }
 
     pub noinline fn reply(self: *const ReplyLog, action: cc.ConstStr, alt_url: ?cc.ConstStr) void {
@@ -625,10 +641,15 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     const p_ascii_namebuf: ?[*]u8 = if (g.verbose()) &ascii_namebuf else null;
     var qnamelen: c_int = undefined;
 
-    if (!dns.check_reply(msg, p_ascii_namebuf, &qnamelen)) {
-        log.err(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url});
+    var newlen: u16 = undefined;
+
+    if (!dns.check_reply(msg, p_ascii_namebuf, &qnamelen, &newlen)) {
+        log.warn(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url});
         return;
     }
+
+    rmsg.len = newlen;
+    msg = rmsg.msg();
 
     const qtype = dns.get_qtype(msg, qnamelen);
     const is_qtype_A_AAAA = qtype == c.DNS_TYPE_A or qtype == c.DNS_TYPE_AAAA;
@@ -733,9 +754,8 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     // add to cache (may modify the msg)
     // must come after the `send_reply()`
     var ttl: i32 = undefined;
-    var sz: usize = undefined;
-    if (cache.add(msg, qnamelen, &ttl, &sz))
-        if (g.verbose()) rlog.cache(ttl, sz);
+    if (cache.add(msg, qnamelen, &ttl))
+        if (g.verbose()) rlog.cache(ttl, msg.len);
 
     // must be at the end
     qctx.free();
@@ -791,7 +811,7 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
     var port: u16 = undefined;
     src_addr.to_text(&ip, &port);
 
-    log.err(
+    log.warn(
         @src(),
         "reply(id:%u, size:%zu) to %s://%s#%u failed: (%d) %m",
         .{ cc.to_uint(dns.get_id(msg)), msg.len, proto, &ip, cc.to_uint(port), cc.errno() },
@@ -854,7 +874,7 @@ noinline fn do_start(ip: cc.ConstStr, socktype: net.SockType) void {
         cc.bind(fd, &addr) orelse break :e "bind";
         switch (socktype) {
             .tcp => {
-                cc.listen(fd, 256) orelse break :e "listen";
+                cc.listen(fd, 1024) orelse break :e "listen";
                 co.create(listen_tcp, .{ fd, ip });
             },
             .udp => {

@@ -7,7 +7,7 @@ const Step = std.build.Step;
 const LibExeObjStep = std.build.LibExeObjStep;
 const OptionsStep = std.build.OptionsStep;
 
-const chinadns_version = "2024.04.13";
+const chinadns_version = "2024.04.27";
 
 var _b: *Builder = undefined;
 
@@ -18,7 +18,7 @@ var _mode: BuildMode = undefined;
 var _lto: bool = undefined;
 var _strip: bool = undefined;
 var _exe_name: []const u8 = undefined;
-var _enable_openssl: bool = undefined;
+var _enable_wolfssl: bool = undefined;
 var _enable_mimalloc: bool = undefined;
 
 // conditional compilation for zig source files
@@ -35,14 +35,14 @@ const DependLib = struct {
     lib_dir: []const u8,
 };
 
-var _dep_openssl: DependLib = b: {
-    const version = "3.2.0";
-    const src_dir = "dep/openssl-" ++ version;
+var _dep_wolfssl: DependLib = b: {
+    const version = "5.7.0";
+    const src_dir = "dep/wolfssl-" ++ version;
     break :b .{
-        .url = "https://www.openssl.org/source/openssl-" ++ version ++ ".tar.gz",
+        .url = "https://github.com/wolfSSL/wolfssl/archive/refs/tags/v" ++ version ++ "-stable.tar.gz",
         .version = version,
         .tarball = src_dir ++ ".tar.gz",
-        .src_dir = src_dir,
+        .src_dir = src_dir ++ "-stable",
         .src_dir_always_clean = false,
         .base_dir = undefined, // set by init()
         .include_dir = undefined, // set by init()
@@ -83,21 +83,22 @@ fn init(b: *Builder) void {
     option_mode();
     option_lto();
     option_strip();
-    option_name();
-    option_openssl();
+    option_wolfssl();
     option_mimalloc();
+    option_name(); // must be at the end
 
-    _dep_openssl.base_dir = with_target_desc(_dep_openssl.src_dir, .ReleaseFast); // dependency lib always ReleaseFast
-    _dep_openssl.include_dir = fmt("{s}/include", .{_dep_openssl.base_dir});
-    _dep_openssl.lib_dir = fmt("{s}/lib", .{_dep_openssl.base_dir});
+    _dep_wolfssl.base_dir = with_target_desc(_dep_wolfssl.src_dir, .ReleaseFast); // dependency lib always ReleaseFast
+    _dep_wolfssl.include_dir = fmt("{s}/include", .{_dep_wolfssl.base_dir});
+    _dep_wolfssl.lib_dir = fmt("{s}/lib", .{_dep_wolfssl.base_dir});
 
     // conditional compilation for zig source files
     _build_opts = _b.addOptions();
     _build_opts.addOption(bool, "is_test", _test);
-    _build_opts.addOption(bool, "enable_openssl", _enable_openssl);
+    _build_opts.addOption(bool, "enable_wolfssl", _enable_wolfssl);
     _build_opts.addOption(bool, "enable_mimalloc", _enable_mimalloc);
     _build_opts.addOption([]const u8, "version", chinadns_version);
-    _build_opts.addOption([]const u8, "openssl_version", _dep_openssl.version);
+    _build_opts.addOption([]const u8, "commit_id", get_commit_id());
+    _build_opts.addOption([]const u8, "wolfssl_version", _dep_wolfssl.version);
     _build_opts.addOption([]const u8, "mimalloc_version", _dep_mimalloc.version);
     _build_opts.addOption([]const u8, "target", desc_target());
     _build_opts.addOption([]const u8, "cpu", desc_cpu());
@@ -152,10 +153,26 @@ fn option_strip() void {
 }
 
 fn option_name() void {
-    const default = with_target_desc(if (_test) "test" else "chinadns-ng", null);
+    var vec = std.ArrayList(u8).init(_b.allocator);
+    defer vec.deinit();
+
+    if (_test)
+        vec.appendSlice("test") catch unreachable
+    else
+        vec.appendSlice("chinadns-ng") catch unreachable;
+
+    if (_enable_wolfssl)
+        vec.appendSlice("+wolfssl") catch unreachable;
+
+    if (_enable_mimalloc)
+        vec.appendSlice("+mimalloc") catch unreachable;
+
+    const default = with_target_desc(vec.items, null);
     const desc = fmt("executable name, default: '{s}'", .{default});
+
     const name = _b.option([]const u8, "name", desc) orelse default;
     const trimmed = trim_whitespace(name);
+
     if (trimmed.len > 0 and std.mem.eql(u8, trimmed, name)) {
         _exe_name = name;
     } else {
@@ -164,8 +181,8 @@ fn option_name() void {
     }
 }
 
-fn option_openssl() void {
-    _enable_openssl = _b.option(bool, "openssl", "enable openssl to support DoH protocol, default: false") orelse false;
+fn option_wolfssl() void {
+    _enable_wolfssl = _b.option(bool, "wolfssl", "enable wolfssl to support DoT protocol, default: false") orelse false;
 }
 
 fn option_mimalloc() void {
@@ -234,30 +251,32 @@ fn add_tar_extract(tarball_path: []const u8, to_dir: []const u8) *Step {
 var _first_error: bool = true;
 
 /// print to stderr, auto append '\n'
-fn _print(comptime format: []const u8, args: anytype) void {
+fn print(comptime format: []const u8, args: anytype) void {
     _ = std.io.getStdErr().write(fmt(format ++ "\n", args)) catch unreachable;
 }
 
 fn newline() void {
-    return _print("", .{});
+    return print("", .{});
 }
 
-fn _print_err(comptime format: []const u8, args: anytype) void {
+/// print("> ERROR: msg")
+fn print_err(comptime format: []const u8, args: anytype) void {
     if (_first_error) {
         _first_error = false;
         newline();
     }
-    _print("> ERROR: " ++ format, args);
+    print("> ERROR: " ++ format, args);
 }
 
-/// print err msg and mark user input as invalid
+/// print("> ERROR: msg") && mark user_input as invalid
 fn err_invalid(comptime format: []const u8, args: anytype) void {
-    _print_err(format, args);
+    print_err(format, args);
     _b.invalid_user_input = true;
 }
 
+/// print("> ERROR: msg") && std.os.exit(1)
 fn err_exit(comptime format: []const u8, args: anytype) noreturn {
-    _print_err(format, args);
+    print_err(format, args);
     newline();
     std.os.exit(1);
 }
@@ -276,6 +295,7 @@ fn path_exists(rel_path: []const u8) bool {
     return if (std.fs.cwd().access(rel_path, .{})) true else |_| false;
 }
 
+/// caller owns the returned memory `_b.allocator.free(mem)`
 fn string_concat(str_list: []const []const u8, sep: []const u8) []const u8 {
     return std.mem.join(_b.allocator, sep, str_list) catch unreachable;
 }
@@ -305,6 +325,18 @@ fn get_optval_cpu() ?[]const u8 {
     return get_optval("cpu");
 }
 
+/// caller owns the returned stdout `_b.allocator.free(mem)`
+fn exec_command(argv: []const []const u8, exit_code: ?*u8) Builder.ExecError![]u8 {
+    var code: u8 = undefined;
+    const p_code = exit_code orelse &code;
+    return _b.execAllowFail(argv, p_code, .Inherit) catch |err| {
+        const cmd = string_concat(argv, " ");
+        defer _b.allocator.free(cmd);
+        print_err("failed to execute: {s} ({s} exit_code:{d})", .{ cmd, @errorName(err), p_code.* });
+        return err;
+    };
+}
+
 // =========================================================================
 
 const ModeOpt = enum { fast, small, safe, debug };
@@ -327,7 +359,7 @@ fn to_mode_opt(mode: BuildMode) ModeOpt {
     };
 }
 
-/// caller owns the returned stdout (_b.allocator.free(mem))
+/// caller owns the returned stdout `_b.allocator.free(mem)`
 fn show_builtin() []const u8 {
     var argv = std.ArrayList([]const u8).init(_b.allocator);
     defer argv.deinit();
@@ -342,10 +374,7 @@ fn show_builtin() []const u8 {
 
     argv.append("--show-builtin") catch unreachable;
 
-    var code: u8 = undefined;
-    return _b.execAllowFail(argv.items, &code, .Inherit) catch |err| {
-        err_exit("failed to show builtin for the given target: {s} (exit-code: {d})", .{ @errorName(err), code });
-    };
+    return exec_command(argv.items, null) catch unreachable;
 }
 
 fn get_glibc_version() std.builtin.Version {
@@ -428,13 +457,18 @@ fn with_target_desc(name: []const u8, in_mode: ?BuildMode) []const u8 {
     return fmt("{s}@{s}@{s}@{s}", .{ name, target, cpu, mode });
 }
 
-/// for zig cc (build openssl)
+/// for zig cc (build wolfssl)
 fn get_target_mcpu() []const u8 {
     const target = get_optval_target() orelse "native";
     return if (get_optval_cpu()) |cpu|
         fmt("-target {s} -mcpu={s}", .{ target, cpu })
     else
         fmt("-target {s}", .{target});
+}
+
+fn get_commit_id() []const u8 {
+    const str = exec_command(&.{ "git", "rev-parse", "--short", "HEAD" }, null) catch "unknown";
+    return trim_whitespace(str);
 }
 
 fn gen_modules_zig() void {
@@ -496,60 +530,29 @@ fn gen_modules_zig() void {
 
 // =========================================================================
 
-fn get_openssl_target() []const u8 {
-    return switch (_target.getCpuArch()) {
-        .arm => "linux-armv4",
-        .aarch64 => "linux-aarch64",
-        .i386 => "linux-x86-clang",
-        .x86_64 => "linux-x86_64-clang",
-        .mips, .mipsel => b: {
-            // [zig] https://github.com/ziglang/zig/issues/11829
-            // [zig] https://github.com/ziglang/zig/commit/e1cc70ba11735b678430ffde348527a16287a744
-            // [zig] I ported it to version 0.10.1 via a hack: https://www.zfl9.com/zig-mips.html
-            // [openssl] Configure script adds minimally required -march for assembly support, if no -march/-mips* was specified at command line.
-            const target = "linux-mips32";
-            const march = _target.getCpuModel().llvm_name.?;
-            break :b fmt("{s} -{s}", .{ target, march });
-        },
-        // .mips64, .mips64el => b: {
-        //     // [zig] https://github.com/ziglang/zig/issues/8020
-        //     // [openssl] Configure script adds minimally required -march for assembly support, if no -march/-mips* was specified at command line.
-        //     const target = "linux64-mips64";
-        //     const march = _target.getCpuModel().llvm_name.?;
-        //     break :b fmt("{s} -{s}", .{ target, march });
-        // },
-        else => b: {
-            err_invalid(
-                "'{s}' is not supported, currently supports ['arm', 'aarch64', 'i386', 'x86_64', 'mips', 'mipsel']",
-                .{@tagName(_target.getCpuArch())},
-            );
-            break :b "";
-        },
-    };
-}
-
-/// openssl dependency lib
-fn build_openssl() *Step {
-    const openssl = add_step("openssl");
+/// wolfssl dependency lib
+fn build_wolfssl() *Step {
+    const wolfssl = add_step("wolfssl");
 
     // already installed ?
-    if (path_exists(_dep_openssl.base_dir))
-        return openssl;
+    if (path_exists(_dep_wolfssl.base_dir))
+        return wolfssl;
 
-    init_dep(openssl, _dep_openssl);
-
-    const openssl_target = get_openssl_target();
-    openssl.dependOn(add_log("[openssl] ./Configure {s}", .{openssl_target}));
+    init_dep(wolfssl, _dep_wolfssl);
 
     const cmd_ =
         \\  install_dir='{s}'
         \\  src_dir='{s}'
         \\  zig_exe='{s}'
         \\  target_mcpu='{s}'
-        \\  openssl_target='{s}'
+        \\  target_triple='{s}'
         \\  zig_cache_dir='{s}'
         \\  is_musl='{s}'
         \\  lto='{s}'
+        \\  aesni='{s}'
+        \\  intelasm='{s}'
+        \\  armasm='{s}'
+        \\  cwd="$PWD"
         \\
         \\  cd "$src_dir"
         \\
@@ -562,31 +565,71 @@ fn build_openssl() *Step {
         \\  export AR="$zig_exe ar"
         \\  export RANLIB="$zig_exe ranlib"
         \\
-        \\  ./Configure $openssl_target --prefix="$install_dir" --libdir=lib --openssldir=/etc/ssl \
-        \\      enable-ktls no-deprecated no-async no-comp no-dgram no-legacy no-pic no-psk \
-        \\      no-dso no-dynamic-engine no-shared no-srp no-srtp no-ssl-trace no-tests no-apps no-threads
+        \\  [ "$target_triple" ] && host="--host=$target_triple" || host=""
         \\
-        \\  make -j$(nproc) build_sw
-        \\  make install_sw
+        \\  ./autogen.sh
+        \\  ./configure \
+        \\      $host \
+        \\      $aesni \
+        \\      $intelasm \
+        \\      $armasm \
+        \\      --prefix="$install_dir" \
+        \\      --enable-static \
+        \\      --disable-shared \
+        \\      --enable-asm \
+        \\      --disable-harden \
+        \\      --disable-ocsp \
+        \\      --disable-oldnames \
+        \\      --disable-sys-ca-certs \
+        \\      --enable-staticmemory \
+        \\      --enable-singlethreaded \
+        \\      --disable-threadlocal \
+        \\      --disable-asyncthreads \
+        \\      --disable-error-queue-per-thread \
+        \\      --enable-openssl-compatible-defaults \
+        \\      --enable-opensslextra --enable-opensslall \
+        \\      --disable-dtls --disable-oldtls --enable-tls13 \
+        \\      --enable-chacha --enable-poly1305 \
+        \\      --enable-aesgcm --disable-aescbc \
+        \\      --enable-ecc --enable-sni --enable-session-ticket \
+        \\      --disable-sha224 --disable-sha3 --disable-base64encode \
+        \\      --disable-crypttests --disable-benchmark --disable-examples \
+        \\      EXTRA_CFLAGS="-include $cwd/src/wolfssl_opt.h"
+        \\  make install
     ;
 
     const str_musl: [:0]const u8 = if (is_musl()) "1" else "0";
     const str_lto: [:0]const u8 = if (_lto) "-flto" else "";
+    const str_aesni: [:0]const u8 = switch (_target.getCpuArch()) {
+        .x86_64 => "--enable-aesni",
+        else => "",
+    };
+    const str_intelasm: [:0]const u8 = switch (_target.getCpuArch()) {
+        .x86_64 => "--enable-intelasm",
+        else => "",
+    };
+    const str_armasm: [:0]const u8 = switch (_target.getCpuArch()) {
+        .aarch64 => "--enable-armasm",
+        else => "",
+    };
 
     const cmd = fmt(cmd_, .{
-        _b.pathFromRoot(_dep_openssl.base_dir),
-        _dep_openssl.src_dir,
+        _b.pathFromRoot(_dep_wolfssl.base_dir),
+        _dep_wolfssl.src_dir,
         _b.zig_exe,
         get_target_mcpu(),
-        openssl_target,
+        get_optval_target() orelse "",
         _b.pathFromRoot(_b.cache_root),
         str_musl,
         str_lto,
+        str_aesni,
+        str_intelasm,
+        str_armasm,
     });
 
-    openssl.dependOn(add_sh_cmd_x(cmd));
+    wolfssl.dependOn(add_sh_cmd_x(cmd));
 
-    return openssl;
+    return wolfssl;
 }
 
 fn setup_libexeobj_step(step: *LibExeObjStep) void {
@@ -717,9 +760,11 @@ fn link_obj_chinadns(exe: *LibExeObjStep) void {
         if (is_musl())
             obj.defineCMacroRaw("MUSL");
 
-        // openssl lib
-        if (_enable_openssl)
-            obj.addIncludePath(_dep_openssl.include_dir);
+        // wolfssl lib
+        if (_enable_wolfssl) {
+            obj.defineCMacroRaw("ENABLE_WOLFSSL");
+            obj.addIncludePath(_dep_wolfssl.include_dir);
+        }
 
         // for log.h
         obj.defineCMacroRaw(fmt("LOG_FILENAME=\"{s}\"", .{file.name}));
@@ -738,8 +783,8 @@ fn configure() void {
     setup_libexeobj_step(exe);
 
     // build the dependency library first
-    if (_enable_openssl)
-        exe.step.dependOn(build_openssl());
+    if (_enable_wolfssl)
+        exe.step.dependOn(build_wolfssl());
 
     // to ensure that the standard malloc interface resolves to the mimalloc library, link it as the first object file
     if (_enable_mimalloc)
@@ -747,11 +792,10 @@ fn configure() void {
 
     link_obj_chinadns(exe);
 
-    // link openssl library
-    if (_enable_openssl) {
-        exe.addLibraryPath(_dep_openssl.lib_dir);
-        exe.linkSystemLibrary("ssl");
-        exe.linkSystemLibrary("crypto");
+    // link wolfssl library
+    if (_enable_wolfssl) {
+        exe.addLibraryPath(_dep_wolfssl.lib_dir);
+        exe.linkSystemLibrary("wolfssl");
     }
 
     // install to dest dir
@@ -767,30 +811,30 @@ fn configure() void {
     run.dependOn(&run_exe.step);
 
     const rm_cache = add_rm(_b.cache_root);
-    const rm_openssl = add_rm(_dep_openssl.base_dir); // current target
-    const rm_openssl_all = add_sh_cmd(fmt("rm -fr {s}@*", .{_dep_openssl.src_dir})); // all targets
+    const rm_wolfssl = add_rm(_dep_wolfssl.base_dir); // current target
+    const rm_wolfssl_all = add_sh_cmd(fmt("rm -fr {s}@*", .{_dep_wolfssl.src_dir})); // all targets
 
     // zig build clean-cache
     const clean_cache = _b.step("clean-cache", fmt("clean zig build cache: '{s}'", .{_b.cache_root}));
     clean_cache.dependOn(rm_cache);
 
-    // zig build clean-openssl
-    const clean_openssl = _b.step("clean-openssl", fmt("clean openssl build cache: '{s}'", .{_dep_openssl.base_dir}));
-    clean_openssl.dependOn(rm_openssl);
+    // zig build clean-wolfssl
+    const clean_wolfssl = _b.step("clean-wolfssl", fmt("clean wolfssl build cache: '{s}'", .{_dep_wolfssl.base_dir}));
+    clean_wolfssl.dependOn(rm_wolfssl);
 
-    // zig build clean-openssl-all
-    const clean_openssl_all = _b.step("clean-openssl-all", fmt("clean openssl build caches: '{s}@*'", .{_dep_openssl.src_dir}));
-    clean_openssl_all.dependOn(rm_openssl_all);
+    // zig build clean-wolfssl-all
+    const clean_wolfssl_all = _b.step("clean-wolfssl-all", fmt("clean wolfssl build caches: '{s}@*'", .{_dep_wolfssl.src_dir}));
+    clean_wolfssl_all.dependOn(rm_wolfssl_all);
 
     // zig build clean
     const clean = _b.step("clean", fmt("clean all build caches", .{}));
     clean.dependOn(clean_cache);
-    clean.dependOn(clean_openssl);
+    clean.dependOn(clean_wolfssl);
 
     // zig build clean-all
     const clean_all = _b.step("clean-all", fmt("clean all build caches (*)", .{}));
     clean_all.dependOn(clean_cache);
-    clean_all.dependOn(clean_openssl_all);
+    clean_all.dependOn(clean_wolfssl_all);
 }
 
 /// build.zig just generates the build steps (and the dependency graph), the real running is done by build_runner.zig

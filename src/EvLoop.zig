@@ -1,5 +1,6 @@
 const std = @import("std");
 const root = @import("root");
+const build_opts = @import("build_opts");
 const g = @import("g.zig");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
@@ -482,7 +483,6 @@ pub fn recvfrom(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int, src_addr: *c
     }
 }
 
-/// length 0 means EOF
 pub fn recv(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ?usize {
     while (true) {
         return cc.recv(fdobj.fd, buf, flags) orelse {
@@ -498,15 +498,15 @@ pub fn recv(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ?usize {
     }
 }
 
-/// read exactly `buf.len` bytes (res:null and errno:0 means EOF)
-pub fn recv_exactly(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ?void {
+const ReadErr = error{ eof, other };
+
+pub fn recv_exactly(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ReadErr!void {
     var nread: usize = 0;
     while (nread < buf.len) {
-        const n = self.recv(fdobj, buf[nread..], flags) orelse return null;
-        if (n == 0) {
-            cc.set_errno(0); // EOF
-            return null;
-        }
+        const n = self.recv(fdobj, buf[nread..], flags) orelse
+            return ReadErr.other;
+        if (n == 0)
+            return ReadErr.eof;
         nread += n;
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (nread < buf.len) {

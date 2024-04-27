@@ -74,7 +74,7 @@ u16 dns_empty_reply(void *noalias msg, int qnamelen);
 bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen);
 
 /* check reply msg, `ascii_name` used to get domain name */
-bool dns_check_reply(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen);
+bool dns_check_reply(void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen, u16 *noalias p_newlen);
 
 /* result of dns_test_ip() */
 #define DNS_TEST_IP_IS_CHINA_IP 0
@@ -87,9 +87,6 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen, const struct
 
 /* add the answer ip to ipset/nftset (tag:chn, tag:gfw) */
 void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset_addctx *noalias ctx);
-
-/* return the updated length of the msg (0 means error) */
-u16 dns_minimise(void *noalias msg, ssize_t len, int qnamelen);
 
 /* return -1 if failed */
 s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, s32 nodata_ttl);

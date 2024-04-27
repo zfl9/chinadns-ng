@@ -168,6 +168,9 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  --verdict-cache <size>               enable verdict caching for tag:none domains
  --hosts [path]                       load hosts file, default path is /etc/hosts
  --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
+ --ca-certs <path>                    CA certs path for SSL certificate validation
+ --no-ipset-blacklist                 add-ip: don't enable built-in ip blacklist
+                                      blacklist: 127.0.0.0/8, 0.0.0.0/8, ::1, ::
  -o, --timeout-sec <sec>              response timeout of upstream, default: 5
  -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
  -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -216,6 +219,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 2024.03.07 版本起，支持 UDP + TCP 上游（根据查询方的传入协议决定）。
 - 2024.03.07 版本起，可在上游地址前加上 `tcp://` 来强制使用 TCP DNS。
 - 2024.04.13 版本起，可在上游地址前加上 `udp://` 来强制使用 UDP DNS。
+- 2024.04.27 版本起，支持 DoT 上游，`tls://域名@IP`，端口默认为 853。
 
 ---
 
@@ -272,6 +276,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `group-dnl` 当前组的域名列表文件，多个用逗号隔开，可多次指定。
 - `group-upstream` 当前组的上游 DNS，多个用逗号隔开，可多次指定。
 - `group-ipset` 当前组的 ipset/nftset (可选)，用于收集解析出的结果 IP。
+- 2024.04.27 版本起，使用 `null` 作为 group 名时，表示过滤该组的域名查询。
+  - null 组只有 `group-dnl` 信息，查询相关域名时，将返回 NODATA 响应消息。
 
 以配置文件举例：
 
@@ -340,6 +346,13 @@ group-upstream 192.168.1.1
 - `hosts` 加载 hosts 文件，参数默认值为 `/etc/hosts`，此选项可多次指定。
 - `dns-rr-ip` 定义本地的 A/AAAA 记录（与 hosts 类似），此选项可多次指定。
   - 格式：`<names>=<ips>`，多个 name 使用逗号隔开，多个 ip 使用逗号隔开。
+
+---
+
+- `ca-certs` 根证书路径，用于验证 DoT 上游的 SSL 证书。默认自动检测。
+- `no-ipset-blacklist` 若指定此选项，则 add-ip 时不进行内置的 IP 过滤。
+  - 默认情况下，以下 IP 不会被添加到 ipset/nftset 集合，见 [#162](https://github.com/zfl9/chinadns-ng/issues/162)
+  - `127.0.0.0/8`、`0.0.0.0/8`、`::1`、`::` (loopback地址、全0地址)
 
 ---
 
@@ -480,7 +493,8 @@ chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
 
 ### 为什么不内置 TCP、DoH、DoT 等协议的支持
 
-> 2024.03.07 版本起，已内置完整的 TCP 支持（传入、传出）；DoH 也许会在 2.0 中实现。
+> 2024.03.07 版本起，已内置完整的 TCP 支持（传入、传出）。\
+> 2024.04.27 版本起，支持 DoT 协议的上游，DoH 不打算实现。
 
 我想让代码保持简单，只做真正必要的事情，其他事情让专业的工具去干。
 

@@ -11,8 +11,10 @@ const Bytes = cc.Bytes;
 
 const CacheMsg = @This();
 
+next: ?*CacheMsg = null, // for hashmap
 list_node: ListNode = undefined,
 update_time: c.time_t,
+hashv: c_uint,
 ttl: i32,
 ttl_r: i32, // refresh if ttl <= ttl_r
 rc: Rc = .{},
@@ -25,8 +27,9 @@ qnamelen: u8,
 const metadata_len = @sizeOf(CacheMsg);
 const alignment = @alignOf(CacheMsg);
 
-fn init(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32) *CacheMsg {
+fn init(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheMsg {
     self.* = .{
+        .hashv = hashv,
         .update_time = cc.time(),
         .ttl = ttl,
         .ttl_r = @divTrunc(ttl * g.cache_refresh, 100),
@@ -38,20 +41,20 @@ fn init(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32) *CacheMs
 }
 
 /// the `in_msg` will be copied
-pub fn new(in_msg: []const u8, qnamelen: c_int, ttl: i32) *CacheMsg {
+pub fn new(in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheMsg {
     const bytes = g.allocator.alignedAlloc(u8, alignment, metadata_len + in_msg.len) catch unreachable;
     const self = std.mem.bytesAsValue(CacheMsg, bytes[0..metadata_len]);
-    return self.init(in_msg, qnamelen, ttl);
+    return self.init(in_msg, qnamelen, ttl, hashv);
 }
 
 /// the `in_msg` will be copied
 /// if reuse fail, `self` will be freed
-pub fn reuse_or_new(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32) *CacheMsg {
+pub fn reuse_or_new(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheMsg {
     if (self.rc.ref_count == 1 and g.allocator.resize(self.mem(), metadata_len + in_msg.len) != null) {
-        return self.init(in_msg, qnamelen, ttl);
+        return self.init(in_msg, qnamelen, ttl, hashv);
     } else {
         self.free(); // free the old cache
-        return new(in_msg, qnamelen, ttl);
+        return new(in_msg, qnamelen, ttl, hashv);
     }
 }
 

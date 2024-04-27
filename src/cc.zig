@@ -4,6 +4,7 @@
 const std = @import("std");
 const c = @import("c.zig");
 const g = @import("g.zig");
+const log = @import("log.zig");
 const fmtchk = @import("fmtchk.zig");
 const meta = std.meta;
 const testing = std.testing;
@@ -124,6 +125,32 @@ pub const to_u64 = IntCast(u64).cast;
 
 // ==============================================================
 
+pub inline fn calc_hashv(mem: []const u8) c_uint {
+    return c.calc_hashv(mem.ptr, mem.len);
+}
+
+pub inline fn memeql(a: []const u8, b: []const u8) bool {
+    return a.len == b.len and c.memcmp(a.ptr, b.ptr, a.len) == 0;
+}
+
+/// avoid static buffers all over the place, wasting memory
+pub noinline fn static_buf(size: usize) []u8 {
+    const static = struct {
+        var buf: []u8 = &.{};
+    };
+    if (size > static.buf.len) {
+        if (static.buf.len == 0) {
+            static.buf = g.allocator.alloc(u8, size) catch unreachable;
+        } else if (g.allocator.resize(static.buf, size)) |buf| {
+            static.buf = buf;
+        } else {
+            g.allocator.free(static.buf);
+            static.buf = g.allocator.alloc(u8, size) catch unreachable;
+        }
+    }
+    return static.buf.ptr[0..size];
+}
+
 /// convert to C string (static buffer)
 pub inline fn to_cstr(str: []const u8) Str {
     return to_cstr_x(&.{str});
@@ -131,25 +158,20 @@ pub inline fn to_cstr(str: []const u8) Str {
 
 /// convert to C string (static buffer)
 pub noinline fn to_cstr_x(str_list: []const []const u8) Str {
-    const static = struct {
-        var buffer: []u8 = &.{};
-    };
-
     var total_len: usize = 0;
     for (str_list) |str|
         total_len += str.len;
 
-    if (total_len + 1 > static.buffer.len)
-        static.buffer = g.allocator.realloc(static.buffer, total_len + 1) catch unreachable;
+    const buf = static_buf(total_len + 1);
 
-    var ptr = static.buffer.ptr;
+    var ptr = buf.ptr;
     for (str_list) |str| {
         @memcpy(ptr, str.ptr, str.len);
         ptr += str.len;
     }
     ptr[0] = 0;
 
-    return @ptrCast(Str, static.buffer.ptr);
+    return @ptrCast(Str, buf.ptr);
 }
 
 /// end with sentinel 0
@@ -162,7 +184,7 @@ pub inline fn strslice(str: anytype) StrSlice(@TypeOf(str), false) {
     const S = @TypeOf(str);
     if (comptime isManyItemPtr(S)) {
         comptime assert(meta.sentinel(S).? == 0);
-        return std.mem.sliceTo(str, 0);
+        return str[0..c.strlen(str) :0];
     }
     return str;
 }
@@ -410,6 +432,10 @@ pub inline fn open(filename: ConstStr, flags: c_int, newfile_mode: ?c.mode_t) ?c
     };
     const fd = raw.open(filename, flags, newfile_mode orelse 0);
     return if (fd >= 0) fd else null;
+}
+
+pub inline fn is_dir(path: ConstStr) bool {
+    return c.is_dir(path);
 }
 
 pub inline fn fstat_size(fd: c_int) ?usize {
@@ -729,6 +755,208 @@ pub fn mmap_file(filename: ConstStr) ?[]const u8 {
     const size = fstat_size(fd) orelse return null;
 
     return mmap(null, size, c.PROT_READ, c.MAP_PRIVATE, fd, 0);
+}
+
+// ==============================================================
+
+/// pop error from the openssl thread's error queue
+/// the returned string is a pointer to the static buffer
+/// the current thread's error queue must be empty before the SSL I/O operation is attempted
+pub fn SSL_ERR_pop() ?ConstStr {
+    const err = c.ERR_get_error(); // pop error
+    return if (err != 0) c.ERR_error_string(err, null) else null;
+}
+
+/// empties the current thread's error queue
+/// the current thread's error queue must be empty before the SSL I/O operation is attempted
+pub fn SSL_ERR_clear() void {
+    return c.ERR_clear_error();
+}
+
+/// print all error and clear the error queue
+pub fn SSL_ERR_print(comptime src: std.builtin.SourceLocation) void {
+    while (SSL_ERR_pop()) |err|
+        log.warn(src, "ssl error: %s", .{err});
+}
+
+/// SSL I/O operation errcode => errname (`SSL_ERROR_*`)
+/// the returned string is a pointer to the static buffer
+pub fn SSL_error_name(err: c_int) ConstStr {
+    return switch (err) {
+        c.SSL_ERROR_WANT_READ => "SSL_ERROR_WANT_READ",
+        c.SSL_ERROR_WANT_WRITE => "SSL_ERROR_WANT_WRITE",
+        c.SSL_ERROR_SYSCALL => "SSL_ERROR_SYSCALL",
+        c.SSL_ERROR_ZERO_RETURN => "SSL_ERROR_ZERO_RETURN",
+        c.SSL_ERROR_WANT_CONNECT => "SSL_ERROR_WANT_CONNECT",
+        c.SSL_ERROR_WANT_ACCEPT => "SSL_ERROR_WANT_ACCEPT",
+        c.SSL_ERROR_WANT_X509_LOOKUP => "SSL_ERROR_WANT_X509_LOOKUP",
+        c.SSL_ERROR_SSL => "SSL_ERROR_SSL",
+        else => snprintf(static_buf(30), "SSL_ERROR(%d)", .{err}).ptr,
+    };
+}
+
+/// client-side only
+pub fn SSL_CTX_new() *c.SSL_CTX {
+    // some macros are not translated correctly
+    // const ctx = c.SSL_CTX_new(switch (side) {
+    const ctx = c.wolfSSL_CTX_new(c.TLS_client_method()).?;
+
+    // tls12 + tls13
+    assert(c.SSL_CTX_set_min_proto_version(ctx, c.TLS1_2_VERSION) == 1);
+
+    // cipher list
+    // openssl has a separate API for tls13, but wolfssl only has one
+    const chacha20 = "TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305";
+    const aes128gcm = "TLS_AES_128_GCM_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256";
+    const cipher_list = if (c.has_aes()) aes128gcm ++ ":" ++ chacha20 else chacha20 ++ ":" ++ aes128gcm;
+    assert(c.SSL_CTX_set_cipher_list(ctx, cipher_list) == 1);
+
+    // options
+    _ = c.SSL_CTX_set_options(ctx, c.SSL_OP_NO_COMPRESSION | c.SSL_OP_NO_RENEGOTIATION);
+
+    return ctx;
+}
+
+pub fn SSL_CTX_load_CA_certs(ctx: *c.SSL_CTX, file: ?ConstStr, path: ?ConstStr) bool {
+    return c.SSL_CTX_load_verify_locations(ctx, file, path) == 1;
+}
+
+pub fn SSL_CTX_load_sys_CA_certs(ctx: *c.SSL_CTX) ?ConstStr {
+    // https://go.dev/src/crypto/x509/root_linux.go
+    const file_list = [_]ConstStr{
+        "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu/Gentoo etc.
+        "/etc/pki/tls/certs/ca-bundle.crt", // Fedora/RHEL 6
+        "/etc/ssl/ca-bundle.pem", // OpenSUSE
+        "/etc/pki/tls/cacert.pem", // OpenELEC
+        "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7
+        "/etc/ssl/cert.pem", // Alpine Linux
+    };
+
+    const dir_list = [_]ConstStr{
+        "/etc/ssl/certs", // SLES10/SLES11
+        "/etc/pki/tls/certs", // Fedora/RHEL
+    };
+
+    for (file_list) |file| {
+        if (SSL_CTX_load_CA_certs(ctx, file, null))
+            return file;
+        SSL_ERR_clear();
+    }
+
+    for (dir_list) |dir| {
+        if (SSL_CTX_load_CA_certs(ctx, null, dir))
+            return dir;
+        SSL_ERR_clear();
+    }
+
+    // all attempts failed
+    // must be specified by the user
+    return null;
+}
+
+pub fn SSL_new(ctx: *c.SSL_CTX) *c.SSL {
+    return c.SSL_new(ctx).?;
+}
+
+pub fn SSL_free(ssl: *c.SSL) void {
+    return c.SSL_free(ssl);
+}
+
+pub fn SSL_set_fd(ssl: *c.SSL, fd: c_int) ?void {
+    return if (c.SSL_set_fd(ssl, fd) == 1) {} else null;
+}
+
+/// set SNI && enable hostname validation during SSL handshake
+pub fn SSL_set_host(ssl: *c.SSL, hostname: ConstStr) ?void {
+    // tls_ext: SNI (ClientHello)
+    if (c.SSL_set_tlsext_host_name(ssl, hostname) != 1)
+        return null;
+
+    // set hostname for validation
+    if (c.SSL_set1_host(ssl, hostname) != 1)
+        return null;
+
+    // enable hostname validation
+    c.SSL_set_verify(ssl, c.SSL_VERIFY_PEER, null);
+}
+
+/// set session to be used when the TLS/SSL connection is to be established (resumption)
+/// when the session is set, the reference count of session is incremented by 1 (owner by ssl)
+/// after session is set, SSL_SESSION_free() can be called to dereference it (release ownership)
+pub fn SSL_set_session(ssl: *c.SSL, session: *c.SSL_SESSION) ?void {
+    return if (c.SSL_set_session(ssl, session) == 1) {} else null;
+}
+
+/// perform SSL/TLS handshake (underlying transport is established)
+/// `p_err`: to save the failure reason (SSL_ERROR_*)
+pub fn SSL_connect(ssl: *c.SSL, p_err: *c_int) ?void {
+    const res = c.SSL_connect(ssl);
+    if (res == 1) {
+        return {};
+    } else {
+        p_err.* = c.SSL_get_error(ssl, res);
+        return null;
+    }
+}
+
+/// the name of the protocol used for the connection
+pub fn SSL_get_version(ssl: *const c.SSL) ConstStr {
+    return c.SSL_get_version(ssl);
+}
+
+/// the name of the cipher used for the connection
+pub fn SSL_get_cipher(ssl: *c.SSL) ConstStr {
+    return c.SSL_get_cipher(ssl);
+}
+
+/// queries whether session resumption occurred during the handshake
+pub fn SSL_session_reused(ssl: *c.SSL) bool {
+    return c.SSL_session_reused(ssl) == 1;
+}
+
+/// return the number of bytes read (> 0)
+/// `p_err`: to save the failure reason (SSL_ERROR_*)
+pub fn SSL_read(ssl: *c.SSL, buf: []u8, p_err: *c_int) ?usize {
+    const res = c.SSL_read(ssl, buf.ptr, to_int(buf.len));
+    if (res > 0) {
+        return to_usize(res);
+    } else {
+        p_err.* = c.SSL_get_error(ssl, res);
+        return null;
+    }
+}
+
+/// assume SSL_MODE_ENABLE_PARTIAL_WRITE is not in use
+/// `p_err`: to save the failure reason (SSL_ERROR_*)
+pub fn SSL_write(ssl: *c.SSL, buf: []const u8, p_err: *c_int) ?void {
+    const res = c.SSL_write(ssl, buf.ptr, to_int(buf.len));
+    if (res > 0) {
+        return {};
+    } else {
+        p_err.* = c.SSL_get_error(ssl, res);
+        return null;
+    }
+}
+
+/// mark the SSL connection as complete two-directional shutdown (close the ssl session)
+/// calling `SSL_get1_session()` after shutdown will give a resumable session if any was sent
+pub fn SSL_set_shutdown(ssl: *c.SSL) void {
+    return c.SSL_set_shutdown(ssl, c.SSL_SENT_SHUTDOWN | c.SSL_RECEIVED_SHUTDOWN);
+}
+
+/// the reference count of the SSL_SESSION is incremented by one
+/// in TLSv1.3 it is recommended that each SSL_SESSION object is only used for resumption once
+pub fn SSL_get1_session(ssl: *c.SSL) ?*c.SSL_SESSION {
+    return c.SSL_get1_session(ssl);
+}
+
+/// determine whether an SSL_SESSION object can be used for resumption
+pub fn SSL_SESSION_is_resumable(session: *const c.SSL_SESSION) bool {
+    return c.SSL_SESSION_is_resumable(session) == 1;
+}
+
+pub fn SSL_SESSION_free(session: *c.SSL_SESSION) void {
+    return c.SSL_SESSION_free(session);
 }
 
 // ==============================================================

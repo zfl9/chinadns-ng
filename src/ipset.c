@@ -227,6 +227,9 @@ static const char *ipset_strerror(int errcode) {
 
 /* ====================================================== */
 
+/* add ip */
+bool ipset_blacklist = true;
+
 static int s_sock   = -1; /* netlink socket fd */
 static u32 s_portid = 0; /* local address (port-id) */
 
@@ -654,7 +657,7 @@ static int send_req(int n_msg) {
     int n_sent = sendall(SENDMMSG, s_sock, s_msgv, n_msg, 0);
     assert(n_sent != 0);
     unlikely_if (n_sent != n_msg)
-        log_error("failed to send nlmsg: %d != %d, (%d) %m", n_sent, n_msg, errno);
+        log_warning("failed to send nlmsg: %d != %d, (%d) %m", n_sent, n_msg, errno);
     return n_sent;
 }
 
@@ -668,7 +671,7 @@ static int recv_res(int n_msg, bool err_if_nomsg) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             n_recv = 0;
         unlikely_if (err_if_nomsg || n_recv < 0)
-            log_error("failed to recv nlmsg: (%d) %m", errno);
+            log_warning("failed to recv nlmsg: (%d) %m", errno);
     }
     return n_recv;
 }
@@ -737,9 +740,21 @@ static void add_ip_nftset(const struct ipset_addctx *noalias ctx, bool v4, const
     }
 }
 
+static bool in_blacklist(const ubyte *noalias ip, bool v4) {
+    if (v4) {
+        if (ip[0] == 127 || ip[0] == 0) return true;
+    } else {
+        const ubyte zeros[15] = {0};
+        if (memcmp(ip, zeros, 15) == 0 && (ip[15] == 0 || ip[15] == 1)) return true;
+    }
+    return false;
+}
+
 void ipset_add_ip(struct ipset_addctx *noalias ctx, const void *noalias ip, bool v4) {
     struct nlmsghdr *msg = a_msg(ctx, v4);
     if (!msg) return;
+
+    if (ipset_blacklist && in_blacklist(ip, v4)) return;
 
     int n = a_ipcnt(ctx, v4);
     if (n <= 0)

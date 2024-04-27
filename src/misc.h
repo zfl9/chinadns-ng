@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <sys/types.h>
 
 #define likely(x)	__builtin_expect(!!(x), 1)
@@ -48,7 +49,7 @@ typedef int64_t s64;
 #define S32C INT32_C
 #define S64C INT64_C
 
-typedef signed char byte; /* >= 8 bits */
+// typedef signed char byte; /* >= 8 bits */
 typedef unsigned char ubyte; /* >= 8 bits */
 typedef unsigned short ushort; /* >= 16 bits */
 typedef unsigned int uint; /* >= 16 bits */
@@ -126,4 +127,10 @@ const void *SIG_IGNORE(void);
 const void *SIG_DEFAULT(void);
 const void *SIG_ERROR(void);
 
+bool is_dir(const char *path);
+
 ssize_t fstat_size(int fd);
+
+uint calc_hashv(const void *ptr, size_t len);
+
+bool has_aes(void);

@@ -46,6 +46,9 @@ const help =
     \\ --verdict-cache <size>               enable verdict caching for tag:none domains
     \\ --hosts [path]                       load hosts file, default path is /etc/hosts
     \\ --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
+    \\ --ca-certs <path>                    CA certs path for SSL certificate validation
+    \\ --no-ipset-blacklist                 add-ip: don't enable built-in ip blacklist
+    \\                                      blacklist: 127.0.0.0/8, 0.0.0.0/8, ::1, ::
     \\ -o, --timeout-sec <sec>              response timeout of upstream, default: 5
     \\ -p, --repeat-times <num>             num of packets to trustdns, default:1, max:5
     \\ -n, --noip-as-chnip                  allow no-ip reply from chinadns (tag:none)
@@ -71,10 +74,10 @@ const version: cc.ConstStr = b: {
     if (!std.mem.startsWith(u8, build_opts.cpu, cpu_model))
         @compileError("cpu-model mismatch: " ++ cpu_model ++ " != " ++ build_opts.cpu);
 
-    var prefix: [:0]const u8 = "ChinaDNS-NG " ++ build_opts.version;
+    var prefix: [:0]const u8 = "ChinaDNS-NG " ++ build_opts.version ++ " " ++ build_opts.commit_id;
 
-    if (build_opts.enable_openssl)
-        prefix = prefix ++ " | openssl-" ++ build_opts.openssl_version;
+    if (build_opts.enable_wolfssl)
+        prefix = prefix ++ " | wolfssl-" ++ build_opts.wolfssl_version;
 
     if (build_opts.enable_mimalloc)
         prefix = prefix ++ " | mimalloc-" ++ build_opts.mimalloc_version;
@@ -108,41 +111,43 @@ const OptFn = std.meta.FnPtr(fn (in_value: ?[]const u8) void);
 
 // zig fmt: off
 const optdef_array = [_]OptDef{
-    .{ .short = "C", .long = "config",           .value = .required, .optfn = opt_config,           },
-    .{ .short = "b", .long = "bind-addr",        .value = .required, .optfn = opt_bind_addr,        },
-    .{ .short = "l", .long = "bind-port",        .value = .required, .optfn = opt_bind_port,        },
-    .{ .short = "c", .long = "china-dns",        .value = .required, .optfn = opt_china_dns,        },
-    .{ .short = "t", .long = "trust-dns",        .value = .required, .optfn = opt_trust_dns,        },
-    .{ .short = "m", .long = "chnlist-file",     .value = .required, .optfn = opt_chnlist_file,     },
-    .{ .short = "g", .long = "gfwlist-file",     .value = .required, .optfn = opt_gfwlist_file,     },
-    .{ .short = "M", .long = "chnlist-first",    .value = .no_value, .optfn = opt_chnlist_first,    },
-    .{ .short = "d", .long = "default-tag",      .value = .required, .optfn = opt_default_tag,      },
-    .{ .short = "a", .long = "add-tagchn-ip",    .value = .optional, .optfn = opt_add_tagchn_ip,    },
-    .{ .short = "A", .long = "add-taggfw-ip",    .value = .required, .optfn = opt_add_taggfw_ip,    },
-    .{ .short = "4", .long = "ipset-name4",      .value = .required, .optfn = opt_ipset_name4,      },
-    .{ .short = "6", .long = "ipset-name6",      .value = .required, .optfn = opt_ipset_name6,      },
-    .{ .short = "",  .long = "group",            .value = .required, .optfn = opt_group,            },
-    .{ .short = "",  .long = "group-dnl",        .value = .required, .optfn = opt_group_dnl,        },
-    .{ .short = "",  .long = "group-upstream",   .value = .required, .optfn = opt_group_upstream,   },
-    .{ .short = "",  .long = "group-ipset",      .value = .required, .optfn = opt_group_ipset,      },
-    .{ .short = "N", .long = "no-ipv6",          .value = .optional, .optfn = opt_no_ipv6,          },
-    .{ .short = "",  .long = "filter-qtype",     .value = .required, .optfn = opt_filter_qtype,     },
-    .{ .short = "",  .long = "cache",            .value = .required, .optfn = opt_cache,            },
-    .{ .short = "",  .long = "cache-stale",      .value = .required, .optfn = opt_cache_stale,      },
-    .{ .short = "",  .long = "cache-refresh",    .value = .required, .optfn = opt_cache_refresh,    },
-    .{ .short = "",  .long = "cache-nodata-ttl", .value = .required, .optfn = opt_cache_nodata_ttl, },
-    .{ .short = "",  .long = "cache-ignore",     .value = .required, .optfn = opt_cache_ignore,     },
-    .{ .short = "",  .long = "verdict-cache",    .value = .required, .optfn = opt_verdict_cache,    },
-    .{ .short = "",  .long = "hosts",            .value = .optional, .optfn = opt_hosts,            },
-    .{ .short = "",  .long = "dns-rr-ip",        .value = .required, .optfn = opt_dns_rr_ip,        },
-    .{ .short = "o", .long = "timeout-sec",      .value = .required, .optfn = opt_timeout_sec,      },
-    .{ .short = "p", .long = "repeat-times",     .value = .required, .optfn = opt_repeat_times,     },
-    .{ .short = "n", .long = "noip-as-chnip",    .value = .no_value, .optfn = opt_noip_as_chnip,    },
-    .{ .short = "f", .long = "fair-mode",        .value = .no_value, .optfn = opt_fair_mode,        },
-    .{ .short = "r", .long = "reuse-port",       .value = .no_value, .optfn = opt_reuse_port,       },
-    .{ .short = "v", .long = "verbose",          .value = .no_value, .optfn = opt_verbose,          },
-    .{ .short = "V", .long = "version",          .value = .no_value, .optfn = opt_version,          },
-    .{ .short = "h", .long = "help",             .value = .no_value, .optfn = opt_help,             },
+    .{ .short = "C", .long = "config",             .value = .required, .optfn = opt_config,             },
+    .{ .short = "b", .long = "bind-addr",          .value = .required, .optfn = opt_bind_addr,          },
+    .{ .short = "l", .long = "bind-port",          .value = .required, .optfn = opt_bind_port,          },
+    .{ .short = "c", .long = "china-dns",          .value = .required, .optfn = opt_china_dns,          },
+    .{ .short = "t", .long = "trust-dns",          .value = .required, .optfn = opt_trust_dns,          },
+    .{ .short = "m", .long = "chnlist-file",       .value = .required, .optfn = opt_chnlist_file,       },
+    .{ .short = "g", .long = "gfwlist-file",       .value = .required, .optfn = opt_gfwlist_file,       },
+    .{ .short = "M", .long = "chnlist-first",      .value = .no_value, .optfn = opt_chnlist_first,      },
+    .{ .short = "d", .long = "default-tag",        .value = .required, .optfn = opt_default_tag,        },
+    .{ .short = "a", .long = "add-tagchn-ip",      .value = .optional, .optfn = opt_add_tagchn_ip,      },
+    .{ .short = "A", .long = "add-taggfw-ip",      .value = .required, .optfn = opt_add_taggfw_ip,      },
+    .{ .short = "4", .long = "ipset-name4",        .value = .required, .optfn = opt_ipset_name4,        },
+    .{ .short = "6", .long = "ipset-name6",        .value = .required, .optfn = opt_ipset_name6,        },
+    .{ .short = "",  .long = "group",              .value = .required, .optfn = opt_group,              },
+    .{ .short = "",  .long = "group-dnl",          .value = .required, .optfn = opt_group_dnl,          },
+    .{ .short = "",  .long = "group-upstream",     .value = .required, .optfn = opt_group_upstream,     },
+    .{ .short = "",  .long = "group-ipset",        .value = .required, .optfn = opt_group_ipset,        },
+    .{ .short = "N", .long = "no-ipv6",            .value = .optional, .optfn = opt_no_ipv6,            },
+    .{ .short = "",  .long = "filter-qtype",       .value = .required, .optfn = opt_filter_qtype,       },
+    .{ .short = "",  .long = "cache",              .value = .required, .optfn = opt_cache,              },
+    .{ .short = "",  .long = "cache-stale",        .value = .required, .optfn = opt_cache_stale,        },
+    .{ .short = "",  .long = "cache-refresh",      .value = .required, .optfn = opt_cache_refresh,      },
+    .{ .short = "",  .long = "cache-nodata-ttl",   .value = .required, .optfn = opt_cache_nodata_ttl,   },
+    .{ .short = "",  .long = "cache-ignore",       .value = .required, .optfn = opt_cache_ignore,       },
+    .{ .short = "",  .long = "verdict-cache",      .value = .required, .optfn = opt_verdict_cache,      },
+    .{ .short = "",  .long = "hosts",              .value = .optional, .optfn = opt_hosts,              },
+    .{ .short = "",  .long = "dns-rr-ip",          .value = .required, .optfn = opt_dns_rr_ip,          },
+    .{ .short = "",  .long = "ca-certs",           .value = .required, .optfn = opt_ca_certs,           },
+    .{ .short = "",  .long = "no-ipset-blacklist", .value = .no_value, .optfn = opt_no_ipset_blacklist, },
+    .{ .short = "o", .long = "timeout-sec",        .value = .required, .optfn = opt_timeout_sec,        },
+    .{ .short = "p", .long = "repeat-times",       .value = .required, .optfn = opt_repeat_times,       },
+    .{ .short = "n", .long = "noip-as-chnip",      .value = .no_value, .optfn = opt_noip_as_chnip,      },
+    .{ .short = "f", .long = "fair-mode",          .value = .no_value, .optfn = opt_fair_mode,          },
+    .{ .short = "r", .long = "reuse-port",         .value = .no_value, .optfn = opt_reuse_port,         },
+    .{ .short = "v", .long = "verbose",            .value = .no_value, .optfn = opt_verbose,            },
+    .{ .short = "V", .long = "version",            .value = .no_value, .optfn = opt_version,            },
+    .{ .short = "h", .long = "help",               .value = .no_value, .optfn = opt_help,               },
 };
 // zig fmt: on
 
@@ -341,11 +346,11 @@ fn opt_default_tag(in_value: ?[]const u8) void {
 
 fn opt_add_tagchn_ip(in_value: ?[]const u8) void {
     // empty string means 'no_value'
-    groups.set_ipset(.chn, in_value orelse "");
+    groups.set_ipset(.chn, in_value orelse "").?;
 }
 
 fn opt_add_taggfw_ip(in_value: ?[]const u8) void {
-    groups.set_ipset(.gfw, in_value.?);
+    groups.set_ipset(.gfw, in_value.?).?;
 }
 
 fn opt_ipset_name4(in_value: ?[]const u8) void {
@@ -394,7 +399,7 @@ fn opt_group_ipset(in_value: ?[]const u8) void {
     const src = @src();
 
     check_group_context(src, value);
-    groups.set_ipset(_tag, value);
+    groups.set_ipset(_tag, value) orelse invalid_optvalue(src, value);
 }
 
 fn opt_no_ipv6(in_value: ?[]const u8) void {
@@ -492,6 +497,14 @@ fn opt_dns_rr_ip(in_value: ?[]const u8) void {
     }
 }
 
+fn opt_ca_certs(in_value: ?[]const u8) void {
+    g.ca_certs.set(in_value.?);
+}
+
+fn opt_no_ipset_blacklist(_: ?[]const u8) void {
+    c.ipset_blacklist = false;
+}
+
 fn opt_timeout_sec(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.upstream_timeout = str2int.parse(@TypeOf(g.upstream_timeout), value, 10) orelse 0;
@@ -586,7 +599,7 @@ const Parser = struct {
         const argv = std.os.argv;
 
         return if (self.idx < argv.len)
-            std.mem.sliceTo(argv[self.idx], 0)
+            cc.strslice_c(argv[self.idx])
         else
             null;
     }

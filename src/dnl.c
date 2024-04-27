@@ -109,12 +109,6 @@ static u32 alloc(u32 sz, u32 align) {
 
 /* ======================== name ======================== */
 
-static uint calc_hashv(const char *noalias name, u8 namelen) {
-    uint hashv = 0;
-    HASH_FUNCTION(name, namelen, hashv); /* uthash.h */
-    return hashv;
-}
-
 #define get_hashv(nameaddr) \
     (ptr_name(nameaddr)->hashv)
 
@@ -401,7 +395,7 @@ static bool load_list(u8 tag, filenames_t filenames,
         } else {
             fp = fopen(fname, "rb");
             unlikely_if (!fp) {
-                log_error("failed to open '%s': (%d) %m", fname, errno);
+                log_warning("failed to open '%s': (%d) %m", fname, errno);
                 continue;
             }
         }
@@ -505,7 +499,7 @@ void dnl_init(const filenames_t tag_to_filenames[TAG__MAX + 1], bool gfwlist_fir
         if (tag_to_count[tag] > 0) {
             u32 added = add_list(tag_to_addr0[tag], tag_to_count[tag]);
             total_added += added;
-            log_info("%slist loaded:%lu added:%lu cost:%.3fk",
+            log_info("tag:%s loaded:%lu added:%lu cost:%.3fk",
                 tag_to_name(tag), (ulong)tag_to_count[tag], (ulong)added, tag_to_cost[tag]/1024.0);
         }
     }
