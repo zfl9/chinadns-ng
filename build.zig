@@ -576,6 +576,7 @@ fn build_wolfssl() *Step {
         \\      --enable-chacha --enable-poly1305 \
         \\      --enable-aesgcm --disable-aescbc \
         \\      --enable-ecc --enable-sni --enable-session-ticket \
+        \\      --disable-sha224 --disable-sha3 --disable-base64encode \
         \\      --disable-crypttests --disable-benchmark --disable-examples \
         \\      EXTRA_CFLAGS="-include $cwd/src/wolfssl_opt.h"
         \\  make install
