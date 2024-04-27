@@ -167,7 +167,7 @@ fn option_name() void {
     if (_enable_mimalloc)
         vec.appendSlice("+mimalloc") catch unreachable;
 
-    const default = with_target_desc(vec.items(), null);
+    const default = with_target_desc(vec.items, null);
     const desc = fmt("executable name, default: '{s}'", .{default});
 
     const name = _b.option([]const u8, "name", desc) orelse default;
