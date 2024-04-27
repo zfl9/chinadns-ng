@@ -83,9 +83,9 @@ fn init(b: *Builder) void {
     option_mode();
     option_lto();
     option_strip();
-    option_name();
     option_wolfssl();
     option_mimalloc();
+    option_name(); // must be at the end
 
     _dep_wolfssl.base_dir = with_target_desc(_dep_wolfssl.src_dir, .ReleaseFast); // dependency lib always ReleaseFast
     _dep_wolfssl.include_dir = fmt("{s}/include", .{_dep_wolfssl.base_dir});
