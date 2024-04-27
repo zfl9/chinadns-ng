@@ -217,8 +217,12 @@ pub const TLS = struct {
 
     var _ctx: ?*c.SSL_CTX = null;
 
+    /// called at startup
     pub fn init() void {
         if (_ctx != null) return;
+
+        // library init
+        assert(c.wolfSSL_Init() == c.SSL_SUCCESS);
 
         const ctx = cc.SSL_CTX_new();
         _ctx = ctx;
