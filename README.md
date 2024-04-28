@@ -56,6 +56,12 @@
 
 ---
 
+- 如果要构建 DoT 支持，请带上 `-Dwolfssl` 参数，构建过程需要以下依赖：
+  - `wget` 或 `curl` 用于下载 wolfssl 源码包；`tar` 用于解压缩
+  - `autoconf`、`automake`、`libtool`、`make` 用于构建 wolfssl
+- 如果遇到编译错误，请先执行 `zig build clean-all`，然后重新执行相关构建命令。
+- 可执行文件在 `./zig-out/bin` 目录，将文件安装（复制）到目标主机 PATH 路径下即可。
+
 ```bash
 git clone https://github.com/zfl9/chinadns-ng
 cd chinadns-ng
@@ -116,10 +122,6 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 
 # mips64、mips64el 暂不支持，需要等 zig 这边的版本更新
 ```
-
-如果遇到编译错误，请先执行 `zig build clean-all`，然后重新执行上述构建命令。
-
-可执行文件在 `./zig-out/bin` 目录，将文件安装（复制）到目标主机 PATH 路径下即可。
 
 ## Docker
 
