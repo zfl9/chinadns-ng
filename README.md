@@ -60,7 +60,7 @@
 - `wget` 或 `curl` 用于下载 wolfssl 源码包；`tar` 用于解压缩
 - `autoconf`、`automake`、`libtool`、`make` 用于构建 wolfssl
 
-默认情况下，针对 x86_64、aarch64 的 wolfssl 构建已启用硬件指令加速，若目标硬件(CPU)不支持相关指令（如：部分树莓派阉割了 aes 相关指令），请指定 `-Dwolfssl-noasm` 选项，避免运行 chinadns-ng 时出现 SIGILL 非法指令异常。
+默认情况下，针对 x86_64、aarch64 的 wolfssl 构建已启用硬件指令加速，若目标硬件(CPU)不支持相关指令（部分树莓派阉割了 aes 相关指令），请指定 `-Dwolfssl-noasm` 选项，避免运行 chinadns-ng 时出现 SIGILL 非法指令异常。
 
 ---
 
