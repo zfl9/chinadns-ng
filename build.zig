@@ -18,6 +18,7 @@ var _mode: BuildMode = undefined;
 var _lto: bool = undefined;
 var _strip: bool = undefined;
 var _enable_wolfssl: bool = undefined;
+var _wolfssl_noasm: bool = undefined;
 var _enable_mimalloc: bool = undefined;
 var _exe_name: []const u8 = undefined;
 
@@ -84,10 +85,13 @@ fn init(b: *Builder) void {
     option_lto();
     option_strip();
     option_wolfssl();
+    option_wolfssl_noasm();
     option_mimalloc();
     option_name(); // must be at the end
 
     _dep_wolfssl.base_dir = with_target_desc(_dep_wolfssl.src_dir, .ReleaseFast); // dependency lib always ReleaseFast
+    if (_wolfssl_noasm)
+        _dep_wolfssl.base_dir = fmt("{s}+noasm", .{_dep_wolfssl.base_dir});
     _dep_wolfssl.include_dir = fmt("{s}/include", .{_dep_wolfssl.base_dir});
     _dep_wolfssl.lib_dir = fmt("{s}/lib", .{_dep_wolfssl.base_dir});
 
@@ -156,6 +160,10 @@ fn option_wolfssl() void {
     _enable_wolfssl = _b.option(bool, "wolfssl", "enable wolfssl to support DoT protocol, default: false") orelse false;
 }
 
+fn option_wolfssl_noasm() void {
+    _wolfssl_noasm = _b.option(bool, "wolfssl-noasm", "disable the assembly acceleration option for wolfssl") orelse false;
+}
+
 fn option_mimalloc() void {
     _enable_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
 }
@@ -169,8 +177,12 @@ fn option_name() void {
     else
         vec.appendSlice("chinadns-ng") catch unreachable;
 
-    if (_enable_wolfssl)
+    if (_enable_wolfssl) {
         vec.appendSlice("+wolfssl") catch unreachable;
+
+        if (_wolfssl_noasm)
+            vec.appendSlice("_noasm") catch unreachable;
+    }
 
     if (_enable_mimalloc)
         vec.appendSlice("+mimalloc") catch unreachable;
@@ -598,18 +610,18 @@ fn build_wolfssl() *Step {
         \\  make install
     ;
 
-    const str_musl: [:0]const u8 = if (is_musl()) "1" else "0";
-    const str_lto: [:0]const u8 = if (_lto) "-flto" else "";
-    const str_aesni: [:0]const u8 = switch (_target.getCpuArch()) {
+    const opt_musl: [:0]const u8 = if (is_musl()) "1" else "0";
+    const opt_lto: [:0]const u8 = if (_lto) "-flto" else "";
+    const opt_aesni: [:0]const u8 = switch (_target.getCpuArch()) {
         .x86_64 => "--enable-aesni",
         else => "",
     };
-    const str_intelasm: [:0]const u8 = switch (_target.getCpuArch()) {
-        .x86_64 => "--enable-intelasm",
+    const opt_intelasm: [:0]const u8 = switch (_target.getCpuArch()) {
+        .x86_64 => if (_wolfssl_noasm) "" else "--enable-intelasm",
         else => "",
     };
-    const str_armasm: [:0]const u8 = switch (_target.getCpuArch()) {
-        .aarch64 => "--enable-armasm",
+    const opt_armasm: [:0]const u8 = switch (_target.getCpuArch()) {
+        .aarch64 => if (_wolfssl_noasm) "" else "--enable-armasm",
         else => "",
     };
 
@@ -620,11 +632,11 @@ fn build_wolfssl() *Step {
         get_target_mcpu(),
         get_optval_target() orelse "",
         _b.pathFromRoot(_b.cache_root),
-        str_musl,
-        str_lto,
-        str_aesni,
-        str_intelasm,
-        str_armasm,
+        opt_musl,
+        opt_lto,
+        opt_aesni,
+        opt_intelasm,
+        opt_armasm,
     });
 
     wolfssl.dependOn(add_sh_cmd_x(cmd));
