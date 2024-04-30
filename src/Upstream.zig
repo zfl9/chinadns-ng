@@ -227,6 +227,8 @@ pub const TLS = struct {
         const ctx = cc.SSL_CTX_new();
         _ctx = ctx;
 
+        if (!g.cert_verify) return;
+
         const src = @src();
         const ca_certs = b: {
             if (g.ca_certs.is_null()) {
@@ -264,7 +266,7 @@ pub const TLS = struct {
         };
 
         cc.SSL_set_fd(ssl, fd) orelse return null;
-        cc.SSL_set_host(ssl, host) orelse return null;
+        cc.SSL_set_host(ssl, host, g.cert_verify) orelse return null;
 
         if (self.session) |session| {
             defer {

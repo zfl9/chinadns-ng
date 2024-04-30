@@ -867,17 +867,18 @@ pub fn SSL_set_fd(ssl: *c.SSL, fd: c_int) ?void {
 }
 
 /// set SNI && enable hostname validation during SSL handshake
-pub fn SSL_set_host(ssl: *c.SSL, hostname: ConstStr) ?void {
+pub fn SSL_set_host(ssl: *c.SSL, hostname: ConstStr, cert_verify: bool) ?void {
     // tls_ext: SNI (ClientHello)
     if (c.SSL_set_tlsext_host_name(ssl, hostname) != 1)
         return null;
 
     // set hostname for validation
-    if (c.SSL_set1_host(ssl, hostname) != 1)
+    if (cert_verify and c.SSL_set1_host(ssl, hostname) != 1)
         return null;
 
     // enable hostname validation
-    c.SSL_set_verify(ssl, c.SSL_VERIFY_PEER, null);
+    const verify = if (cert_verify) c.SSL_VERIFY_PEER else c.SSL_VERIFY_NONE;
+    c.SSL_set_verify(ssl, verify, null);
 }
 
 /// set session to be used when the TLS/SSL connection is to be established (resumption)

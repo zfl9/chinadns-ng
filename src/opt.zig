@@ -46,6 +46,7 @@ const help =
     \\ --verdict-cache <size>               enable verdict caching for tag:none domains
     \\ --hosts [path]                       load hosts file, default path is /etc/hosts
     \\ --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
+    \\ --cert-verify                        enable SSL certificate validation, default: no
     \\ --ca-certs <path>                    CA certs path for SSL certificate validation
     \\ --no-ipset-blacklist                 add-ip: don't enable built-in ip blacklist
     \\                                      blacklist: 127.0.0.0/8, 0.0.0.0/8, ::1, ::
@@ -138,6 +139,7 @@ const optdef_array = [_]OptDef{
     .{ .short = "",  .long = "verdict-cache",      .value = .required, .optfn = opt_verdict_cache,      },
     .{ .short = "",  .long = "hosts",              .value = .optional, .optfn = opt_hosts,              },
     .{ .short = "",  .long = "dns-rr-ip",          .value = .required, .optfn = opt_dns_rr_ip,          },
+    .{ .short = "",  .long = "cert-verify",        .value = .no_value, .optfn = opt_cert_verify,        },
     .{ .short = "",  .long = "ca-certs",           .value = .required, .optfn = opt_ca_certs,           },
     .{ .short = "",  .long = "no-ipset-blacklist", .value = .no_value, .optfn = opt_no_ipset_blacklist, },
     .{ .short = "o", .long = "timeout-sec",        .value = .required, .optfn = opt_timeout_sec,        },
@@ -495,6 +497,10 @@ fn opt_dns_rr_ip(in_value: ?[]const u8) void {
         while (ip_it.next()) |ip|
             local_rr.add_ip(name, ip) orelse invalid_optvalue(src, value);
     }
+}
+
+fn opt_cert_verify(_: ?[]const u8) void {
+    g.cert_verify = true;
 }
 
 fn opt_ca_certs(in_value: ?[]const u8) void {

@@ -17,9 +17,9 @@ var _target: CrossTarget = undefined;
 var _mode: BuildMode = undefined;
 var _lto: bool = undefined;
 var _strip: bool = undefined;
-var _exe_name: []const u8 = undefined;
 var _enable_wolfssl: bool = undefined;
 var _enable_mimalloc: bool = undefined;
+var _exe_name: []const u8 = undefined;
 
 // conditional compilation for zig source files
 var _build_opts: *OptionsStep = undefined;
@@ -152,6 +152,14 @@ fn option_strip() void {
     _strip = _b.option(bool, "strip", "strip debug info, default to true if in fast/small mode") orelse default;
 }
 
+fn option_wolfssl() void {
+    _enable_wolfssl = _b.option(bool, "wolfssl", "enable wolfssl to support DoT protocol, default: false") orelse false;
+}
+
+fn option_mimalloc() void {
+    _enable_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
+}
+
 fn option_name() void {
     var vec = std.ArrayList(u8).init(_b.allocator);
     defer vec.deinit();
@@ -179,14 +187,6 @@ fn option_name() void {
         err_invalid("invalid executable name (-Dname): '{s}'", .{name});
         _exe_name = default;
     }
-}
-
-fn option_wolfssl() void {
-    _enable_wolfssl = _b.option(bool, "wolfssl", "enable wolfssl to support DoT protocol, default: false") orelse false;
-}
-
-fn option_mimalloc() void {
-    _enable_mimalloc = _b.option(bool, "mimalloc", "using the mimalloc allocator (libc), default: false") orelse false;
 }
 
 // =========================================================================
