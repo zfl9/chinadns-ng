@@ -56,9 +56,14 @@
 
 ---
 
-- 如果要构建 DoT 支持，请带上 `-Dwolfssl` 参数，构建过程需要以下依赖：
-  - `wget` 或 `curl` 用于下载 wolfssl 源码包；`tar` 用于解压缩
-  - `autoconf`、`automake`、`libtool`、`make` 用于构建 wolfssl
+如果要构建 DoT 支持，请带上 `-Dwolfssl` 参数，构建过程需要以下依赖：
+- `wget` 或 `curl` 用于下载 wolfssl 源码包；`tar` 用于解压缩
+- `autoconf`、`automake`、`libtool`、`make` 用于构建 wolfssl
+
+默认情况下，针对 x86_64、aarch64 的 wolfssl 构建已启用硬件指令加速，若目标硬件(CPU)不支持相关指令（如：部分树莓派阉割了 aes 相关指令），请指定 `-Dwolfssl-noasm` 选项，避免运行 chinadns-ng 时出现 SIGILL 非法指令异常。
+
+---
+
 - 如果遇到编译错误，请先执行 `zig build clean-all`，然后重新执行相关构建命令。
 - 可执行文件在 `./zig-out/bin` 目录，将文件安装（复制）到目标主机 PATH 路径下即可。
 
@@ -170,6 +175,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  --verdict-cache <size>               enable verdict caching for tag:none domains
  --hosts [path]                       load hosts file, default path is /etc/hosts
  --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
+ --cert-verify                        enable SSL certificate validation, default: no
  --ca-certs <path>                    CA certs path for SSL certificate validation
  --no-ipset-blacklist                 add-ip: don't enable built-in ip blacklist
                                       blacklist: 127.0.0.0/8, 0.0.0.0/8, ::1, ::
@@ -353,6 +359,9 @@ group-upstream 192.168.1.1
 
 ---
 
+- `cert-verify` 启用 DoT 上游的 SSL 证书验证，2024.04.30 版本开始默认不验证。
+  - wolfssl 在某些平台（arm32、mips）可能无法正确验证 SSL 证书，见 [#169](https://github.com/zfl9/chinadns-ng/issues/169)。
+  - 注意，2024.04.27 版本强制启用证书验证，此选项是 2024.04.30 版本添加的。
 - `ca-certs` 根证书路径，用于验证 DoT 上游的 SSL 证书。默认自动检测。
 - `no-ipset-blacklist` 若指定此选项，则 add-ip 时不进行内置的 IP 过滤。
   - 默认情况下，以下 IP 不会被添加到 ipset/nftset 集合，见 [#162](https://github.com/zfl9/chinadns-ng/issues/162)
