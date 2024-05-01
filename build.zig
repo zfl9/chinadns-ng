@@ -320,6 +320,22 @@ fn is_musl() bool {
     return _target.getAbi().isMusl();
 }
 
+/// return 0 if not x86_64 arch
+fn get_x86_64_level() u8 {
+    const name = _target.getCpuModel().name;
+    if (!std.mem.startsWith(u8, name, "x86_64"))
+        return 0;
+    if (std.mem.eql(u8, name, "x86_64"))
+        return 1;
+    if (std.mem.eql(u8, name, "x86_64_v2"))
+        return 2;
+    if (std.mem.eql(u8, name, "x86_64_v3"))
+        return 3;
+    if (std.mem.eql(u8, name, "x86_64_v4"))
+        return 4;
+    unreachable;
+}
+
 /// get cli option value (string)
 fn get_optval(name: []const u8) ?[]const u8 {
     const opt = _b.user_input_options.getPtr(name) orelse return null;
@@ -613,7 +629,7 @@ fn build_wolfssl() *Step {
     const opt_musl: [:0]const u8 = if (is_musl()) "1" else "0";
     const opt_lto: [:0]const u8 = if (_lto) "-flto" else "";
     const opt_aesni: [:0]const u8 = if (_target.getCpuArch() == .x86_64) "--enable-aesni" else "";
-    const opt_intelasm: [:0]const u8 = if (!_wolfssl_noasm and _target.getCpuArch() == .x86_64) "--enable-intelasm" else "";
+    const opt_intelasm: [:0]const u8 = if (!_wolfssl_noasm and get_x86_64_level() >= 3) "--enable-intelasm" else "";
     const opt_armasm: [:0]const u8 = if (!_wolfssl_noasm and _target.getCpuArch() == .aarch64) "--enable-armasm" else "";
 
     const cmd = fmt(cmd_, .{
