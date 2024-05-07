@@ -609,7 +609,7 @@ fn build_wolfssl() *Step {
         \\      --disable-ocsp \
         \\      --disable-oldnames \
         \\      --disable-sys-ca-certs \
-        \\      --enable-staticmemory \
+        \\      --disable-staticmemory \
         \\      --enable-singlethreaded \
         \\      --disable-threadlocal \
         \\      --disable-asyncthreads \
@@ -619,8 +619,12 @@ fn build_wolfssl() *Step {
         \\      --disable-dtls --disable-oldtls --enable-tls13 \
         \\      --enable-chacha --enable-poly1305 \
         \\      --enable-aesgcm --disable-aescbc \
-        \\      --enable-ecc --enable-sni --enable-session-ticket \
-        \\      --disable-sha224 --disable-sha3 --disable-base64encode \
+        \\      --enable-sni --enable-session-ticket \
+        \\      --disable-md5 --disable-sha --disable-sha3 --disable-sha224 \
+        \\      --disable-pkcs7 --enable-pkcs8 --disable-pkcs11 --disable-pkcs12 \
+        \\      --disable-dh --enable-ecc --enable-rsa --disable-oaep \
+        \\      --disable-base64encode --disable-asn-print \
+        \\      --disable-pwdbased --disable-secure-renegotiation-info \
         \\      --disable-crypttests --disable-benchmark --disable-examples \
         \\      EXTRA_CFLAGS="-include $cwd/src/wolfssl_opt.h"
         \\  make install
