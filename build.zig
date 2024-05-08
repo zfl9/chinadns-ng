@@ -609,6 +609,7 @@ fn build_wolfssl() *Step {
         \\      --disable-ocsp \
         \\      --disable-oldnames \
         \\      --disable-sys-ca-certs \
+        \\      --disable-memory \
         \\      --disable-staticmemory \
         \\      --enable-singlethreaded \
         \\      --disable-threadlocal \
@@ -620,9 +621,12 @@ fn build_wolfssl() *Step {
         \\      --enable-chacha --enable-poly1305 \
         \\      --enable-aesgcm --disable-aescbc \
         \\      --enable-sni --enable-session-ticket \
-        \\      --disable-md5 --disable-sha --disable-sha3 --disable-sha224 \
-        \\      --disable-pkcs7 --enable-pkcs8 --disable-pkcs11 --disable-pkcs12 \
-        \\      --disable-dh --enable-ecc --enable-rsa --disable-oaep \
+        \\      --disable-md5 --disable-sha --disable-sha3 \
+        \\      --disable-sha224 --disable-sha512 \
+        \\      --disable-pkcs7 --disable-pkcs8 \
+        \\      --disable-pkcs11 --disable-pkcs12 \
+        \\      --disable-dh --enable-ecc \
+        \\      --enable-rsa --disable-oaep \
         \\      --disable-base64encode --disable-asn-print \
         \\      --disable-pwdbased --disable-secure-renegotiation-info \
         \\      --disable-crypttests --disable-benchmark --disable-examples \
