@@ -1,12 +1,11 @@
 {
     "build_options": [
         {
-            "name": "wolfssl",
-            "value": "true"
+            "name": "mode",
+            "value": "debug"
         },
         {
-            "name": "mimalloc",
-            "value": "true"
+            "name": "wolfssl"
         }
     ]
 }

@@ -43,7 +43,7 @@ fn init(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c
 /// the `in_msg` will be copied
 pub fn new(in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheMsg {
     const bytes = g.allocator.alignedAlloc(u8, alignment, metadata_len + in_msg.len) catch unreachable;
-    const self = std.mem.bytesAsValue(CacheMsg, bytes[0..metadata_len]);
+    const self: *CacheMsg = std.mem.bytesAsValue(CacheMsg, bytes[0..metadata_len]);
     return self.init(in_msg, qnamelen, ttl, hashv);
 }
 
@@ -62,7 +62,9 @@ pub fn ref(self: *CacheMsg) void {
     return self.rc.ref();
 }
 
-pub const unref = free;
+pub fn unref(self: *CacheMsg) void {
+    return self.free();
+}
 
 pub fn free(self: *CacheMsg) void {
     if (self.rc.unref() == 0)

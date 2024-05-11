@@ -55,7 +55,9 @@ pub fn ref(self: *RcMsg) *RcMsg {
     return self;
 }
 
-pub const unref = free;
+pub fn unref(self: *RcMsg) void {
+    return self.free();
+}
 
 pub fn free(self: *RcMsg) void {
     if (self.rc.unref() == 0)

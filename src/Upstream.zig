@@ -212,58 +212,42 @@ fn udp_on_eol(self: *Upstream) void {
 pub const has_tls = build_opts.enable_wolfssl;
 
 pub const TLS = struct {
-    ssl: ?*c.SSL = null,
-    session: ?*c.SSL_SESSION = null,
+    ssl: ?*c.WOLFSSL = null,
+    session: ?*c.WOLFSSL_SESSION = null,
 
-    var _ctx: ?*c.SSL_CTX = null;
+    var _ctx: ?*c.WOLFSSL_CTX = null;
 
     /// called at startup
     pub fn init() void {
         if (_ctx != null) return;
 
-        // library init
-        assert(c.wolfSSL_Init() == c.SSL_SUCCESS);
+        cc.SSL_library_init();
 
         const ctx = cc.SSL_CTX_new();
         _ctx = ctx;
 
-        if (!g.cert_verify) return;
-
-        const src = @src();
-        const ca_certs = b: {
-            if (g.ca_certs.is_null()) {
-                if (cc.SSL_CTX_load_sys_CA_certs(ctx)) |ca_certs| break :b ca_certs;
-                log.err(src, "please specify the CA certs path", .{});
-                cc.exit(1);
-            } else {
-                const ca_certs = g.ca_certs.cstr();
-                const ok = if (cc.is_dir(ca_certs))
-                    cc.SSL_CTX_load_CA_certs(ctx, null, ca_certs)
-                else
-                    cc.SSL_CTX_load_CA_certs(ctx, ca_certs, null);
-                if (ok) break :b ca_certs;
-                log.err(src, "failed to load CA certs: %s", .{ca_certs});
-                cc.SSL_ERR_print(src);
-                cc.exit(1);
-            }
-        };
-        log.info(src, "%s", .{ca_certs});
-
-        cc.SSL_ERR_clear();
+        if (g.cert_verify) {
+            const src = @src();
+            if (g.ca_certs.is_null())
+                cc.SSL_CTX_load_sys_CA_certs(ctx) orelse {
+                    log.err(src, "failed to load system CA certs, please provide --ca-certs", .{});
+                    cc.exit(1);
+                }
+            else
+                cc.SSL_CTX_load_CA_certs(ctx, g.ca_certs.cstr()) orelse {
+                    log.err(src, "failed to load CA certs: %s", .{g.ca_certs.cstr()});
+                    cc.exit(1);
+                };
+        }
     }
 
-    pub fn new_ssl(self: *TLS, fd: c_int, host: cc.ConstStr) ?void {
+    pub fn new_ssl(self: *TLS, fd: c_int, host: ?cc.ConstStr) ?void {
         assert(self.ssl == null);
 
         const ssl = cc.SSL_new(_ctx.?);
 
         var ok = false;
-        defer if (!ok) {
-            const src = @src();
-            log.err(src, "failed to create ssl", .{});
-            cc.SSL_ERR_print(src);
-            cc.SSL_free(ssl);
-        };
+        defer if (!ok) cc.SSL_free(ssl);
 
         cc.SSL_set_fd(ssl, fd) orelse return null;
         cc.SSL_set_host(ssl, host, g.cert_verify) orelse return null;
@@ -273,15 +257,11 @@ pub const TLS = struct {
                 cc.SSL_SESSION_free(session);
                 self.session = null;
             }
-            cc.SSL_set_session(ssl, session) orelse return null;
+            cc.SSL_set_session(ssl, session);
         }
 
         ok = true;
         self.ssl = ssl;
-    }
-
-    pub fn on_eof(self: *const TLS) void {
-        return cc.SSL_set_shutdown(self.ssl.?);
     }
 
     // free the ssl obj
@@ -291,14 +271,7 @@ pub const TLS = struct {
 
         // the session should be free after it has been set into an ssl object
         assert(self.session == null);
-
-        // check if the session is resumable
-        if (cc.SSL_get1_session(ssl)) |session| {
-            if (cc.SSL_SESSION_is_resumable(session))
-                self.session = session
-            else
-                cc.SSL_SESSION_free(session);
-        }
+        self.session = cc.SSL_get1_session(ssl);
 
         cc.SSL_free(ssl);
     }
@@ -311,9 +284,9 @@ const TCP = struct {
     ack_list: std.AutoHashMapUnmanaged(u16, *RcMsg) = .{}, // qmsg to be ack
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     healthy: bool = false, // current connection processed at least one query ?
-    tls: tls_t = .{}, // for DoT upstream
+    tls: TLS_ = .{}, // for DoT upstream
 
-    const tls_t = if (has_tls) TLS else struct {};
+    const TLS_ = if (has_tls) TLS else struct {};
 
     /// must <= u16_max
     const PENDING_MAX = 1000;
@@ -592,13 +565,10 @@ const TCP = struct {
         else
             log.warn(src, "%s(%s) failed: (%d) %m", .{ op, self.upstream.url, cc.errno() });
 
-        if (has_tls and self.upstream.proto == .tls)
-            cc.SSL_ERR_print(src);
-
         return null;
     }
 
-    fn ssl(self: *const TCP) *c.SSL {
+    fn ssl(self: *const TCP) *c.WOLFSSL {
         return self.tls.ssl.?;
     }
 
@@ -608,21 +578,21 @@ const TCP = struct {
             g.evloop.connect(fdobj, &self.upstream.addr) orelse break :e null;
 
             if (has_tls and self.upstream.proto == .tls) {
-                self.tls.new_ssl(fdobj.fd, self.upstream.host.?) orelse break :e "unable to create ssl object";
+                self.tls.new_ssl(fdobj.fd, self.upstream.host) orelse break :e "unable to create ssl object";
 
                 while (true) {
                     var err: c_int = undefined;
                     cc.SSL_connect(self.ssl(), &err) orelse switch (err) {
-                        c.SSL_ERROR_WANT_READ => {
+                        c.WOLFSSL_ERROR_WANT_READ => {
                             g.evloop.wait_readable(fdobj);
                             continue;
                         },
-                        c.SSL_ERROR_WANT_WRITE => {
+                        c.WOLFSSL_ERROR_WANT_WRITE => {
                             g.evloop.wait_writable(fdobj);
                             continue;
                         },
                         else => {
-                            break :e if (err == c.SSL_ERROR_SYSCALL) null else cc.SSL_error_name(err);
+                            break :e cc.SSL_error_string(err);
                         },
                     };
                     break;
@@ -632,7 +602,7 @@ const TCP = struct {
                     log.info(@src(), "%s | %s | %s | %s", .{
                         self.upstream.url,
                         cc.SSL_get_version(self.ssl()),
-                        cc.SSL_get_cipher(self.ssl()),
+                        cc.SSL_get_cipher_name(self.ssl()),
                         cc.b2s(cc.SSL_session_reused(self.ssl()), "resume", "full"),
                     });
                 }
@@ -662,12 +632,12 @@ const TCP = struct {
 
                         var err: c_int = undefined;
                         cc.SSL_write(self.ssl(), v.iov_base[0..v.iov_len], &err) orelse switch (err) {
-                            c.SSL_ERROR_WANT_WRITE => {
+                            c.WOLFSSL_ERROR_WANT_WRITE => {
                                 g.evloop.wait_writable(fdobj); // async
                                 continue;
                             },
                             else => {
-                                break :e if (err == c.SSL_ERROR_SYSCALL) null else cc.SSL_error_name(err);
+                                break :e cc.SSL_error_string(err);
                             },
                         };
                         break;
@@ -698,23 +668,15 @@ const TCP = struct {
 
                     var err: c_int = undefined;
                     const n = cc.SSL_read(self.ssl(), buf[nread..], &err) orelse switch (err) {
-                        c.SSL_ERROR_ZERO_RETURN => {
-                            cc.SSL_ERR_clear();
-                            self.tls.on_eof();
+                        c.WOLFSSL_ERROR_ZERO_RETURN => { // TLS EOF
                             return null;
                         },
-                        c.SSL_ERROR_WANT_READ => {
-                            g.evloop.wait_readable(fdobj); //async
+                        c.WOLFSSL_ERROR_WANT_READ => {
+                            g.evloop.wait_readable(fdobj); // async
                             continue;
                         },
                         else => {
-                            // SSL_OP_IGNORE_UNEXPECTED_EOF (wolfssl does not support this)
-                            if (err == c.SSL_ERROR_SYSCALL and cc.errno() == 0) {
-                                cc.SSL_ERR_clear();
-                                self.tls.on_eof();
-                                return null;
-                            }
-                            break :e if (err == c.SSL_ERROR_SYSCALL) null else cc.SSL_error_name(err);
+                            break :e cc.SSL_error_string(err);
                         },
                     };
                     nread += n;
@@ -884,8 +846,7 @@ pub const Group = struct {
                 if (!proto.require_host())
                     return parse_failed("no host required", host);
                 break :b host;
-            } else if (proto.require_host())
-                return parse_failed("host required", in_value);
+            }
             break :b "";
         };
 
@@ -1016,5 +977,5 @@ pub const SendFlags = enum(u8) {
     first_query = 1 << 0, // qctx_list: empty -> non-empty
     from_tcp = 1 << 1, // query from tcp or udp(default)
     _,
-    usingnamespace flags_op.get(SendFlags);
+    pub usingnamespace flags_op.get(SendFlags);
 };

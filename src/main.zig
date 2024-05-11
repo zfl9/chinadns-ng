@@ -188,24 +188,24 @@ pub fn main() u8 {
 }
 
 fn init_all_module() void {
-    inline for (modules.module_list) |module, i| {
+    comptime var i = 0;
+    inline while (i < modules.module_list.len) : (i += 1) {
+        const module = modules.module_list[i];
         const module_name: cc.ConstStr = modules.name_list[i];
         if (@hasDecl(module, "module_init")) {
-            // if (_debug)
-            if (false)
-                log.debug(@src(), "%s.module_init()", .{module_name});
+            if (false) log.debug(@src(), "%s.module_init()", .{module_name});
             module.module_init();
         }
     }
 }
 
 fn deinit_all_module() void {
-    inline for (modules.module_list) |module, i| {
+    comptime var i = 0;
+    inline while (i < modules.module_list.len) : (i += 1) {
+        const module = modules.module_list[i];
         const module_name: cc.ConstStr = modules.name_list[i];
         if (@hasDecl(module, "module_deinit")) {
-            // if (_debug)
-            if (false)
-                log.debug(@src(), "%s.module_deinit()", .{module_name});
+            if (false) log.debug(@src(), "%s.module_deinit()", .{module_name});
             module.module_deinit();
         }
     }

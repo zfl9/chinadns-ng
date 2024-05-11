@@ -17,7 +17,7 @@ pub const Flags = enum(u8) {
     bind_tcp = 1 << 4,
     bind_udp = 1 << 5,
     _,
-    usingnamespace flags_op.get(Flags);
+    pub usingnamespace flags_op.get(Flags);
 };
 
 pub var flags: Flags = Flags.init(.{ .gfwlist_first, .bind_tcp, .bind_udp });

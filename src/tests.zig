@@ -12,15 +12,17 @@ const all_test_fns = collect(0);
 fn collect(comptime _: comptime_int) [count()]TestFn {
     @setEvalBranchQuota(1000000);
     var test_fns: [count()]TestFn = undefined;
-    var i = 0;
-    for (modules.module_list) |module, module_idx| {
+    var test_fn_i = 0;
+    var module_idx = 0;
+    for (modules.module_list) |module| {
+        defer module_idx += 1;
         for (@typeInfo(module).Struct.decls) |decl| {
             if (std.mem.startsWith(u8, decl.name, "test: ")) {
-                test_fns[i] = .{
+                test_fns[test_fn_i] = .{
                     .name = modules.name_list[module_idx] ++ ": " ++ decl.name[6..],
                     .func = @field(module, decl.name),
                 };
-                i += 1;
+                test_fn_i += 1;
             }
         }
     }

@@ -5,7 +5,7 @@
 // import into the current namespace (c.zig)
 // mainly used to access C constants, C typedefs
 // please give priority to using functions in the `cc` namespace
-usingnamespace @cImport({
+pub usingnamespace @cImport({
     @cDefine("_GNU_SOURCE", {});
 
     @cInclude("stdio.h");

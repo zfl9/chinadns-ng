@@ -528,7 +528,9 @@ fn gen_modules_zig() void {
     defer text.deinit();
 
     text.appendSlice("pub const name_list = .{ ") catch unreachable;
-    for (list.items) |name, i| {
+    var i: usize = 0; // make zls 0.12 happy
+    for (list.items) |name| {
+        defer i += 1;
         if (i > 0)
             text.appendSlice(", ") catch unreachable;
         text.append('"') catch unreachable;
@@ -538,7 +540,9 @@ fn gen_modules_zig() void {
     text.appendSlice(" };\n") catch unreachable;
 
     text.appendSlice("pub const module_list = .{ ") catch unreachable;
-    for (list.items) |name, i| {
+    i = 0;
+    for (list.items) |name| {
+        defer i += 1;
         if (i > 0)
             text.appendSlice(", ") catch unreachable;
         text.appendSlice(name) catch unreachable;
@@ -608,28 +612,47 @@ fn build_wolfssl() *Step {
         \\      --disable-harden \
         \\      --disable-ocsp \
         \\      --disable-oldnames \
-        \\      --disable-sys-ca-certs \
+        \\      --enable-sys-ca-certs \
         \\      --disable-memory \
         \\      --disable-staticmemory \
         \\      --enable-singlethreaded \
         \\      --disable-threadlocal \
         \\      --disable-asyncthreads \
+        \\      --disable-errorqueue \
         \\      --disable-error-queue-per-thread \
-        \\      --enable-openssl-compatible-defaults \
-        \\      --enable-opensslextra --enable-opensslall \
-        \\      --disable-dtls --disable-oldtls --enable-tls13 \
-        \\      --enable-chacha --enable-poly1305 \
-        \\      --enable-aesgcm --disable-aescbc \
-        \\      --enable-sni --enable-session-ticket \
-        \\      --disable-md5 --disable-sha --disable-sha3 \
-        \\      --disable-sha224 --disable-sha512 \
-        \\      --disable-pkcs7 --disable-pkcs8 \
-        \\      --disable-pkcs11 --disable-pkcs12 \
-        \\      --disable-dh --enable-ecc \
-        \\      --enable-rsa --disable-oaep \
-        \\      --disable-base64encode --disable-asn-print \
-        \\      --disable-pwdbased --disable-secure-renegotiation-info \
-        \\      --disable-crypttests --disable-benchmark --disable-examples \
+        \\      --disable-openssl-compatible-defaults \
+        \\      --disable-opensslextra \
+        \\      --disable-opensslall \
+        \\      --disable-dtls \
+        \\      --disable-oldtls \
+        \\      --enable-tls13 \
+        \\      --enable-chacha \
+        \\      --enable-poly1305 \
+        \\      --enable-aesgcm \
+        \\      --disable-aescbc \
+        \\      --enable-sni \
+        \\      --enable-session-ticket \
+        \\      --disable-md5 \
+        \\      --disable-sha \
+        \\      --disable-sha3 \
+        \\      --disable-sha224 \
+        \\      --disable-sha512 \
+        \\      --disable-pkcs7 \
+        \\      --disable-pkcs8 \
+        \\      --disable-pkcs11 \
+        \\      --disable-pkcs12 \
+        \\      --disable-dh \
+        \\      --enable-ecc \
+        \\      --enable-rsa \
+        \\      --disable-oaep \
+        \\      --enable-coding \
+        \\      --disable-base64encode \
+        \\      --disable-asn-print \
+        \\      --disable-pwdbased \
+        \\      --disable-secure-renegotiation-info \
+        \\      --disable-crypttests \
+        \\      --disable-benchmark \
+        \\      --disable-examples \
         \\      EXTRA_CFLAGS="-include $cwd/src/wolfssl_opt.h"
         \\  make install
     ;

@@ -109,7 +109,9 @@ pub const Fd = struct {
         return self;
     }
 
-    pub const unref = free;
+    pub fn unref(self: *Fd) void {
+        return self.free();
+    }
 
     pub fn free(self: *Fd) void {
         if (self.rc.unref() > 0) return;

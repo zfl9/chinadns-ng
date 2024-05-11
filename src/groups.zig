@@ -126,9 +126,11 @@ pub fn on_start() void {
         var tag_to_filenames = [_]?dnl.filenames_t{null} ** (c.TAG__MAX + 1);
         var has_tls_upstream = false;
 
-        for (_tag_to_group.items) |*group_, tag_v| {
-            const group: *Group = group_;
-            const tag = Tag.from_int(cc.to_u8(tag_v));
+        var tag_v: u8 = 0; // make zls 0.12 happy
+        for (_tag_to_group.items) |*group| {
+            defer tag_v += 1;
+
+            const tag = Tag.from_int(tag_v);
 
             if (!group.dnl_filenames.is_empty())
                 tag_to_filenames[tag_v] = group.dnl_filenames.items_z().ptr
@@ -161,7 +163,7 @@ pub fn on_start() void {
         dnl.init(&tag_to_filenames);
 
         // check for registered but not used tags
-        var tag_v: u8 = c.TAG__USER;
+        tag_v = c.TAG__USER;
         while (tag_v <= c.TAG__MAX) : (tag_v += 1) {
             const tag = Tag.from_int(tag_v);
             if (tag.valid() and !has(tag))

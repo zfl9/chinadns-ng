@@ -53,7 +53,7 @@ const QueryCtx = struct {
         is_china_domain = 1 << 2, // tag:none [verdict]
         non_china_domain = 1 << 3, // tag:none [verdict]
         _, // non-exhaustive enum
-        usingnamespace flags_op.get(Flags);
+        pub usingnamespace flags_op.get(Flags);
     };
 
     fn new(qid: u16, id: c.be16, bufsz: u16, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, tag: Tag, flags: Flags) *QueryCtx {

@@ -759,205 +759,160 @@ pub fn mmap_file(filename: ConstStr) ?[]const u8 {
 
 // ==============================================================
 
-/// pop error from the openssl thread's error queue
+/// Initializes the wolfSSL library for use. \
+/// Must be called once per application and before any other call to the library.
+pub fn SSL_library_init() void {
+    assert(c.wolfSSL_Init() == c.WOLFSSL_SUCCESS);
+}
+
 /// the returned string is a pointer to the static buffer
-/// the current thread's error queue must be empty before the SSL I/O operation is attempted
-pub fn SSL_ERR_pop() ?ConstStr {
-    const err = c.ERR_get_error(); // pop error
-    return if (err != 0) c.ERR_error_string(err, null) else null;
-}
-
-/// empties the current thread's error queue
-/// the current thread's error queue must be empty before the SSL I/O operation is attempted
-pub fn SSL_ERR_clear() void {
-    return c.ERR_clear_error();
-}
-
-/// print all error and clear the error queue
-pub fn SSL_ERR_print(comptime src: std.builtin.SourceLocation) void {
-    while (SSL_ERR_pop()) |err|
-        log.warn(src, "ssl error: %s", .{err});
-}
-
-/// SSL I/O operation errcode => errname (`SSL_ERROR_*`)
-/// the returned string is a pointer to the static buffer
-pub fn SSL_error_name(err: c_int) ConstStr {
+pub fn SSL_error_string(err: c_int) ConstStr {
     return switch (err) {
-        c.SSL_ERROR_WANT_READ => "SSL_ERROR_WANT_READ",
-        c.SSL_ERROR_WANT_WRITE => "SSL_ERROR_WANT_WRITE",
-        c.SSL_ERROR_SYSCALL => "SSL_ERROR_SYSCALL",
-        c.SSL_ERROR_ZERO_RETURN => "SSL_ERROR_ZERO_RETURN",
-        c.SSL_ERROR_WANT_CONNECT => "SSL_ERROR_WANT_CONNECT",
-        c.SSL_ERROR_WANT_ACCEPT => "SSL_ERROR_WANT_ACCEPT",
-        c.SSL_ERROR_WANT_X509_LOOKUP => "SSL_ERROR_WANT_X509_LOOKUP",
-        c.SSL_ERROR_SSL => "SSL_ERROR_SSL",
-        else => snprintf(static_buf(30), "SSL_ERROR(%d)", .{err}).ptr,
+        c.WOLFSSL_ERROR_SYSCALL => c.strerror(errno()),
+        else => c.wolfSSL_ERR_error_string(@bitCast(c_uint, err), null),
     };
 }
 
 /// client-side only
-pub fn SSL_CTX_new() *c.SSL_CTX {
-    // some macros are not translated correctly
-    // const ctx = c.SSL_CTX_new(switch (side) {
-    const ctx = c.wolfSSL_CTX_new(c.TLS_client_method()).?;
+pub fn SSL_CTX_new() *c.WOLFSSL_CTX {
+    const ctx = c.wolfSSL_CTX_new(c.wolfTLS_client_method()).?;
 
     // tls12 + tls13
-    assert(c.SSL_CTX_set_min_proto_version(ctx, c.TLS1_2_VERSION) == 1);
+    assert(c.wolfSSL_CTX_SetMinVersion(ctx, c.WOLFSSL_TLSV1_2) == 1);
 
     // cipher list
     // openssl has a separate API for tls13, but wolfssl only has one
     const chacha20 = "TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305";
     const aes128gcm = "TLS_AES_128_GCM_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256";
     const cipher_list = if (c.has_aes()) aes128gcm ++ ":" ++ chacha20 else chacha20 ++ ":" ++ aes128gcm;
-    assert(c.SSL_CTX_set_cipher_list(ctx, cipher_list) == 1);
+    assert(c.wolfSSL_CTX_set_cipher_list(ctx, cipher_list) == 1);
 
     // options
-    _ = c.SSL_CTX_set_options(ctx, c.SSL_OP_NO_COMPRESSION | c.SSL_OP_NO_RENEGOTIATION);
+    _ = c.wolfSSL_CTX_set_options(ctx, c.WOLFSSL_OP_NO_COMPRESSION | c.WOLFSSL_OP_NO_RENEGOTIATION);
 
     return ctx;
 }
 
-pub fn SSL_CTX_load_CA_certs(ctx: *c.SSL_CTX, file: ?ConstStr, path: ?ConstStr) bool {
-    return c.SSL_CTX_load_verify_locations(ctx, file, path) == 1;
+pub fn SSL_CTX_load_CA_certs(ctx: *c.WOLFSSL_CTX, path: ConstStr) ?void {
+    const ok = if (is_dir(path))
+        c.wolfSSL_CTX_load_verify_locations(ctx, null, path)
+    else // file
+        c.wolfSSL_CTX_load_verify_locations(ctx, path, null);
+    return if (ok == 1) {} else null;
 }
 
-pub fn SSL_CTX_load_sys_CA_certs(ctx: *c.SSL_CTX) ?ConstStr {
-    // https://go.dev/src/crypto/x509/root_linux.go
-    const file_list = [_]ConstStr{
-        "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu/Gentoo etc.
-        "/etc/pki/tls/certs/ca-bundle.crt", // Fedora/RHEL 6
-        "/etc/ssl/ca-bundle.pem", // OpenSUSE
-        "/etc/pki/tls/cacert.pem", // OpenELEC
-        "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7
-        "/etc/ssl/cert.pem", // Alpine Linux
-    };
-
-    const dir_list = [_]ConstStr{
-        "/etc/ssl/certs", // SLES10/SLES11
-        "/etc/pki/tls/certs", // Fedora/RHEL
-    };
-
-    for (file_list) |file| {
-        if (SSL_CTX_load_CA_certs(ctx, file, null))
-            return file;
-        SSL_ERR_clear();
-    }
-
-    for (dir_list) |dir| {
-        if (SSL_CTX_load_CA_certs(ctx, null, dir))
-            return dir;
-        SSL_ERR_clear();
-    }
-
-    // all attempts failed
-    // must be specified by the user
-    return null;
+pub fn SSL_CTX_load_sys_CA_certs(ctx: *c.WOLFSSL_CTX) ?void {
+    return if (c.wolfSSL_CTX_load_system_CA_certs(ctx) == 1) {} else null;
 }
 
-pub fn SSL_new(ctx: *c.SSL_CTX) *c.SSL {
-    return c.SSL_new(ctx).?;
+pub fn SSL_new(ctx: *c.WOLFSSL_CTX) *c.WOLFSSL {
+    return c.wolfSSL_new(ctx).?;
 }
 
-pub fn SSL_free(ssl: *c.SSL) void {
-    return c.SSL_free(ssl);
+pub fn SSL_free(ssl: *c.WOLFSSL) void {
+    return c.wolfSSL_free(ssl);
 }
 
-pub fn SSL_set_fd(ssl: *c.SSL, fd: c_int) ?void {
-    return if (c.SSL_set_fd(ssl, fd) == 1) {} else null;
+pub fn SSL_set_fd(ssl: *c.WOLFSSL, fd: c_int) ?void {
+    return if (c.wolfSSL_set_fd(ssl, fd) == 1) {} else null;
 }
 
 /// set SNI && enable hostname validation during SSL handshake
-pub fn SSL_set_host(ssl: *c.SSL, hostname: ConstStr, cert_verify: bool) ?void {
-    // tls_ext: SNI (ClientHello)
-    if (c.SSL_set_tlsext_host_name(ssl, hostname) != 1)
-        return null;
+pub fn SSL_set_host(ssl: *c.WOLFSSL, host: ?ConstStr, cert_verify: bool) ?void {
+    if (host) |name| {
+        // tls_ext: SNI (ClientHello)
+        if (c.wolfSSL_UseSNI(ssl, c.WOLFSSL_SNI_HOST_NAME, name, to_ushort(c.strlen(name))) != 1)
+            return null;
 
-    // set hostname for validation
-    if (cert_verify and c.SSL_set1_host(ssl, hostname) != 1)
-        return null;
+        // check hostname on ssl cert validation
+        if (cert_verify and c.wolfSSL_check_domain_name(ssl, name) != 1)
+            return null;
+    }
 
-    // enable hostname validation
-    const verify = if (cert_verify) c.SSL_VERIFY_PEER else c.SSL_VERIFY_NONE;
-    c.SSL_set_verify(ssl, verify, null);
+    // ssl cert validation
+    const mode = if (cert_verify) c.WOLFSSL_VERIFY_PEER else c.WOLFSSL_VERIFY_NONE;
+    c.wolfSSL_set_verify(ssl, mode, null);
 }
 
-/// set session to be used when the TLS/SSL connection is to be established (resumption)
-/// when the session is set, the reference count of session is incremented by 1 (owner by ssl)
-/// after session is set, SSL_SESSION_free() can be called to dereference it (release ownership)
-pub fn SSL_set_session(ssl: *c.SSL, session: *c.SSL_SESSION) ?void {
-    return if (c.SSL_set_session(ssl, session) == 1) {} else null;
+/// set session to be used when the TLS/SSL connection is to be established (resumption) \
+/// when the session is set, the reference count of session is incremented by 1 (owner by ssl) \
+/// after session is set, wolfSSL_SESSION_free() can be called to dereference it (release ownership)
+pub fn SSL_set_session(ssl: *c.WOLFSSL, session: *c.WOLFSSL_SESSION) void {
+    // may fail due to session timeout, don't care about it
+    _ = c.wolfSSL_set_session(ssl, session);
 }
 
-/// perform SSL/TLS handshake (underlying transport is established)
+/// for SSL I/O operation
+fn SSL_get_error(ssl: *c.WOLFSSL, res: c_int) c_int {
+    var err = c.wolfSSL_get_error(ssl, res);
+    if (err == c.SOCKET_PEER_CLOSED_E or err == c.SOCKET_ERROR_E)
+        // convert to socket error
+        err = if (errno() == 0) // TCP EOF
+            c.WOLFSSL_ERROR_ZERO_RETURN
+        else
+            c.WOLFSSL_ERROR_SYSCALL;
+    return err;
+}
+
+/// perform SSL/TLS handshake (underlying transport is established) \
 /// `p_err`: to save the failure reason (SSL_ERROR_*)
-pub fn SSL_connect(ssl: *c.SSL, p_err: *c_int) ?void {
-    const res = c.SSL_connect(ssl);
+pub fn SSL_connect(ssl: *c.WOLFSSL, p_err: *c_int) ?void {
+    const res = c.wolfSSL_connect(ssl);
     if (res == 1) {
         return {};
     } else {
-        p_err.* = c.SSL_get_error(ssl, res);
+        p_err.* = SSL_get_error(ssl, res);
         return null;
     }
 }
 
 /// the name of the protocol used for the connection
-pub fn SSL_get_version(ssl: *const c.SSL) ConstStr {
-    return c.SSL_get_version(ssl);
+pub fn SSL_get_version(ssl: *const c.WOLFSSL) ConstStr {
+    return c.wolfSSL_get_version(ssl);
 }
 
 /// the name of the cipher used for the connection
-pub fn SSL_get_cipher(ssl: *c.SSL) ConstStr {
-    return c.SSL_get_cipher(ssl);
+pub fn SSL_get_cipher_name(ssl: *c.WOLFSSL) ConstStr {
+    return c.wolfSSL_get_cipher(ssl) orelse "NULL";
 }
 
 /// queries whether session resumption occurred during the handshake
-pub fn SSL_session_reused(ssl: *c.SSL) bool {
-    return c.SSL_session_reused(ssl) == 1;
+pub fn SSL_session_reused(ssl: *c.WOLFSSL) bool {
+    return c.wolfSSL_session_reused(ssl) != 0;
 }
 
-/// return the number of bytes read (> 0)
+/// return the number of bytes read (> 0) \
 /// `p_err`: to save the failure reason (SSL_ERROR_*)
-pub fn SSL_read(ssl: *c.SSL, buf: []u8, p_err: *c_int) ?usize {
-    const res = c.SSL_read(ssl, buf.ptr, to_int(buf.len));
+pub fn SSL_read(ssl: *c.WOLFSSL, buf: []u8, p_err: *c_int) ?usize {
+    const res = c.wolfSSL_read(ssl, buf.ptr, to_int(buf.len));
     if (res > 0) {
         return to_usize(res);
     } else {
-        p_err.* = c.SSL_get_error(ssl, res);
+        p_err.* = SSL_get_error(ssl, res);
         return null;
     }
 }
 
-/// assume SSL_MODE_ENABLE_PARTIAL_WRITE is not in use
+/// assume SSL_MODE_ENABLE_PARTIAL_WRITE is not in use \
 /// `p_err`: to save the failure reason (SSL_ERROR_*)
-pub fn SSL_write(ssl: *c.SSL, buf: []const u8, p_err: *c_int) ?void {
-    const res = c.SSL_write(ssl, buf.ptr, to_int(buf.len));
+pub fn SSL_write(ssl: *c.WOLFSSL, buf: []const u8, p_err: *c_int) ?void {
+    const res = c.wolfSSL_write(ssl, buf.ptr, to_int(buf.len));
     if (res > 0) {
         return {};
     } else {
-        p_err.* = c.SSL_get_error(ssl, res);
+        p_err.* = SSL_get_error(ssl, res);
         return null;
     }
 }
 
-/// mark the SSL connection as complete two-directional shutdown (close the ssl session)
-/// calling `SSL_get1_session()` after shutdown will give a resumable session if any was sent
-pub fn SSL_set_shutdown(ssl: *c.SSL) void {
-    return c.SSL_set_shutdown(ssl, c.SSL_SENT_SHUTDOWN | c.SSL_RECEIVED_SHUTDOWN);
-}
-
-/// the reference count of the SSL_SESSION is incremented by one
+/// the reference count of the SSL_SESSION is incremented by one \
 /// in TLSv1.3 it is recommended that each SSL_SESSION object is only used for resumption once
-pub fn SSL_get1_session(ssl: *c.SSL) ?*c.SSL_SESSION {
-    return c.SSL_get1_session(ssl);
+pub fn SSL_get1_session(ssl: *c.WOLFSSL) ?*c.WOLFSSL_SESSION {
+    return c.wolfSSL_get1_session(ssl);
 }
 
-/// determine whether an SSL_SESSION object can be used for resumption
-pub fn SSL_SESSION_is_resumable(session: *const c.SSL_SESSION) bool {
-    return c.SSL_SESSION_is_resumable(session) == 1;
-}
-
-pub fn SSL_SESSION_free(session: *c.SSL_SESSION) void {
-    return c.SSL_SESSION_free(session);
+pub fn SSL_SESSION_free(session: *c.WOLFSSL_SESSION) void {
+    return c.wolfSSL_SESSION_free(session);
 }
 
 // ==============================================================
