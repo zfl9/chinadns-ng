@@ -584,6 +584,7 @@ fn build_wolfssl() *Step {
         \\  aesni='{s}'
         \\  intelasm='{s}'
         \\  armasm='{s}'
+        \\  aarch64='{s}'
         \\  cwd="$PWD"
         \\
         \\  cd "$src_dir"
@@ -593,11 +594,11 @@ fn build_wolfssl() *Step {
         \\
         \\  [ "$is_musl" = 1 ] && pic_flags='-fno-pic -fno-PIC' || pic_flags=''
         \\  export CC="$zig_exe cc $target_mcpu -g0 -O3 -Xclang -O3 $lto -fno-pie -fno-PIE $pic_flags -ffunction-sections -fdata-sections"
-        \\
         \\  export AR="$zig_exe ar"
         \\  export RANLIB="$zig_exe ranlib"
         \\
         \\  [ "$target_triple" ] && host="--host=$target_triple" || host=""
+        \\  [ "$aarch64" = 1 ] && opt_sha512="--enable-sha512" || opt_sha512="--disable-sha512"
         \\
         \\  ./autogen.sh
         \\  ./configure \
@@ -636,7 +637,7 @@ fn build_wolfssl() *Step {
         \\      --disable-sha \
         \\      --disable-sha3 \
         \\      --disable-sha224 \
-        \\      --disable-sha512 \
+        \\      $opt_sha512 \
         \\      --disable-pkcs7 \
         \\      --disable-pkcs8 \
         \\      --disable-pkcs11 \
@@ -662,6 +663,7 @@ fn build_wolfssl() *Step {
     const opt_aesni: [:0]const u8 = if (_target.getCpuArch() == .x86_64) "--enable-aesni" else "";
     const opt_intelasm: [:0]const u8 = if (!_wolfssl_noasm and get_x86_64_level() >= 3) "--enable-intelasm" else "";
     const opt_armasm: [:0]const u8 = if (!_wolfssl_noasm and _target.getCpuArch() == .aarch64) "--enable-armasm" else "";
+    const opt_aarch64: [:0]const u8 = if (_target.getCpuArch() == .aarch64) "1" else "0";
 
     const cmd = fmt(cmd_, .{
         _b.pathFromRoot(_dep_wolfssl.base_dir),
@@ -675,6 +677,7 @@ fn build_wolfssl() *Step {
         opt_aesni,
         opt_intelasm,
         opt_armasm,
+        opt_aarch64,
     });
 
     wolfssl.dependOn(add_sh_cmd_x(cmd));
