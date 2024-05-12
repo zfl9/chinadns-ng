@@ -497,17 +497,7 @@ const TCP = struct {
         co.create(recv, .{self});
 
         while (self.pop_qmsg(fdobj)) |qmsg| {
-            var iov = [_]cc.iovec_t{
-                .{
-                    .iov_base = std.mem.asBytes(&cc.htons(qmsg.len)),
-                    .iov_len = @sizeOf(u16),
-                },
-                .{
-                    .iov_base = qmsg.msg().ptr,
-                    .iov_len = qmsg.len,
-                },
-            };
-            self.do_send(fdobj, &iov) orelse return;
+            self.do_send(fdobj, qmsg) orelse return;
         }
     }
 
@@ -602,7 +592,7 @@ const TCP = struct {
                     log.info(@src(), "%s | %s | %s | %s", .{
                         self.upstream.url,
                         cc.SSL_get_version(self.ssl()),
-                        cc.SSL_get_cipher_name(self.ssl()),
+                        cc.SSL_get_cipher(self.ssl()),
                         cc.b2s(cc.SSL_session_reused(self.ssl()), "resume", "full"),
                     });
                 }
@@ -614,34 +604,48 @@ const TCP = struct {
         return self.on_error("connect", errmsg);
     }
 
-    fn do_send(self: *TCP, fdobj: *EvLoop.Fd, iov: []cc.iovec_t) ?void {
+    fn do_send(self: *TCP, fdobj: *EvLoop.Fd, qmsg: *RcMsg) ?void {
         // null means strerror(errno)
         const errmsg: ?cc.ConstStr = e: {
             if (!self.fdobj_ok(fdobj)) return null;
 
             if (self.upstream.proto != .tls) {
+                var iov = [_]cc.iovec_t{
+                    .{
+                        .iov_base = std.mem.asBytes(&cc.htons(qmsg.len)),
+                        .iov_len = @sizeOf(u16),
+                    },
+                    .{
+                        .iov_base = qmsg.msg().ptr,
+                        .iov_len = qmsg.len,
+                    },
+                };
                 const msg = cc.msghdr_t{
-                    .msg_iov = iov.ptr,
+                    .msg_iov = &iov,
                     .msg_iovlen = iov.len,
                 };
                 g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e null; // async
             } else if (has_tls) {
-                for (iov) |*v| {
-                    while (true) {
-                        if (!self.fdobj_ok(fdobj)) return null;
+                // merge into one ssl record
+                var buf: [2 + c.DNS_QMSG_MAXSIZE]u8 align(2) = undefined;
+                const data = buf[0 .. 2 + qmsg.len];
+                std.mem.bytesAsValue(u16, data[0..2]).* = cc.htons(qmsg.len);
+                @memcpy(data[2..].ptr, qmsg.msg().ptr, qmsg.len);
 
-                        var err: c_int = undefined;
-                        cc.SSL_write(self.ssl(), v.iov_base[0..v.iov_len], &err) orelse switch (err) {
-                            c.WOLFSSL_ERROR_WANT_WRITE => {
-                                g.evloop.wait_writable(fdobj); // async
-                                continue;
-                            },
-                            else => {
-                                break :e cc.SSL_error_string(err);
-                            },
-                        };
-                        break;
-                    }
+                while (true) {
+                    if (!self.fdobj_ok(fdobj)) return null;
+
+                    var err: c_int = undefined;
+                    cc.SSL_write(self.ssl(), data, &err) orelse switch (err) {
+                        c.WOLFSSL_ERROR_WANT_WRITE => {
+                            g.evloop.wait_writable(fdobj); // async
+                            continue;
+                        },
+                        else => {
+                            break :e cc.SSL_error_string(err);
+                        },
+                    };
+                    break;
                 }
             } else unreachable;
 

@@ -846,7 +846,7 @@ pub fn SSL_set_session(ssl: *c.WOLFSSL, session: *c.WOLFSSL_SESSION) void {
 fn SSL_get_error(ssl: *c.WOLFSSL, res: c_int) c_int {
     var err = c.wolfSSL_get_error(ssl, res);
     if (err == c.SOCKET_PEER_CLOSED_E or err == c.SOCKET_ERROR_E)
-        // convert to socket error
+        // convert to socket error (errno)
         err = if (errno() == 0) // TCP EOF
             c.WOLFSSL_ERROR_ZERO_RETURN
         else
@@ -872,7 +872,7 @@ pub fn SSL_get_version(ssl: *const c.WOLFSSL) ConstStr {
 }
 
 /// the name of the cipher used for the connection
-pub fn SSL_get_cipher_name(ssl: *c.WOLFSSL) ConstStr {
+pub fn SSL_get_cipher(ssl: *c.WOLFSSL) ConstStr {
     return c.wolfSSL_get_cipher(ssl) orelse "NULL";
 }
 
