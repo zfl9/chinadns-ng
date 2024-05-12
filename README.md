@@ -228,6 +228,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 2024.03.07 版本起，可在上游地址前加上 `tcp://` 来强制使用 TCP DNS。
 - 2024.04.13 版本起，可在上游地址前加上 `udp://` 来强制使用 UDP DNS。
 - 2024.04.27 版本起，支持 DoT 上游，`tls://域名@IP`，端口默认为 853。
+- 2024.05.12 版本起，DoT 上游地址中，允许省略域名信息，即 `tls://IP`。
 
 > 若上游不支持 TCP 查询，请带上 `udp://` 限定。
 
