@@ -71,8 +71,8 @@
 git clone https://github.com/zfl9/chinadns-ng
 cd chinadns-ng
 
-# 为**本机**构建最优二进制
-zig build # [默认]链接到glibc
+# 本机
+zig build # 链接到glibc
 zig build -Dtarget=native-native-musl # 静态链接到musl
 
 # x86
@@ -492,6 +492,7 @@ chinadns-ng -g gfwlist.txt -m chnlist.txt 其他参数... # 重新运行 chinadn
   - 若查询方的传入协议为 UDP，则 chinadns-ng 与该上游的通信协议是 UDP。
   - 若查询方的传入协议为 TCP，则 chinadns-ng 与该上游的通信协议是 TCP。
 - 假设上游地址为 `tcp://1.1.1.1`，则 chinadns-ng 与该上游的通信方式总是 TCP。
+- 假设上游地址为 `udp://1.1.1.1`，则 chinadns-ng 与该上游的通信方式总是 UDP。
 
 对于之前的版本，原生只支持 UDP 协议，如果想使用 TCP 访问上游，可以使用 [dns2tcp](https://github.com/zfl9/dns2tcp) 这个小工具，作为 chinadns-ng 的上游。其他协议也是一样的道理，比如 DoH/DoT/DoQ，可以借助 [dnsproxy](https://github.com/AdguardTeam/dnsproxy) 等实用工具。
 
@@ -598,88 +599,49 @@ chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 
 ---
 
+### 使用 chinadns-ng 替代 dnsmasq 的注意事项
+
+chinadns-ng 2.0 已经足以替代经典用例下的 dnsmasq：
+
+- 域名分流效率比 dnsmasq 高得多，即使存在大量域名规则，也不影响性能，内存占用也很低
+- nftset 操作效率比 dnsmasq 高，即使在短时间内写入大量 IP 也没问题（dnsmasq 可能会报错）
+- dnsmasq 的 TCP DNS 实现方式非常低效，每个 TCP 连接都可能在后台 fork 一个 dnsmasq 进程
+- chinadns-ng 可强制使用 TCP 上游，且原生支持 DoT，wolfssl 的体积/性能/内存开销都非常优秀
+
+对于路由器这种场景，你可能仍然需要 dnsmasq 的 DHCP 等功能，这种情况下，建议关闭 dnsmasq 的 DNS 功能：
+
+- 修改 dnsmasq 配置，将`port`改为0，关闭 dnsmasq 的 DNS 功能，其他功能不受影响（如 DHCP）
+- 此时请务必配置 `dhcp-option=option:dns-server,0.0.0.0`，确保会下发 dns-server 给 DHCP 客户端
+- 因为关闭 DNS 功能后，在未显式配置相关 dhcp-option 的情况下，dnsmasq 不会自动下发 dns-server
+- 0.0.0.0 是一个特殊 IP，dnsmasq 在内部会替换为“dnsmasq 所在主机的 IP”，避免了写死 IP 地址，更灵活
+
+---
+
 ### --noip-as-chnip 选项的作用
 
 > 此选项只作用于 `tag:none 域名` && `qtype=A/AAAA` && `china 上游`，trust 上游不存在过滤。
 
-首先解释一下什么是：**qtype 为 A/AAAA 但却没有 IP 的 reply**。
+chinadns-ng 对 tag:none 域名的 A/AAAA 查询有特殊处理逻辑：对 china 上游返回的 reply 进行 ip test (chnroute)，如果测试结果是 china IP，则采纳 china 上游的结果，否则采纳 trust 上游的结果（为了减少重复判定，可启用 verdict-cache 来缓存该测试结果）。
 
-qtype 即 query type，常见的有 A（查询给定域名的 IPv4 地址）、AAAA（查询给定域名的 IPv6 地址）、CNAME（查询给定域名的别名）、MX（查询给定域名的邮件服务器）；
+要进行 ip test，显然要求 reply 中有 IP 地址；如果没有 IP（如 NODATA 响应），就没办法 test 了。
 
-chinadns-ng 实际上只关心 A/AAAA 类型的查询和回复，因此这里强调 qtype 为 A/AAAA；A/AAAA 查询显然是想获得给定域名的 IP 地址，但是某些解析结果中却并不没有任何 IP 地址，比如 `yys.163.com` 的 A 记录查询有 IPv4 地址，但是 AAAA 记录查询却没有 IPv6 地址（见下面的演示）；
+- 默认情况下，chinadns-ng 将 no-ip 视为 **非 china IP**，也即：采纳 trust 上游结果。
+- 若指定了 `--noip-as-chnip`，则将 no-ip 视为 **china IP**，也即：采纳 china 上游结果。
 
-默认情况下，chinadns-ng 不会接受来自 china 上游的没有 IP 地址的 reply（仅针对 tag:none 域名），如果你希望 chinadns-ng 接受它，请指定 `--noip-as-chnip` 选项。
-
-> 这里举的例子并没有体现该选项的真正目的，其实我本意是为了避开 gfw 污染，因为我担心 gfw 可能会对某些域名返回空 answer（也就是没有 ip），所以默认情况下，chinadns-ng 并不接受 china 上游的这类响应（仅针对 tag:none 域名），我看很多人默认设置 --noip-as-chnip，我认为他们误解了这个选项（怪我没写清楚）。
-
-```bash
-$ dig @114.114.114.114 yys.163.com A
-
-; <<>> DiG 9.14.4 <<>> @114.114.114.114 yys.163.com A
-; (1 server found)
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 12564
-;; flags: qr rd ra cd; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 1
-
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 4096
-; COOKIE: 8f1a39d62a7d93bb (echoed)
-;; QUESTION SECTION:
-;yys.163.com.           IN  A
-
-;; ANSWER SECTION:
-yys.163.com.        30  IN  CNAME   game-cache.nie.163.com.
-game-cache.nie.163.com. 30  IN  A   106.2.95.6
-game-cache.nie.163.com. 30  IN  A   59.111.137.212
-
-;; Query time: 48 msec
-;; SERVER: 114.114.114.114#53(114.114.114.114)
-;; WHEN: Sat Oct 05 10:51:46 CST 2019
-;; MSG SIZE  rcvd: 113
-```
-
-```bash
-$ dig @114.114.114.114 yys.163.com AAAA
-
-; <<>> DiG 9.14.4 <<>> @114.114.114.114 yys.163.com AAAA
-; (1 server found)
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 39681
-;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
-
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 4096
-; COOKIE: 2c562920a6d4ad18 (echoed)
-;; QUESTION SECTION:
-;yys.163.com.           IN  AAAA
-
-;; ANSWER SECTION:
-yys.163.com.        1776    IN  CNAME   game-cache.nie.163.com.
-
-;; Query time: 47 msec
-;; SERVER: 114.114.114.114#53(114.114.114.114)
-;; WHEN: Sat Oct 05 10:51:48 CST 2019
-;; MSG SIZE  rcvd: 81
-```
+默认情况下拒绝 china 上游的 no-ip 结果是为了避开 gfw 污染，因为我担心 gfw 会故意对某些域名返回空 answer（no-ip）。
 
 ---
 
 ### 如何以普通用户身份运行 chinadns-ng
 
-如果你尝试使用非 root 用户运行 chinadns-ng，那么在查询 ipset/nftset 集合时，会得到 `Operation not permitted` 错误，因为向内核查询 ipset/nftset 集合需要 `CAP_NET_ADMIN` 能力，所以默认情况下，你只能使用 root 用户来运行 chinadns-ng。
-
-那有办法突破这个限制吗？其实是有的，使用 `setcap` 命令即可（见下），如此操作后，即可使用非 root 用户运行 chinadns-ng。如果还想让 chinadns-ng 监听 1024 以下的端口，那么执行下面那条命令即可。
+向内核查询 ipset/nftset 需要 `CAP_NET_ADMIN` 权限，使用非 root 用户身份运行 chinadns-ng 时将产生 `Operation not permitted` 错误。解决方法有很多，这里介绍其中一种：
 
 ```shell
-# 授予 CAP_NET_ADMIN 特权
+# 授予 CAP_NET_ADMIN 权限
+# 用于执行 ipset/nftset 操作
 sudo setcap cap_net_admin+ep /usr/local/bin/chinadns-ng
 
-# 授予 CAP_NET_ADMIN + CAP_NET_BIND_SERVICE 特权
+# 授予 CAP_NET_ADMIN + CAP_NET_BIND_SERVICE 权限
+# 用于执行 ipset/nftset 操作、监听小于 1024 的端口
 sudo setcap cap_net_bind_service,cap_net_admin+ep /usr/local/bin/chinadns-ng
 ```
-
----
-
-chinadns-ng 的诞生完全是因为 [ss-tproxy](https://github.com/zfl9/ss-tproxy)，由于原版 chinadns 的诸多痛点，我想寻找其替代品，但在 github 上看了看，都不是很满意，所以尝试写了此工具，并斗胆命名为 **下一代 chinadns**。
