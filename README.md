@@ -613,7 +613,7 @@ chinadns-ng 2.0 已经足以替代经典用例下的 dnsmasq：
 - 修改 dnsmasq 配置，将`port`改为0，关闭 dnsmasq 的 DNS 功能，其他功能不受影响（如 DHCP）
 - 此时请务必配置 `dhcp-option=option:dns-server,0.0.0.0`，确保会下发 dns-server 给 DHCP 客户端
 - 因为关闭 DNS 功能后，在未显式配置相关 dhcp-option 的情况下，dnsmasq 不会自动下发 dns-server
-- 0.0.0.0 是一个特殊 IP，dnsmasq 在内部会替换为“dnsmasq 所在主机的 IP”，避免了写死 IP 地址，更灵活
+- 0.0.0.0 是一个特殊 IP，dnsmasq 在内部会替换为“dnsmasq 所在主机的 IP”，避免写死 IP 地址，更灵活
 
 ---
 
@@ -628,7 +628,7 @@ chinadns-ng 对 tag:none 域名的 A/AAAA 查询有特殊处理逻辑：对 chin
 - 默认情况下，chinadns-ng 将 no-ip 视为 **非 china IP**，也即：采纳 trust 上游结果。
 - 若指定了 `--noip-as-chnip`，则将 no-ip 视为 **china IP**，也即：采纳 china 上游结果。
 
-默认情况下拒绝 china 上游的 no-ip 结果是为了避开 gfw 污染，因为我担心 gfw 会故意对某些域名返回空 answer（no-ip）。
+默认拒绝 china 上游的 no-ip 结果是为了避开 gfw 污染，防止 gfw 故意对某些域名返回空 answer (no-ip)。
 
 ---
 
