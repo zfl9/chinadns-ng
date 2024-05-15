@@ -212,41 +212,40 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ### bind-addr、bind-port
 
 - `bind-addr` 用于指定监听地址，默认为 127.0.0.1。
+  - 2023.10.28 版本起，若监听地址为 `::`，则允许来自 IPv4/IPv6 的 DNS 查询。
+  - 2024.03.07 版本起，`bind-addr` 允许指定多次，以便监听多个不同的 ip 地址。
 - `bind-port` 用于指定监听端口，默认为 65353。
-- 2023.10.28 版本起，若监听地址为 `::`，则允许来自 IPv4/IPv6 的 DNS 查询。
-- 2024.03.07 版本起，`bind-addr` 允许指定多次，以便监听多个不同的 ip 地址。
-- 2024.03.07 版本起，将会同时监听 TCP 和 UDP 端口，之前只监听了 UDP 端口。
-- 2024.03.25 版本起，可以给 `bind-port` 选项指定要监听的协议（TCP、UDP）：
-  - `--bind-port 65353`：监听 TCP + UDP，默认值。
-  - `--bind-port 65353@tcp+udp`：监听 TCP + UDP，同上。
-  - `--bind-port 65353@tcp`：只监听 TCP。
-  - `--bind-port 65353@udp`：只监听 UDP。
+  - 2024.03.07 版本起，会同时监听 TCP 和 UDP 端口，之前只监听了 UDP 端口。
+  - 2024.03.25 版本起，可以给 `bind-port` 选项指定要监听的协议（TCP、UDP）：
+    - `--bind-port 65353`：监听 TCP + UDP，默认值。
+    - `--bind-port 65353@tcp+udp`：监听 TCP + UDP，同上。
+    - `--bind-port 65353@tcp`：只监听 TCP。
+    - `--bind-port 65353@udp`：只监听 UDP。
 
 ### china-dns、trust-dns
 
 - `china-dns` 选项指定国内上游 DNS 服务器，多个用逗号隔开。
 - `trust-dns` 选项指定可信上游 DNS 服务器，多个用逗号隔开。
-- 国内上游默认为 `114.114.114.114`，可信上游默认为 `8.8.8.8`。
-- 组内的多个上游服务器是并发查询的模式，采纳最先返回的那个结果。
+  - 国内上游默认为 `114.114.114.114`，可信上游默认为 `8.8.8.8`。
+  - 组内的多个上游服务器是并发查询的模式，采纳最先返回的那个结果。
+  - 2024.03.07 版本起，允许多次指定 `china-dns`、`trust-dns` 选项/配置。
+  - 2024.03.07 版本起，每组上游的服务器数量不受限制（之前最多两个）。
 - 上游服务器的地址格式是 `IP#端口`，如果只给出 IP，则端口默认为 53。
-- 2024.03.07 版本起，允许多次指定 `china-dns`、`trust-dns` 选项/配置。
-- 2024.03.07 版本起，每组上游的服务器数量不受限制（之前最多两个）。
 - 2024.03.07 版本起，支持 UDP + TCP 上游（根据查询方的传入协议决定）。
+  - 若上游仅支持 UDP 查询，不支持 TCP 查询，请带上 `udp://` 限定。
 - 2024.03.07 版本起，可在上游地址前加上 `tcp://` 来强制使用 TCP DNS。
 - 2024.04.13 版本起，可在上游地址前加上 `udp://` 来强制使用 UDP DNS。
 - 2024.04.27 版本起，支持 DoT 上游，`tls://域名@IP`，端口默认为 853。
 - 2024.05.12 版本起，DoT 上游地址中，允许省略域名信息，即 `tls://IP`。
 
-> 若上游不支持 TCP 查询，请带上 `udp://` 限定。
-
 ### chnlist-file、gfwlist-file、chnlist-first
 
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
+  - 2023.04.01 版本起，可指定多个路径，逗号隔开，如 `-g a.txt,b.txt`。
+  - 2024.03.07 版本起，可多次指定 `chnlist-file`、`gfwlist-file` 选项。
 - `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
-- 注意，只有 chnlist 和 gfwlist 文件都提供时，`*-first` 才有实际意义。
-- 2023.04.01 版本起，可指定多个路径，逗号隔开，如 `-g a.txt,b.txt`。
-- 2024.03.07 版本起，可多次指定 `chnlist-file`、`gfwlist-file` 选项。
+  - 只有 chnlist 和 gfwlist 文件都提供时，`*-first` 才有实际意义。
 
 ### default-tag
 
@@ -260,7 +259,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 ### add-tagchn-ip、add-taggfw-ip
 
 - `add-tagchn-ip` 用于动态添加 tag:chn域名 的解析结果ip 到 ipset/nftset。
-  - 如果未给出集合名，则使用`ipset-name4/6`的那个集合。
+  - 如果未给出集合名，则使用`ipset-name4/6`的那个集合（chnroute）。
 - `add-taggfw-ip` 用于动态添加 tag:gfw域名 的解析结果ip 到 ipset/nftset。
 - 参数格式：`ipv4集合名,ipv6集合名`，nftset 名称格式同 `ipset-name4/6`。
 - 如果要使用 nftset，那么在创建 nftset 时，请记得带上 `flags interval` 标志。
@@ -317,16 +316,6 @@ group-upstream 192.168.1.1
 
 - `no-ipv6` 用于过滤 AAAA 查询（查询域名的 IPv6 地址），默认不设置此选项。
   - 未给出规则时，过滤所有 AAAA 查询。
-  - 2023.02.27 版本起，允许指定一个"规则串"，有如下规则：
-    - `a`：过滤 所有 域名的 AAAA 查询
-    - `m`：过滤 tag:chn 域名的 AAAA 查询
-    - `g`：过滤 tag:gfw 域名的 AAAA 查询
-    - `n`：过滤 tag:none 域名的 AAAA 查询
-    - `c`：禁止向 china 上游转发 AAAA 查询
-    - `t`：禁止向 trust 上游转发 AAAA 查询
-    - `C`：当 tag:none 域名的 AAAA 查询只存在 china 上游路径时，过滤 非大陆ip 响应
-    - `T`：当 tag:none 域名的 AAAA 查询只存在 trust 上游路径时，过滤 非大陆ip 响应
-    - 如`-N gt`：过滤 tag:gfw 域名的 AAAA 查询、禁止向 trust 上游转发 AAAA 查询
   - 2024.04.13 版本起，规则有修改（**不兼容旧版**），多个规则使用逗号隔开：
     - `tag:<name>`：按域名 tag 过滤，如 `tag:gfw`，支持自定义的 tag
     - `ip:china`：若响应的 answer 中有 china IP，则过滤（空响应）
@@ -344,8 +333,7 @@ group-upstream 192.168.1.1
 - `cache-stale` 允许使用 TTL 已过期的（陈旧）缓存，参数是最大过期时长（秒）。
   - 向查询方返回“陈旧”缓存的同时，自动在后台刷新缓存，以便稍后能使用新数据。
   - 2024.04.13 版本起，数据类型从 `u16` 改为 `u32`，以允许设置更大的过期时长。
-- `cache-refresh` 若当前查询的缓存的 TTL 不足 N 秒，则提前在后台刷新该缓存。
-  - 2024.04.13 版本起，单位从 **秒** 改为 **百分比**，如 30 表示 TTL 不足 30% 时提前刷新。
+- `cache-refresh` 若当前查询的缓存的 TTL 不足初始值的百分之 N，则提前在后台刷新。
 - `cache-nodata-ttl` 给 NODATA 响应提供默认的缓存时长，默认 60 秒，0 表示不缓存。
 - `cache-ignore` 不要缓存给定的域名（后缀，最高支持 8 级），此选项可多次指定。
 
