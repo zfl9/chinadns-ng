@@ -242,7 +242,7 @@ cache 4096
 cache-stale 86400
 cache-refresh 20
 
-# verdict 缓存
+# verdict 缓存 (用于 tag:none 域名)
 verdict-cache 4096
 
 # 详细日志
@@ -278,9 +278,6 @@ cache 4096
 cache-stale 86400
 cache-refresh 20
 
-# verdict 缓存
-verdict-cache 4096
-
 # 详细日志
 # verbose
 ```
@@ -313,9 +310,6 @@ add-tagchn-ip ignip,ignip6
 cache 4096
 cache-stale 86400
 cache-refresh 20
-
-# verdict 缓存
-verdict-cache 4096
 
 # 详细日志
 # verbose
