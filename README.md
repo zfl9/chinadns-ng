@@ -207,6 +207,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 这里列举的三个例子其实就是 [ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的使用范例。
 - 当然也可以在其他 Linux 环境下使用，具体看你的需求。
 
+---
+
 <details><summary><b>chnroute 分流模式</b></summary><p>
 
 ```shell
@@ -310,6 +312,8 @@ verdict-cache 4096
 ```
 
 </p></details>
+
+---
 
 ### config
 
