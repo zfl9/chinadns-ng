@@ -485,8 +485,7 @@ group-upstream 192.168.1.1
 
 - `cert-verify` 启用 DoT 上游的 SSL 证书验证，2024.04.30 版本开始默认不验证。
   - wolfssl 在某些平台（arm32、mips）可能无法正确验证 SSL 证书，见 [#169](https://github.com/zfl9/chinadns-ng/issues/169)。
-  - 注意，2024.04.27 版本强制启用证书验证，此选项是 2024.04.30 版本添加的。
-- `ca-certs` 根证书路径，用于验证 DoT 上游的 SSL 证书。默认自动检测。
+- `ca-certs` CA 根证书路径，用于验证 DoT 上游的 SSL 证书。默认自动检测。
 
 ### no-ipset-blacklist
 
