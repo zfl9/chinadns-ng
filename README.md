@@ -45,6 +45,8 @@
 
 > 不想编译或无法编译的，请前往 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载预编译的可执行文件（静态链接 musl）。
 
+<details><summary><b>点我展开编译说明</b></summary><p>
+
 ---
 
 **zig 工具链**
@@ -60,12 +62,15 @@
 - `wget` 或 `curl` 用于下载 wolfssl 源码包；`tar` 用于解压缩
 - `autoconf`、`automake`、`libtool`、`make` 用于构建 wolfssl
 
-默认情况下，针对 x86_64、aarch64 的 wolfssl 构建已启用硬件指令加速，若目标硬件(CPU)不支持相关指令（部分树莓派阉割了 aes 相关指令），请指定 `-Dwolfssl-noasm` 选项，避免运行 chinadns-ng 时出现 SIGILL 非法指令异常。
+针对 x86_64(v3/v4)、aarch64 的 wolfssl 构建已默认启用硬件指令加速，若目标硬件(CPU)不支持相关指令（部分树莓派阉割了 aes 相关指令），请指定 `-Dwolfssl-noasm` 选项，避免运行 chinadns-ng 时出现 SIGILL 非法指令异常。
 
 ---
 
-- 如果遇到编译错误，请先执行 `zig build clean-all`，然后重新执行相关构建命令。
-- 可执行文件在 `./zig-out/bin` 目录，将文件安装（复制）到目标主机 PATH 路径下即可。
+如果遇到编译错误，请先执行 `zig build clean-all`，然后重新执行相关构建命令。
+
+可执行文件在 `./zig-out/bin` 目录，将文件安装（复制）到目标主机 PATH 路径下即可。
+
+---
 
 ```bash
 git clone https://github.com/zfl9/chinadns-ng
@@ -127,6 +132,8 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 
 # mips64、mips64el 暂不支持，需要等 zig 这边的版本更新
 ```
+
+</p></details>
 
 ## Docker
 
@@ -190,7 +197,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
 bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
 ```
 
----
+### config
 
 - 2024.03.07 版本起，开始支持 `-C/--config <path>` 选项。
 - `config` 配置文件，一行一个，空行和`#`开头的行被忽略。
@@ -202,7 +209,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `-C/--config/config` 只是从文件读取“命令行选项”并处理，无其他特别之处。
 - `-C/--config` 与其他命令行选项可随意混用，不可重复的选项以最后一个为准。
 
----
+### bind-addr、bind-port
 
 - `bind-addr` 用于指定监听地址，默认为 127.0.0.1。
 - `bind-port` 用于指定监听端口，默认为 65353。
@@ -215,7 +222,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - `--bind-port 65353@tcp`：只监听 TCP。
   - `--bind-port 65353@udp`：只监听 UDP。
 
----
+### china-dns、trust-dns
 
 - `china-dns` 选项指定国内上游 DNS 服务器，多个用逗号隔开。
 - `trust-dns` 选项指定可信上游 DNS 服务器，多个用逗号隔开。
@@ -232,7 +239,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 > 若上游不支持 TCP 查询，请带上 `udp://` 限定。
 
----
+### chnlist-file、gfwlist-file、chnlist-first
 
 - `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
@@ -241,7 +248,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 2023.04.01 版本起，可指定多个路径，逗号隔开，如 `-g a.txt,b.txt`。
 - 2024.03.07 版本起，可多次指定 `chnlist-file`、`gfwlist-file` 选项。
 
----
+### default-tag
 
 - `default-tag` 可用于实现"纯域名分流"，也可用于实现 [gfwlist分流模式](#chinadns-ng-也可用于-gfwlist-透明代理分流)。
 - 该选项的核心逻辑就是指定**不匹配任何列表的域名**的tag，并无特别之处。
@@ -250,7 +257,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - `-m chnlist.txt -d gfw`：chn列表的域名走国内上游，其他走可信上游。
 - 如果想了解更多细节，建议看一下 [chinadns-ng 的核心处理流程](#tagchntaggfwtagnone-是指什么)。
   
----
+### add-tagchn-ip、add-taggfw-ip
 
 - `add-tagchn-ip` 用于动态添加 tag:chn域名 的解析结果ip 到 ipset/nftset。
   - 如果未给出集合名，则使用`ipset-name4/6`的那个集合。
@@ -264,7 +271,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - `--add-tagchn-ip chnip`：表示不需要收集 ipv6 地址
   - 注意：仅当 ipv6 集合为 `null` 时，才可被省略
 
----
+### ipset-name4、ipset-name6
 
 - `ipset-name4` 指定存储了大陆 IPv4 地址的 ipset/nftset 集合名，默认 chnroute。
 - `ipset-name6` 指定存储了大陆 IPv6 地址的 ipset/nftset 集合名，默认 chnroute6。
@@ -275,7 +282,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 2024.04.13 版本起，也用于 `--no-ipv6` 的 `ip:china`、`ip:non_china` 规则。
 - 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用。
 
----
+### group、group-*
 
 - `group` 声明一个自定义组（tag），参数值是组（tag）的名字。
   - 支持最多 6 个自定义组，每个组都有 3 个信息可配置，其中 ipset 可选。
@@ -306,7 +313,7 @@ group-upstream 192.168.1.1
 # 没有 group-ipset，表示不需要 add ip
 ```
 
----
+### no-ipv6
 
 - `no-ipv6` 用于过滤 AAAA 查询（查询域名的 IPv6 地址），默认不设置此选项。
   - 未给出规则时，过滤所有 AAAA 查询。
@@ -326,12 +333,12 @@ group-upstream 192.168.1.1
     - `ip:non_china`：若响应的 answer 中有 non-china IP，则过滤（空响应）
     - `ip:*` 规则的测试数据库由 `--ipset-name6` 选项提供，默认为 chnroute6
 
----
+### filter-qtype
 
 - `filter-qtype` 过滤给定 qtype 的查询，多个用逗号隔开，可多次指定。
   - `--filter-qtype 64,65`：过滤 SVCB(64)、HTTPS(65) 查询
 
----
+### cache、cache-*
 
 - `cache` 启用 DNS 缓存，参数是缓存容量（最多缓存多少个请求的响应消息）。
 - `cache-stale` 允许使用 TTL 已过期的（陈旧）缓存，参数是最大过期时长（秒）。
@@ -342,7 +349,7 @@ group-upstream 192.168.1.1
 - `cache-nodata-ttl` 给 NODATA 响应提供默认的缓存时长，默认 60 秒，0 表示不缓存。
 - `cache-ignore` 不要缓存给定的域名（后缀，最高支持 8 级），此选项可多次指定。
 
----
+### verdict-cache
 
 - `verdict-cache` 启用 tag:none 域名的判决结果缓存，参数是缓存容量。
   - tag:none 域名的查询会同时转发给 china、trust 上游，根据 china 上游的 ip test 结果，决定最终响应。
@@ -352,29 +359,32 @@ group-upstream 192.168.1.1
   - 建议启用此缓存，可帮助减少 tag:none 域名的重复请求和判定，还能减少 DNS 泄露。
   - 注意，判决结果缓存与 DNS 缓存是互相独立的、互补的；这两个缓存系统可同时启用。
 
----
+### hosts、dns-rr-ip
 
 - `hosts` 加载 hosts 文件，参数默认值为 `/etc/hosts`，此选项可多次指定。
 - `dns-rr-ip` 定义本地的 A/AAAA 记录（与 hosts 类似），此选项可多次指定。
   - 格式：`<names>=<ips>`，多个 name 使用逗号隔开，多个 ip 使用逗号隔开。
 
----
+### cert-verify、ca-certs
 
 - `cert-verify` 启用 DoT 上游的 SSL 证书验证，2024.04.30 版本开始默认不验证。
   - wolfssl 在某些平台（arm32、mips）可能无法正确验证 SSL 证书，见 [#169](https://github.com/zfl9/chinadns-ng/issues/169)。
   - 注意，2024.04.27 版本强制启用证书验证，此选项是 2024.04.30 版本添加的。
 - `ca-certs` 根证书路径，用于验证 DoT 上游的 SSL 证书。默认自动检测。
+
+### no-ipset-blacklist
+
 - `no-ipset-blacklist` 若指定此选项，则 add-ip 时不进行内置的 IP 过滤。
   - 默认情况下，以下 IP 不会被添加到 ipset/nftset 集合，见 [#162](https://github.com/zfl9/chinadns-ng/issues/162)
   - `127.0.0.0/8`、`0.0.0.0/8`、`::1`、`::` (loopback地址、全0地址)
 
----
+### 其他杂项配置
 
 - `timeout-sec` 用于指定上游的响应超时时长，单位秒，默认 5 秒。
 - `repeat-times` 针对可信 DNS (UDP) [重复发包](#trust上游存在一定的丢包怎么缓解)，默认为 1，最大为 5。
 - `noip-as-chnip` 接受来自 china 上游的没有 IP 地址的响应，[详细说明](#--noip-as-chnip-选项的作用)。
 - `fair-mode` 从`2023.03.06`版本开始，只有公平模式，指不指定都一样。
-- `reuse-port` 选项用于支持 chinadns-ng 多进程负载均衡，提升性能。
+- `reuse-port` 用于多进程负载均衡（实践证明没这个必要，不建议使用）。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 ## 域名列表
