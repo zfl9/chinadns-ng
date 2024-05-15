@@ -201,6 +201,116 @@ usage: chinadns-ng <options...>. the existing options are as follows:
 bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
 ```
 
+### 配置示例
+
+- chinadns-ng 通常与 iptables/nftables 透明代理一起用。
+- 这里列举的三个例子其实就是 [ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的使用范例。
+- 当然也可以在其他 Linux 环境下使用，具体看你的需求。
+
+<details><summary><b>chnroute 分流模式</b></summary><p>
+
+```shell
+# 监听地址和端口
+bind-addr 0.0.0.0
+bind-port 53
+
+# 国内上游、可信上游
+china-dns 114.114.114.114
+trust-dns tcp://8.8.8.8
+
+# 域名列表，用于分流
+chnlist-file /etc/chinadns/chnlist.txt
+gfwlist-file /etc/chinadns/gfwlist.txt
+# chnlist-first
+
+# 收集 tag:chn、tag:gfw 域名的 IP
+add-tagchn-ip chnip,chnip6
+add-taggfw-ip gfwip,gfwip6
+
+# 用于测试 tag:none 域名的 IP (国内上游)
+ipset-name4 chnroute
+ipset-name6 chnroute6
+
+# dns 缓存
+cache 4096
+cache-stale 86400
+cache-refresh 20
+
+# verdict 缓存
+verdict-cache 4096
+
+# 详细日志
+# verbose
+```
+
+</p></details>
+
+<details><summary><b>gfwlist 分流模式</b></summary><p>
+
+```shell
+# 监听地址和端口
+bind-addr 0.0.0.0
+bind-port 53
+
+# 国内上游、可信上游
+china-dns 114.114.114.114
+trust-dns tcp://8.8.8.8
+
+# 域名列表，用于分流
+# 未被 gfwlist.txt 匹配的归为 tag:chn
+gfwlist-file /etc/chinadns/gfwlist.txt
+default-tag chn
+
+# 收集 tag:gfw 域名的 IP
+add-taggfw-ip gfwip,gfwip6
+
+# dns 缓存
+cache 4096
+cache-stale 86400
+cache-refresh 20
+
+# verdict 缓存
+verdict-cache 4096
+
+# 详细日志
+# verbose
+```
+
+</p></details>
+
+<details><summary><b>global 分流模式</b></summary><p>
+
+```shell
+# 监听地址和端口
+bind-addr 0.0.0.0
+bind-port 53
+
+# 国内上游、可信上游
+china-dns 114.114.114.114
+trust-dns tcp://8.8.8.8
+
+# 域名列表，用于分流
+# 未被 ignlist.txt 匹配的归为 tag:gfw
+chnlist-file /etc/chinadns/ignlist.txt
+default-tag gfw
+
+# 收集 tag:chn 域名的 IP
+add-tagchn-ip ignip,ignip6
+
+# dns 缓存
+cache 4096
+cache-stale 86400
+cache-refresh 20
+
+# verdict 缓存
+verdict-cache 4096
+
+# 详细日志
+# verbose
+```
+
+</p></details>
+
 ### config
 
 - 2024.03.07 版本起，开始支持 `-C/--config <path>` 选项。
