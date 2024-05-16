@@ -366,31 +366,30 @@ cache-refresh 20
 - `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
   - 2023.04.01 版本起，可指定多个路径，逗号隔开，如 `-g a.txt,b.txt`。
   - 2024.03.07 版本起，可多次指定 `chnlist-file`、`gfwlist-file` 选项。
-- `chnlist-first` 选项表示优先匹配 chnlist，默认是优先匹配 gfwlist。
+- `chnlist-first` 选项表示优先加载 chnlist，默认是优先加载 gfwlist。
   - 只有 chnlist 和 gfwlist 文件都提供时，`*-first` 才有实际意义。
 
 ### default-tag
 
 - `default-tag` 可用于实现"纯域名分流"，也可用于实现 [gfwlist分流模式](#chinadns-ng-也可用于-gfwlist-透明代理分流)。
-- 该选项的核心逻辑就是指定**不匹配任何列表的域名**的tag，并无特别之处。
+- 该选项的核心逻辑就是指定**不匹配任何列表的域名**的`tag`，并无特别之处。
 - 通常与`-g`或`-m`选项一起使用，比如下述例子，实现了"纯域名分流"模式：
   - `-g gfwlist.txt -d chn`：gfw列表的域名走可信上游，其他走国内上游。
   - `-m chnlist.txt -d gfw`：chn列表的域名走国内上游，其他走可信上游。
 - 如果想了解更多细节，建议看一下 [chinadns-ng 的核心处理流程](#tagchntaggfwtagnone-是指什么)。
-  
+
 ### add-tagchn-ip、add-taggfw-ip
 
-- `add-tagchn-ip` 用于动态添加 tag:chn域名 的解析结果ip 到 ipset/nftset。
-  - 如果未给出集合名，则使用`ipset-name4/6`的那个集合（chnroute）。
-- `add-taggfw-ip` 用于动态添加 tag:gfw域名 的解析结果ip 到 ipset/nftset。
-- 参数格式：`ipv4集合名,ipv6集合名`，nftset 名称格式同 `ipset-name4/6`。
-- 如果要使用 nftset，那么在创建 nftset 时，请记得带上 `flags interval` 标志。
-- 如果 v6 集合没用到（如 -N 屏蔽了 AAAA），可以不创建，但参数中还是要指定。
-- 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用：
-  - `--add-tagchn-ip null,chnip6`：表示不需要收集 ipv4 地址
-  - `--add-tagchn-ip chnip,null`：表示不需要收集 ipv6 地址
-  - `--add-tagchn-ip chnip`：表示不需要收集 ipv6 地址
-  - 注意：仅当 ipv6 集合为 `null` 时，才可被省略
+- `add-tagchn-ip` 用于动态添加 tag:chn 域名的解析结果 ip 到 ipset/nftset。
+- `add-taggfw-ip` 用于动态添加 tag:gfw 域名的解析结果 ip 到 ipset/nftset。
+  - 对于`add-tagchn-ip`，若未给出集合名，则使用`ipset-name4/6`的那个集合。
+  - 参数格式：`ipv4集合名,ipv6集合名`，nftset 的名称格式同 `ipset-name4/6`。
+  - 如果要使用 nftset，则创建 nftset 集合时必须带上 `flags interval` 标志。
+  - 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用：
+    - `--add-tagchn-ip null,chnip6`：表示不需要收集 ipv4 地址
+    - `--add-tagchn-ip chnip,null`：表示不需要收集 ipv6 地址
+    - `--add-tagchn-ip chnip`：表示不需要收集 ipv6 地址
+    - 注意：仅当 ipv6 集合为 `null` 时，才可被省略
 
 ### ipset-name4、ipset-name6
 
@@ -407,16 +406,16 @@ cache-refresh 20
 
 - `group` 声明一个自定义组（tag），参数值是组（tag）的名字。
   - 支持最多 6 个自定义组，每个组都有 3 个信息可配置，其中 ipset 可选。
-  - 在匹配域名时（获取所属tag），自定义组的优先级高于内置组（chn、gfw）。
-  - 内置组的优先级逻辑没有改变，依旧默认 gfw 优先，使用 `-M` 切换为 chn 优先。
-  - 对于多个自定义组，按照命令行参数/配置的顺序，后声明的组具有更高的优先级。
+  - 加载域名列表文件时，优先加载自定义组，然后加载内置组（chn、gfw）。
+  - 内置组的加载顺序没有改变，依旧默认 gfw 优先，使用 `-M` 切换为 chn 优先。
+  - 对于多个自定义组，按照命令行参数/配置顺序，后声明的组具有更高的优先级。
   - 用例 1：将 DDNS域名 划分出来，单独一个组，用域名提供商的 DNS 去解析。
   - 用例 2：将 公司域名 划分出来，单独一个组，用公司内网专用的 DNS 去解析。
-- `group-dnl` 当前组的域名列表文件，多个用逗号隔开，可多次指定。
+  - 2024.04.27 版本起，使用 `null` 作为 group 名时，表示过滤该组的域名查询。
+    - null 组只有 `group-dnl` 信息，查询相关域名时，将返回 NODATA 响应消息。
+- `group-dnl` 当前组的[域名列表文件](#域名列表)，多个用逗号隔开，可多次指定。
 - `group-upstream` 当前组的上游 DNS，多个用逗号隔开，可多次指定。
 - `group-ipset` 当前组的 ipset/nftset (可选)，用于收集解析出的结果 IP。
-- 2024.04.27 版本起，使用 `null` 作为 group 名时，表示过滤该组的域名查询。
-  - null 组只有 `group-dnl` 信息，查询相关域名时，将返回 NODATA 响应消息。
 
 以配置文件举例：
 
@@ -493,23 +492,47 @@ group-upstream 192.168.1.1
 - `repeat-times` 针对可信 DNS (UDP) [重复发包](#trust上游存在一定的丢包怎么缓解)，默认为 1，最大为 5。
 - `noip-as-chnip` 接受来自 china 上游的没有 IP 地址的响应，[详细说明](#--noip-as-chnip-选项的作用)。
 - `fair-mode` 从`2023.03.06`版本开始，只有公平模式，指不指定都一样。
-- `reuse-port` 用于多进程负载均衡（实践证明没这个必要，不建议使用）。
+- `reuse-port` 用于多进程负载均衡（实践证明没这个必要，没必要使用）。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 ## 域名列表
 
-- 域名列表的文件格式是按行分隔的**域名后缀**，如`baidu.com`、`www.google.com`、`www.google.com.hk`，不要以`.`开头或结尾，出于性能考虑，域名`label`数量做了人为限制，最多只能`4`个，过长的会被截断，如`test.www.google.com.hk`截断为`www.google.com.hk`。
+**文件格式**
 
-- 如果一个域名在黑名单和白名单中都能匹配成功，那么你可能需要注意一下优先级问题，默认是优先黑名单(gfwlist)，如果希望优先白名单(chnlist)，请指定选项 `-M/--chnlist-first`。
+域名列表是一个纯文本文件（不支持注释），每行都是一个 **域名后缀**，如`baidu.com`、`www.google.com`、`www.google.com.hk`，不要以`.`开头或结尾，出于性能考虑，域名`label`数量做了人为限制，最多只能`4`个，过长的会被截断，如`test.www.google.com.hk`截断为`www.google.com.hk`。
 
-- 2023.04.17 版本起，在匹配一个域名时，将优先考虑子域名模式而不是父域名模式。举个例子，假设 gfwlist 中有 `tw.iqiyi.com`，chnlist 中有 `iqiyi.com`；则不论黑白名单哪个优先，查询 `tw.iqiyi.com` 和 `*.tw.iqiyi.com` 都是命中 gfwlist 列表。因此 `gfwlist优先、chnlist优先` 在新版本中只对两个列表中 **完全相同** 的域名模式有影响。
+---
 
-- 建议同时启用黑名单和白名单，不必担心查询效率，条目数量只会影响一点儿内存占用，对查询速度没影响，也不必担心内存占用，我在`Linux x86-64 (CentOS 7)`上的实测数据如下：
-  - 没有黑白名单时，内存为`140`KB；
-  - 加载 5700+ 条`gfwlist`时，内存为`304`KB；
-  - 加载 5700+ 条`gfwlist`以及 73300+ 条`chnlist`时，内存为`2424`KB；
-  - 如果确实内存吃紧，可以使用更加精简的chnlist替代源（不建议只使用gfwlist列表）。
-  - 2023.04.11 版本针对域名列表的内存占用做了进一步优化，因此占用会更少，测试数据就不贴了。
+**加载顺序**
+
+所有组的域名列表都被 **加载** 到同一个数据结构，一个 **域名后缀** 一旦被加载，其内部属性就不会被修改。因此，当一个 **域名后缀** 存在于多个组的域名列表时，优先加载的那个组将“获胜”。举个例子：假设 `foo.com` 同时存在于 tag:chn、tag:gfw 组的域名列表内，且优先加载 tag:gfw 组（可通过`--chnlist-first`切换），则 `foo.com` 属于 tag:gfw 组。
+
+先加载“自定义组”的域名列表，然后再加载“内置组”的域名列表（chn 和 gfw 谁先，取决于`--chnlist-first`）。
+
+---
+
+**匹配顺序**
+
+收到 dns query 时，会对 qname 进行 **最长后缀匹配**。举个例子，若 qname 为 `x.y.z.d.c.b.a`，则匹配顺序为：
+
+- `d.c.b.a`，检查数据结构中是否存在此域名后缀。
+- `c.b.a`，检查数据结构中是否存在此域名后缀。
+- `b.a`，检查数据结构中是否存在此域名后缀。
+- `a`，检查数据结构中是否存在此域名后缀。
+
+一旦某个后缀匹配成功，则匹配结束，并获取该域名后缀的所属 tag（group）。之后的所有分流逻辑、ipset/nftset 逻辑都依赖于这个 tag，与 qname 无关。
+
+---
+
+**性能、内存开销**
+
+chinadns-ng 在编码时特意考虑了性能和内存占用，并进行了深度优化，因此不必担心查询效率和内存开销。域名条目数量只会影响一点儿内存占用，对查询速度没影响，也不必担心内存占用，这是在`Linux x86-64`的实测数据：
+
+- 没有加载域名列表时，内存为 `140` KB
+- 加载 5700+ 条 `gfwlist.txt` 时，内存为 `304` KB
+- 加载 5700+ 条 `gfwlist.txt` 以及 73300+ 条 `chnlist.txt` 时，内存为 `2424` KB
+- 如果确实内存吃紧，可以使用更加精简的 chnlist 源（不建议只使用 gfwlist.txt 列表）
+- 2023.04.11 版本针对域名列表的内存占用做了进一步优化，因此占用会更少，测试数据就不贴了
 
 ## 简单测试
 
