@@ -520,7 +520,9 @@ group-upstream 192.168.1.1
 - `b.a`，检查数据结构中是否存在此域名后缀。
 - `a`，检查数据结构中是否存在此域名后缀。
 
-一旦其中某个 **域名后缀** 匹配成功，匹配就结束，并获取该 **域名后缀** 所属的 tag(group)，这个 tag 会被记录到相关的 dns 查询上下文，后续所有逻辑（分流、ipset/nftset）都基于这个 tag 信息，与 qname 无关。
+一旦其中某个 **域名后缀** 匹配成功，匹配就结束，并获取该 **域名后缀** 所属的 tag(group)，并将 tag 信息记录到该 dns query 的相关数据结构，后续所有逻辑（分流、ipset/nftset）都基于这个 tag 信息，与 qname 无关。
+
+如果都匹配失败，则该 dns query 的 tag 被设为 `default-tag` 选项的值，默认情况下，`default-tag` 是 none。global 分流、gfwlist 分流都基于此机制实现。你可以将 `default-tag` 设为不同的 tag，来实现各种目的。
 
 ---
 
