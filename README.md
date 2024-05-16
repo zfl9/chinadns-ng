@@ -362,8 +362,8 @@ cache-refresh 20
 
 ### chnlist-file、gfwlist-file、chnlist-first
 
-- `chnlist-file` 选项指定白名单域名文件，命中的域名只走国内 DNS。
-- `gfwlist-file` 选项指定黑名单域名文件，命中的域名只走可信 DNS。
+- `chnlist-file` 白名单 [域名列表文件](#域名列表)，命中的域名只走国内 DNS。
+- `gfwlist-file` 黑名单 [域名列表文件](#域名列表)，命中的域名只走可信 DNS。
   - 2023.04.01 版本起，可指定多个路径，逗号隔开，如 `-g a.txt,b.txt`。
   - 2024.03.07 版本起，可多次指定 `chnlist-file`、`gfwlist-file` 选项。
 - `chnlist-first` 选项表示优先加载 chnlist，默认是优先加载 gfwlist。
