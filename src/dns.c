@@ -356,7 +356,7 @@ u16 dns_empty_reply(void *noalias msg, int qnamelen) {
     h->answer_count = 0;
     h->authority_count = 0;
     h->additional_count = 0;
-    return msg_minlen(qnamelen);
+    return qnamelen > 0 ? msg_minlen(qnamelen) : sizeof(struct dns_header);
 }
 
 // return newlen (0 if failed)

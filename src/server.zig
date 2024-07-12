@@ -389,7 +389,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
     if (!dns.check_query(msg, p_ascii_namebuf, &qnamelen)) {
         log.warn(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
-        return;
+        return send_reply_xxx(msg, fdobj, src_addr, in_qflags); // make the requester happy
     }
 
     const id = dns.get_id(msg);
@@ -816,6 +816,17 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
         "reply(id:%u, size:%zu) to %s://%s#%u failed: (%d) %m",
         .{ cc.to_uint(dns.get_id(msg)), msg.len, proto, &ip, cc.to_uint(port), cc.errno() },
     );
+}
+
+/// [async]
+fn send_reply_xxx(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qflags: QueryCtx.Flags) void {
+    if (msg.len >= dns.header_len())
+        _ = dns.empty_reply(msg, 0);
+
+    if (qflags.has(.from_tcp))
+        g.evloop.send(fdobj, msg, 0) orelse {} // TODO: error handling
+    else
+        _ = cc.sendto(fdobj.fd, msg, 0, src_addr) orelse 0; // TODO: error handling
 }
 
 // =========================================================================
