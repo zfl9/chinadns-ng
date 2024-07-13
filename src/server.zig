@@ -388,7 +388,10 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     var qnamelen: c_int = undefined;
 
     if (!dns.check_query(msg, p_ascii_namebuf, &qnamelen)) {
-        log.warn(@src(), "dns.check_query(fd:%d) failed: invalid query msg", .{fdobj.fd});
+        var src_ip: cc.IpStrBuf = undefined;
+        var src_port: u16 = undefined;
+        src_addr.to_text(&src_ip, &src_port);
+        log.warn(@src(), "dns.check_query(%s#%u) failed: invalid query msg", .{ &src_ip, cc.to_uint(src_port) });
         return send_reply_xxx(msg, fdobj, src_addr, in_qflags); // make the requester happy
     }
 
@@ -644,7 +647,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     var newlen: u16 = undefined;
 
     if (!dns.check_reply(msg, p_ascii_namebuf, &qnamelen, &newlen)) {
-        log.warn(@src(), "dns.check_reply(upstream:%s) failed: invalid reply msg", .{upstream.url});
+        log.warn(@src(), "dns.check_reply(%s) failed: invalid reply msg", .{upstream.url});
         return;
     }
 

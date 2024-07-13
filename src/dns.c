@@ -92,7 +92,7 @@ static bool decode_name(char *noalias out, const char *noalias src, int len) {
 
 /* check dns msg */
 static bool check_msg(bool is_query,
-    const void *noalias msg, ssize_t len,
+    void *noalias msg, ssize_t len,
     char *noalias ascii_name, int *noalias p_qnamelen)
 {
     /* check msg length */
@@ -102,7 +102,7 @@ static bool check_msg(bool is_query,
     }
 
     /* check header */
-    const struct dns_header *header = msg;
+    struct dns_header *header = msg;
     unlikely_if (header->qr != (is_query ? DNS_QR_QUERY : DNS_QR_REPLY)) {
         // log_error("this is a %s msg, but header->qr = %u", is_query ? "query" : "reply", (uint)header->qr);
         return false;
@@ -111,10 +111,8 @@ static bool check_msg(bool is_query,
         // log_error("there should be one and only one question: %u", (uint)ntohs(header->question_count));
         return false;
     }
-    unlikely_if (is_query && header->tc) {
-        // log_error("query msg should not have the TC flag set");
-        return false;
-    }
+    unlikely_if (is_query && header->tc)
+        header->tc = 0;
 
     /* move to question section (name + struct dns_question) */
     msg += sizeof(struct dns_header);
@@ -379,7 +377,7 @@ static u16 rm_additional(void *noalias msg, ssize_t len, int qnamelen) {
     return msg - start;
 }
 
-bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen) {
+bool dns_check_query(void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen) {
     return check_msg(true, msg, len, ascii_name, p_qnamelen);
 }
 

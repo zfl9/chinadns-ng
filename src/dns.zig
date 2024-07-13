@@ -64,7 +64,7 @@ pub inline fn empty_reply(msg: []u8, qnamelen: c_int) []u8 {
 /// check if the query msg is valid
 /// `ascii_name`: the buffer used to get the domain-name (ASCII-format)
 /// `p_qnamelen`: used to get the length of the domain-name (wire-format)
-pub inline fn check_query(msg: []const u8, ascii_name: ?[*]u8, p_qnamelen: *c_int) bool {
+pub inline fn check_query(msg: []u8, ascii_name: ?[*]u8, p_qnamelen: *c_int) bool {
     return c.dns_check_query(msg.ptr, cc.to_isize(msg.len), ascii_name, p_qnamelen);
 }
 

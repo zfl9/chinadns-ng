@@ -71,7 +71,7 @@ u16 dns_truncate(const void *noalias msg, ssize_t len, void *noalias out);
 u16 dns_empty_reply(void *noalias msg, int qnamelen);
 
 /* check query msg, `ascii_name` used to get domain name */
-bool dns_check_query(const void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen);
+bool dns_check_query(void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen);
 
 /* check reply msg, `ascii_name` used to get domain name */
 bool dns_check_reply(void *noalias msg, ssize_t len, char *noalias ascii_name, int *noalias p_qnamelen, u16 *noalias p_newlen);
