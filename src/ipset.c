@@ -42,9 +42,12 @@ struct header {
 /* [nft] include \0 */
 #define NFT_NAME_MAXLEN 256
 
+/* [nft] include \0 */
+#define NFT_FAMILY_MAXLEN ((int)sizeof("netdev"))
+
 /* "set_name" | "family_name@table_name@set_name" (include \0) */
 #define NAME_MAXLEN \
-    ((int)sizeof("netdev") + NFT_NAME_MAXLEN + NFT_NAME_MAXLEN)
+    (NFT_FAMILY_MAXLEN + NFT_NAME_MAXLEN + NFT_NAME_MAXLEN)
 
 /* [nfnl] nlmsg_type */
 #define NFNL_MSG_BATCH_BEGIN 16
@@ -401,8 +404,8 @@ static void parse_name_nftset(const char *noalias name,
         ++n;
         int len = end - start;
         if (n == 1) {
-            char family[sizeof("netdev")];
-            if (len > (int)sizeof(family) - 1) {
+            char family[NFT_FAMILY_MAXLEN];
+            if (len > NFT_FAMILY_MAXLEN - 1) {
                 err = "invalid family";
                 goto err;
             }
