@@ -2,6 +2,7 @@
 *.gch
 zig-out/
 zig-cache/
+.zig-cache/
 dep/openssl-*
 dep/mimalloc-*
 dep/wolfssl-*
