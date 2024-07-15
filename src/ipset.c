@@ -26,9 +26,12 @@ struct header {
 };
 
 /* [nft] nfgen_family */
-#define NFPROTO_INET 1 /* inet(v4/v6) */
-#define NFPROTO_IPV4 2 /* ip */
-#define NFPROTO_IPV6 10 /* ip6 */
+#define NFPROTO_INET    1
+#define NFPROTO_IPV4    2
+#define NFPROTO_ARP     3
+#define NFPROTO_NETDEV  5
+#define NFPROTO_BRIDGE  7
+#define NFPROTO_IPV6   10
 
 /* nfgenmsg.version */
 #define NFNETLINK_V0 0
@@ -41,7 +44,7 @@ struct header {
 
 /* "set_name" | "family_name@table_name@set_name" (include \0) */
 #define NAME_MAXLEN \
-    ((int)sizeof("inet") + NFT_NAME_MAXLEN + NFT_NAME_MAXLEN)
+    ((int)sizeof("netdev") + NFT_NAME_MAXLEN + NFT_NAME_MAXLEN)
 
 /* [nfnl] nlmsg_type */
 #define NFNL_MSG_BATCH_BEGIN 16
@@ -398,12 +401,25 @@ static void parse_name_nftset(const char *noalias name,
         ++n;
         int len = end - start;
         if (n == 1) {
-            if (len == 2 && memcmp("ip", start, len) == 0)
+            char family[sizeof("netdev")];
+            if (len > (int)sizeof(family) - 1) {
+                err = "invalid family";
+                goto err;
+            }
+            memcpy(family, start, len);
+            family[len] = 0;
+            if (strcmp(family, "ip") == 0)
                 *p_family = NFPROTO_IPV4;
-            else if (len == 3 && memcmp("ip6", start, len) == 0)
+            else if (strcmp(family, "ip6") == 0)
                 *p_family = NFPROTO_IPV6;
-            else if (len == 4 && memcmp("inet", start, len) == 0)
+            else if (strcmp(family, "inet") == 0)
                 *p_family = NFPROTO_INET;
+            else if (strcmp(family, "arp") == 0)
+                *p_family = NFPROTO_ARP;
+            else if (strcmp(family, "bridge") == 0)
+                *p_family = NFPROTO_BRIDGE;
+            else if (strcmp(family, "netdev") == 0)
+                *p_family = NFPROTO_NETDEV;
             else {
                 err = "invalid family";
                 goto err;
