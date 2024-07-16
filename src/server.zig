@@ -826,10 +826,25 @@ fn send_reply_xxx(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qf
     if (msg.len >= dns.header_len())
         _ = dns.empty_reply(msg, 0);
 
-    if (qflags.has(.from_tcp))
-        _ = g.evloop.send(fdobj, msg, 0)
-    else
+    if (qflags.has(.from_tcp)) {
+        var iov = [_]cc.iovec_t{
+            .{
+                .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
+                .iov_len = 2,
+            },
+            .{
+                .iov_base = msg.ptr,
+                .iov_len = msg.len,
+            },
+        };
+        const msghdr: cc.msghdr_t = .{
+            .msg_iov = &iov,
+            .msg_iovlen = iov.len,
+        };
+        _ = g.evloop.sendmsg(fdobj, &msghdr, 0);
+    } else {
         _ = cc.sendto(fdobj.fd, msg, 0, src_addr);
+    }
 }
 
 // =========================================================================
