@@ -221,8 +221,8 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
             };
 
             len = cc.ntohs(len);
-            if (len > c.DNS_QMSG_MAXSIZE) {
-                log.warn(src, "msg len is too long: %u", .{cc.to_uint(len)});
+            if (len < 1 or len > c.DNS_QMSG_MAXSIZE) {
+                log.warn(src, "invalid message length: %u", .{cc.to_uint(len)});
                 break :e .{ .op = "read_len", .msg = "invalid len" };
             }
 
