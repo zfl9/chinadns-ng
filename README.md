@@ -209,7 +209,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ---
 
-<details><summary><b>chnroute 分流模式</b></summary><p>
+<details><summary><b>chnroute 分流模式 [点我展开]</b></summary><p>
 
 - chnlist.txt (tag:chn) 走国内上游，将 IP 收集至 `chnip,chnip6` ipset
 - gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
@@ -251,7 +251,7 @@ verdict-cache 4096
 
 </p></details>
 
-<details><summary><b>gfwlist 分流模式</b></summary><p>
+<details><summary><b>gfwlist 分流模式 [点我展开]</b></summary><p>
 
 - gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
 - 其他域名 (tag:chn) 走国内上游，不需要收集 IP（未指定 add-tagchn-ip）
@@ -284,7 +284,7 @@ cache-refresh 20
 
 </p></details>
 
-<details><summary><b>global 分流模式</b></summary><p>
+<details><summary><b>global 分流模式 [点我展开]</b></summary><p>
 
 - ignlist.txt (tag:chn) 走国内上游，将 IP 收集至 `ignip,ignip6` ipset
 - 其他域名 (tag:gfw) 走可信上游，不需要收集 IP（未指定 add-taggfw-ip）
