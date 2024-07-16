@@ -289,7 +289,7 @@ const TCP = struct {
     const TLS_ = if (has_tls) TLS else struct {};
 
     /// must <= u16_max
-    const PENDING_MAX = 1000;
+    const PENDING_MAX = std.math.maxInt(u16);
 
     const MsgQueue = struct {
         head: ?*Node = null,

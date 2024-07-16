@@ -682,7 +682,9 @@ pub fn parse() void {
         g.bind_ips.add("127.0.0.1");
 
     if (g.bind_ports.len == 0)
-        g.bind_ports = cc.remove_const(comptime &[_]g.BindPort{.{ .port = 65353, .tcp = true, .udp = true }});
+        g.bind_ports = cc.remove_const(struct {
+            const default = &[_]g.BindPort{.{ .port = 65353, .tcp = true, .udp = true }};
+        }.default);
 
     if (groups.get_upstream_group(.chn).is_empty())
         groups.add_upstream(.chn, "114.114.114.114") orelse unreachable;
