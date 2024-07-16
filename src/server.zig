@@ -392,7 +392,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         var src_port: u16 = undefined;
         src_addr.to_text(&src_ip, &src_port);
         log.warn(@src(), "dns.check_query(%s#%u) failed: invalid query msg", .{ &src_ip, cc.to_uint(src_port) });
-        return send_reply_xxx(msg, fdobj, src_addr, in_qflags); // make the requester happy
+        return send_reply_xxx(msg, fdobj, src_addr, qflags); // make the requester happy
     }
 
     const id = dns.get_id(msg);
@@ -821,15 +821,15 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
     );
 }
 
-/// [async]
+/// [async] for bad query msg
 fn send_reply_xxx(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qflags: QueryCtx.Flags) void {
     if (msg.len >= dns.header_len())
         _ = dns.empty_reply(msg, 0);
 
     if (qflags.has(.from_tcp))
-        g.evloop.send(fdobj, msg, 0) orelse {} // TODO: error handling
+        _ = g.evloop.send(fdobj, msg, 0)
     else
-        _ = cc.sendto(fdobj.fd, msg, 0, src_addr) orelse 0; // TODO: error handling
+        _ = cc.sendto(fdobj.fd, msg, 0, src_addr);
 }
 
 // =========================================================================
