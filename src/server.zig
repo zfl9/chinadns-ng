@@ -221,9 +221,9 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
             };
 
             len = cc.ntohs(len);
-            if (len < c.DNS_MSG_MINSIZE or len > c.DNS_QMSG_MAXSIZE) {
-                log.warn(src, "invalid query_msg length: %u", .{cc.to_uint(len)});
-                break :e .{ .op = "read_len", .msg = "invalid query_msg length" };
+            if (len > c.DNS_QMSG_MAXSIZE) {
+                log.warn(src, "msg len is too long: %u", .{cc.to_uint(len)});
+                break :e .{ .op = "read_len", .msg = "invalid len" };
             }
 
             const qmsg = free_qmsg orelse RcMsg.new(c.DNS_QMSG_MAXSIZE);
