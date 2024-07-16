@@ -343,6 +343,7 @@ cache-refresh 20
     - `--bind-port 65353@tcp+udp`：监听 TCP + UDP，同上。
     - `--bind-port 65353@tcp`：只监听 TCP。
     - `--bind-port 65353@udp`：只监听 UDP。
+  - 2024.07.16 版本起，`bind-port` 允许指定多次，以便监听多个不同的 port。
 
 ### china-dns、trust-dns
 
@@ -382,9 +383,8 @@ cache-refresh 20
 
 - `add-tagchn-ip` 用于动态添加 tag:chn 域名的解析结果 ip 到 ipset/nftset。
 - `add-taggfw-ip` 用于动态添加 tag:gfw 域名的解析结果 ip 到 ipset/nftset。
+  - 参数格式`ipv4集合名,ipv6集合名`，nftset 格式和注意事项见 `ipset-name4/6`。
   - 对于`add-tagchn-ip`，若未给出集合名，则使用`ipset-name4/6`的那个集合。
-  - 参数格式：`ipv4集合名,ipv6集合名`，nftset 的名称格式同 `ipset-name4/6`。
-  - 如果要使用 nftset，则创建 nftset 集合时必须带上 `flags interval` 标志。
   - 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用：
     - `--add-tagchn-ip null,chnip6`：表示不需要收集 ipv4 地址
     - `--add-tagchn-ip chnip,null`：表示不需要收集 ipv6 地址
@@ -393,14 +393,19 @@ cache-refresh 20
 
 ### ipset-name4、ipset-name6
 
-- `ipset-name4` 指定存储了大陆 IPv4 地址的 ipset/nftset 集合名，默认 chnroute。
-- `ipset-name6` 指定存储了大陆 IPv6 地址的 ipset/nftset 集合名，默认 chnroute6。
-- nftset 名称格式：`family名@table名@set名`，自带的 nftset 数据文件使用如下名称：
-  - 大陆 IPv4 地址集合：`inet@global@chnroute`
-  - 大陆 IPv6 地址集合：`inet@global@chnroute6`
-- 这两个集合只用于 tag:none 域名，用于判定 china 上游的解析结果是否为大陆 IP。
+- `ipset-name4` 大陆 IPv4 地址的 ipset/nftset 集合名，默认为 `chnroute` (ipset)。
+- `ipset-name6` 大陆 IPv6 地址的 ipset/nftset 集合名，默认为 `chnroute6` (ipset)。
+- 这两个集合用于 tag:none 域名，用于判定 china 上游的解析结果是否为大陆 IP。
 - 2024.04.13 版本起，也用于 `--no-ipv6` 的 `ip:china`、`ip:non_china` 规则。
 - 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用。
+
+nftset 参数格式及注意事项（`add-tag*-ip`、`group-ipset`、`ipset-name*`）
+
+- nftset 名称格式：`family名@table名@set名`
+- 创建 nftset 集合时，必须带上 `flags interval` 标志
+- 支持的 family：`ip`、`ip6`、`inet`、`arp`、`bridge`、`netdev`
+- 自带的 chnroute.nftset 文件的集合名为 `inet@global@chnroute`
+- 自带的 chnroute6.nftset 文件的集合名为 `inet@global@chnroute6`
 
 ### group、group-*
 
