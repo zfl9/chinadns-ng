@@ -892,13 +892,20 @@ pub const Group = struct {
     pub fn rm_useless(self: *Group) void {
         @setCold(true);
 
+        var has_tcpi = false;
+        var has_udpi = false;
+        for (g.bind_ports) |p| {
+            if (p.tcp) has_tcpi = true;
+            if (p.udp) has_udpi = true;
+        }
+
         var len = self.items().len;
         while (len > 0) : (len -= 1) {
             const i = len - 1;
             const upstream = &self.items()[i];
             const rm = switch (upstream.proto) {
-                .tcpi => !g.flags.has(.bind_tcp),
-                .udpi => !g.flags.has(.bind_udp),
+                .tcpi => !has_tcpi,
+                .udpi => !has_udpi,
                 else => continue,
             };
             if (rm) {

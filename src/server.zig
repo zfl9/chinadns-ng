@@ -173,7 +173,7 @@ var _qctx_list: QueryCtx.List = undefined;
 
 // =======================================================================================================
 
-fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
+fn listen_tcp(fd: c_int, ip: cc.ConstStr, port: u16) void {
     defer co.terminate(@frame(), @frameSize(listen_tcp));
 
     const fdobj = EvLoop.Fd.new(fd);
@@ -182,7 +182,7 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr) void {
     while (true) {
         var src_addr: cc.SockAddr = undefined;
         const conn_fd = g.evloop.accept(fdobj, &src_addr) orelse {
-            log.warn(@src(), "accept(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(g.bind_port), cc.errno() });
+            log.warn(@src(), "accept(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(port), cc.errno() });
             continue;
         };
         net.setup_tcp_conn_sock(conn_fd);
@@ -257,7 +257,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
         log.warn(src, "%s(fd:%d, %s#%u) failed: (%d) %m", .{ e.op, fd, &ip, cc.to_uint(port), cc.errno() });
 }
 
-fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
+fn listen_udp(fd: c_int, ip: cc.ConstStr, port: u16) void {
     defer co.terminate(@frame(), @frameSize(listen_udp));
 
     const fdobj = EvLoop.Fd.new(fd);
@@ -279,7 +279,7 @@ fn listen_udp(fd: c_int, bind_ip: cc.ConstStr) void {
 
         var src_addr: cc.SockAddr = undefined;
         const len = g.evloop.recvfrom(fdobj, qmsg.buf(), 0, &src_addr) orelse {
-            log.warn(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, bind_ip, cc.to_uint(g.bind_port), cc.errno() });
+            log.warn(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(port), cc.errno() });
             continue;
         };
         qmsg.len = cc.to_u16(len);
@@ -881,18 +881,18 @@ pub fn check_timeout() c_int {
 
 // =========================================================================
 
-noinline fn do_start(ip: cc.ConstStr, socktype: net.SockType) void {
+noinline fn do_start(ip: cc.ConstStr, port: u16, socktype: net.SockType) void {
     const err_op: cc.ConstStr = e: {
-        const addr = cc.SockAddr.from_text(ip, g.bind_port);
+        const addr = cc.SockAddr.from_text(ip, port);
         const fd = net.new_listen_sock(addr.family(), socktype) orelse break :e "socket";
         cc.bind(fd, &addr) orelse break :e "bind";
         switch (socktype) {
             .tcp => {
                 cc.listen(fd, 1024) orelse break :e "listen";
-                co.create(listen_tcp, .{ fd, ip });
+                co.create(listen_tcp, .{ fd, ip, port });
             },
             .udp => {
-                co.create(listen_udp, .{ fd, ip });
+                co.create(listen_udp, .{ fd, ip, port });
             },
         }
         return;
@@ -902,7 +902,7 @@ noinline fn do_start(ip: cc.ConstStr, socktype: net.SockType) void {
     log.err(
         @src(),
         "%s(%s, %s#%u) failed: (%d) %m",
-        .{ err_op, socktype.str(), ip, cc.to_uint(g.bind_port), cc.errno() },
+        .{ err_op, socktype.str(), ip, cc.to_uint(port), cc.errno() },
     );
     cc.exit(1);
 }
@@ -911,9 +911,11 @@ pub fn start() void {
     _qctx_list.init();
 
     for (g.bind_ips.items()) |ip| {
-        if (g.flags.has(.bind_tcp))
-            do_start(ip, .tcp);
-        if (g.flags.has(.bind_udp))
-            do_start(ip, .udp);
+        for (g.bind_ports) |p| {
+            if (p.tcp)
+                do_start(ip, p.port, .tcp);
+            if (p.udp)
+                do_start(ip, p.port, .udp);
+        }
     }
 }

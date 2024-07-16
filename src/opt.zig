@@ -294,20 +294,19 @@ fn opt_bind_port(in_value: ?[]const u8) void {
     var it = std.mem.split(u8, value, "@");
 
     // port
-    const port = it.next().?;
-    g.bind_port = check_port(port) orelse invalid_optvalue(src, value);
+    const port = check_port(it.first()) orelse invalid_optvalue(src, value);
 
-    g.flags.add(.bind_tcp);
-    g.flags.add(.bind_udp);
+    var tcp = true;
+    var udp = true;
 
     // proto
     if (it.next()) |proto| {
         if (std.mem.eql(u8, proto, "tcp+udp") or std.mem.eql(u8, proto, "udp+tcp")) {
             //
         } else if (std.mem.eql(u8, proto, "tcp")) {
-            g.flags.rm(.bind_udp);
+            udp = false;
         } else if (std.mem.eql(u8, proto, "udp")) {
-            g.flags.rm(.bind_tcp);
+            tcp = false;
         } else {
             invalid_optvalue(src, value);
         }
@@ -315,6 +314,23 @@ fn opt_bind_port(in_value: ?[]const u8) void {
 
     if (it.next() != null)
         invalid_optvalue(src, value);
+
+    for (g.bind_ports) |*v| {
+        if (v.port == port) {
+            v.tcp = tcp;
+            v.udp = udp;
+            break; // found
+        }
+    } else { // not found
+        const new_n = g.bind_ports.len + 1;
+        const slice = g.allocator.realloc(g.bind_ports, new_n) catch unreachable;
+        g.bind_ports = slice[0..new_n];
+        g.bind_ports[new_n - 1] = .{
+            .port = port,
+            .tcp = tcp,
+            .udp = udp,
+        };
+    }
 }
 
 fn opt_china_dns(in_value: ?[]const u8) void {
@@ -664,6 +680,9 @@ pub fn parse() void {
 
     if (g.bind_ips.is_null())
         g.bind_ips.add("127.0.0.1");
+
+    if (g.bind_ports.len == 0)
+        g.bind_ports = cc.remove_const(comptime &[_]g.BindPort{.{ .port = 60053, .tcp = true, .udp = true }});
 
     if (groups.get_upstream_group(.chn).is_empty())
         groups.add_upstream(.chn, "114.114.114.114") orelse unreachable;

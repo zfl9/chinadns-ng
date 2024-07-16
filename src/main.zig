@@ -115,19 +115,12 @@ pub fn main() u8 {
 
     const src = @src();
 
-    const bind_proto: cc.ConstStr = if (g.flags.has_all(.{ .bind_tcp, .bind_udp }))
-        "tcp+udp"
-    else if (g.flags.has(.bind_tcp))
-        "tcp"
-    else // bind_udp
-        "udp";
-
-    for (g.bind_ips.items()) |ip|
-        log.info(
-            src,
-            "local listen addr: %s#%u@%s",
-            .{ ip, cc.to_uint(g.bind_port), bind_proto },
-        );
+    for (g.bind_ips.items()) |ip| {
+        for (g.bind_ports) |p| {
+            const proto: cc.ConstStr = if (p.tcp and p.udp) "" else if (p.tcp) "@tcp" else "@udp";
+            log.info(src, "local listen addr: %s#%u%s", .{ ip, cc.to_uint(p.port), proto });
+        }
+    }
 
     groups.on_start();
 

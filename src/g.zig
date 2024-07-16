@@ -14,13 +14,11 @@ pub const Flags = enum(u8) {
     reuse_port = 1 << 1,
     noip_as_chnip = 1 << 2,
     gfwlist_first = 1 << 3,
-    bind_tcp = 1 << 4,
-    bind_udp = 1 << 5,
     _,
     pub usingnamespace flags_op.get(Flags);
 };
 
-pub var flags: Flags = Flags.init(.{ .gfwlist_first, .bind_tcp, .bind_udp });
+pub var flags: Flags = Flags.init(.{.gfwlist_first});
 
 pub inline fn verbose() bool {
     return flags.has(.verbose);
@@ -39,7 +37,13 @@ pub var chnroute_testctx: *const ipset.testctx_t = undefined;
 
 /// ["ip1", "ip2", ...]
 pub var bind_ips: StrList = .{};
-pub var bind_port: u16 = 65353;
+
+pub const BindPort = struct {
+    port: u16,
+    tcp: bool,
+    udp: bool,
+};
+pub var bind_ports: []BindPort = &.{};
 
 /// too large may cause stack overflow
 pub const TRUSTDNS_PACKET_MAX: u8 = 5;
