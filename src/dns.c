@@ -606,6 +606,11 @@ size_t dns_ascii_to_wire(const char *noalias ascii_name, size_t ascii_len, char 
     return buf_n;
 }
 
+bool dns_wire_to_ascii(const char *noalias wire_name, int wire_len, char buf[noalias DNS_NAME_MAXLEN + 1]) {
+    assert(DNS_NAME_WIRE_MINLEN <= wire_len && wire_len <= DNS_NAME_WIRE_MAXLEN);
+    return decode_name(buf, wire_name, wire_len);
+}
+
 void dns_make_reply(void *noalias rmsg, const void *noalias qmsg, int qnamelen, const void *noalias answer, size_t answerlen, u16 answer_n) {
     memcpy(rmsg, qmsg, msg_minlen(qnamelen));
 

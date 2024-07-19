@@ -120,6 +120,10 @@ pub inline fn ascii_to_wire(ascii_name: []const u8, p_buf: *[c.DNS_NAME_WIRE_MAX
     return if (len > 0) p_buf[0..len] else null;
 }
 
+pub inline fn wire_to_ascii(wire_name: []const u8, p_buf: *[c.DNS_NAME_MAXLEN:0]u8) bool {
+    return c.dns_wire_to_ascii(wire_name.ptr, cc.to_int(wire_name.len), p_buf);
+}
+
 pub inline fn make_reply(rmsg: []u8, qmsg: []const u8, qnamelen: c_int, answer: []const u8, answer_n: u16) void {
     return c.dns_make_reply(rmsg.ptr, qmsg.ptr, qnamelen, answer.ptr, answer.len, answer_n);
 }

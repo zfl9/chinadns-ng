@@ -14,6 +14,7 @@ const server = @import("server.zig");
 const EvLoop = @import("EvLoop.zig");
 const co = @import("co.zig");
 const groups = @import("groups.zig");
+const verdict_cache = @import("verdict_cache.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -40,11 +41,6 @@ var _gpa: gpa_t = undefined;
 const pipe_fds_t = if (_debug) [2]c_int else void;
 var _pipe_fds: pipe_fds_t = undefined;
 
-fn on_sigusr1(_: c_int) callconv(.C) void {
-    const v: u8 = 0;
-    _ = cc.write(_pipe_fds[1], std.mem.asBytes(&v));
-}
-
 fn memleak_checker() void {
     defer co.terminate(@frame(), @frameSize(memleak_checker));
 
@@ -55,7 +51,12 @@ fn memleak_checker() void {
     defer _ = cc.close(_pipe_fds[1]); // write end
 
     // register sig_handler
-    _ = cc.signal(c.SIGUSR1, on_sigusr1);
+    _ = cc.signal(c.SIGUSR2, struct {
+        fn handler(_: c_int) callconv(.C) void {
+            const v: u8 = 0;
+            _ = cc.write(_pipe_fds[1], std.mem.asBytes(&v));
+        }
+    }.handler);
 
     const fdobj = EvLoop.Fd.new(_pipe_fds[0]);
     defer fdobj.free(); // read end
@@ -73,8 +74,16 @@ fn memleak_checker() void {
 
 // ============================================================================
 
-/// called by EvLoop.check_timeout
+/// called from EvLoop.check_timeout
 pub const check_timeout = server.check_timeout;
+
+/// called from EvLoop.run
+pub fn check_signal() void {
+    if (g.sigusr1.* != 0) {
+        g.sigusr1.* = 0;
+        verdict_cache.dump();
+    }
+}
 
 pub fn main() u8 {
     g.allocator = if (_debug) b: {
@@ -90,6 +99,12 @@ pub fn main() u8 {
     // ============================================================================
 
     _ = cc.signal(c.SIGPIPE, cc.SIG_IGN());
+
+    _ = cc.signal(c.SIGUSR1, struct {
+        fn handler(_: c_int) callconv(.C) void {
+            g.sigusr1.* = 1;
+        }
+    }.handler);
 
     _ = cc.setvbuf(cc.stdout, null, c._IOLBF, 256);
 
@@ -147,8 +162,10 @@ pub fn main() u8 {
             log.info(src, "cache NODATA response, TTL: %u", .{cc.to_uint(g.cache_nodata_ttl)});
     }
 
-    if (g.verdict_cache_size > 0)
+    if (g.verdict_cache_size > 0) {
         log.info(src, "enable verdict cache, capacity: %u", .{cc.to_uint(g.verdict_cache_size)});
+        if (g.verdict_cache_path) |path| verdict_cache.load(path);
+    }
 
     log.info(src, "response timeout of upstream: %u", .{cc.to_uint(g.upstream_timeout)});
 

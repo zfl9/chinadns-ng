@@ -1,6 +1,7 @@
 //! global variables
 
 const std = @import("std");
+const cc = @import("cc.zig");
 const ipset = @import("ipset.zig");
 const NoAAAA = @import("NoAAAA.zig");
 const DynStr = @import("DynStr.zig");
@@ -71,6 +72,9 @@ pub var cache_nodata_ttl: u16 = 60;
 /// [tag:none] verdict cache size
 pub var verdict_cache_size: u16 = 0;
 
+/// load verdict cache from this file
+pub var verdict_cache_path: ?cc.ConstStr = null;
+
 pub var evloop: EvLoop = undefined;
 
 /// global memory allocator
@@ -80,3 +84,8 @@ pub var cert_verify: bool = false;
 
 /// the location of CA certs
 pub var ca_certs: DynStr = .{};
+
+/// received SIGUSR1 ?
+pub var sigusr1: *volatile c_int = &struct {
+    var value: c_int = 0;
+}.value;

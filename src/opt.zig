@@ -43,7 +43,7 @@ const help =
     \\ --cache-refresh <N>                  pre-refresh the cached data if TTL <= N(%)
     \\ --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
     \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
-    \\ --verdict-cache <size>               enable verdict caching for tag:none domains
+    \\ --verdict-cache <size[,path]>        enable verdict caching for tag:none domains
     \\ --hosts [path]                       load hosts file, default path is /etc/hosts
     \\ --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
     \\ --cert-verify                        enable SSL certificate validation, default: no
@@ -489,8 +489,19 @@ fn opt_cache_ignore(in_value: ?[]const u8) void {
 
 fn opt_verdict_cache(in_value: ?[]const u8) void {
     const value = in_value.?;
-    g.verdict_cache_size = str2int.parse(@TypeOf(g.verdict_cache_size), value, 10) orelse
-        invalid_optvalue(@src(), value);
+    const src = @src();
+
+    const sep = std.mem.indexOfScalar(u8, value, ',');
+    const cache_size = value[0..(sep orelse value.len)];
+
+    g.verdict_cache_size = str2int.parse(@TypeOf(g.verdict_cache_size), cache_size, 10) orelse
+        invalid_optvalue(src, value);
+
+    if (sep) |p| {
+        const path = value[p + 1 ..];
+        if (path.len == 0) invalid_optvalue(src, value);
+        g.verdict_cache_path = (g.allocator.dupeZ(u8, path) catch unreachable).ptr;
+    }
 }
 
 fn opt_hosts(in_value: ?[]const u8) void {

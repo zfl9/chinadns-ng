@@ -355,6 +355,9 @@ pub fn run(self: *EvLoop) void {
     var evs: Ev.Array(64) = undefined;
 
     while (true) {
+        // check async signal
+        nosuspend root.check_signal();
+
         // handling timeout events and get the next interval
         const timeout = nosuspend self.check_timeout();
 
