@@ -90,5 +90,5 @@ pub const sigusr1: *volatile c_int = &sigusr1_v;
 var sigusr1_v: c_int = 0;
 
 /// received SIGTERM ?
-pub const sigterm: *volatile c_int = &sigterm_v;
-var sigterm_v: c_int = 0;
+pub const sigexit: *volatile c_int = &sigexit_v;
+var sigexit_v: c_int = 0;

@@ -80,7 +80,7 @@ pub const check_timeout = server.check_timeout;
 /// called from EvLoop.run
 pub fn check_signal() void {
     // terminate process
-    if (g.sigterm.* != 0) {
+    if (g.sigexit.* != 0) {
         verdict_cache.save(.on_exit);
         cc.exit(0);
     }
@@ -114,12 +114,15 @@ pub fn main() u8 {
         }
     }.handler);
 
-    // terminate process (save cache)
-    _ = cc.signal(c.SIGTERM, struct {
+    const exit_handler = struct {
         fn handler(_: c_int) callconv(.C) void {
-            g.sigterm.* = 1;
+            g.sigexit.* = 1;
         }
-    }.handler);
+    }.handler;
+
+    // terminate process (save cache)
+    _ = cc.signal(c.SIGINT, exit_handler); // CTRL + C
+    _ = cc.signal(c.SIGTERM, exit_handler); // kill <PID>
 
     _ = cc.setvbuf(cc.stdout, null, c._IOLBF, 256);
 
