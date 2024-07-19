@@ -89,12 +89,10 @@ pub fn load(path: cc.ConstStr) void {
         // is_china_domain(1/0) domain_name(ascii_format)
         var it = std.mem.tokenize(u8, line, " \t\r");
 
-        const str = it.next() orelse continue;
-        const int = str2int.parse(u8, str, 10) orelse {
+        const is_china_domain = str2int.parse(u8, it.next() orelse continue, 10) orelse {
             err = "invalid bool";
             continue;
-        };
-        const is_china_domain = if (int > 0) true else false;
+        } > 0;
 
         const ascii_name = it.next() orelse {
             err = "invalid format";

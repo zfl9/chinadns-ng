@@ -86,6 +86,5 @@ pub var cert_verify: bool = false;
 pub var ca_certs: DynStr = .{};
 
 /// received SIGUSR1 ?
-pub var sigusr1: *volatile c_int = &struct {
-    var value: c_int = 0;
-}.value;
+pub const sigusr1: *volatile c_int = &sigusr1_v;
+var sigusr1_v: c_int = 0;
