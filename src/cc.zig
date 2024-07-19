@@ -308,31 +308,7 @@ pub fn snprintf(buffer: []u8, comptime fmt: [:0]const u8, args: anytype) [:0]u8 
 
 // ==============================================================
 
-/// return 0 if OK
-pub extern fn unlink(path: ConstStr) c_int;
-
-/// return 0 if OK, the `new_path` will be atomically replaced.
-pub extern fn rename(old_path: ConstStr, new_path: ConstStr) c_int;
-
-/// the last 6 characters of `path` must be "XXXXXX" and these
-/// are replaced with a string that makes the filename unique.
-pub fn mkstemp(path: Str) ?*FILE {
-    const raw = struct {
-        extern fn mkstemp(path: Str) c_int;
-    };
-
-    const fd = raw.mkstemp(path);
-    if (fd == -1)
-        return null;
-
-    return fdopen(fd, "wb+") orelse {
-        _ = close(fd);
-        _ = unlink(path);
-        return null;
-    };
-}
-
-pub extern fn fdopen(fd: c_int, mode: ConstStr) ?*FILE;
+pub extern fn fopen(path: ConstStr, mode: ConstStr) ?*FILE;
 
 /// flush(file) and close(fd)
 pub extern fn fclose(file: *FILE) c_int;
@@ -773,6 +749,7 @@ pub inline fn munmap(mem: []const u8) ?void {
     const raw = struct {
         extern fn munmap(addr: *const anyopaque, len: usize) c_int;
     };
+    if (mem.len == 0) return; // see the mmap_file
     return if (raw.munmap(mem.ptr, mem.len) == -1) null;
 }
 
@@ -782,6 +759,7 @@ pub fn mmap_file(filename: ConstStr) ?[]const u8 {
     defer _ = close(fd);
 
     const size = fstat_size(fd) orelse return null;
+    if (size == 0) return &[_]u8{};
 
     return mmap(null, size, c.PROT_READ, c.MAP_PRIVATE, fd, 0);
 }

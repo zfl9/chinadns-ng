@@ -79,9 +79,16 @@ pub const check_timeout = server.check_timeout;
 
 /// called from EvLoop.run
 pub fn check_signal() void {
+    // terminate process
+    if (g.sigterm.* != 0) {
+        verdict_cache.save(.on_exit);
+        cc.exit(0);
+    }
+
+    // manual save cache
     if (g.sigusr1.* != 0) {
         g.sigusr1.* = 0;
-        verdict_cache.dump();
+        verdict_cache.save(.on_manual);
     }
 }
 
@@ -100,9 +107,17 @@ pub fn main() u8 {
 
     _ = cc.signal(c.SIGPIPE, cc.SIG_IGN());
 
+    // manual save cache
     _ = cc.signal(c.SIGUSR1, struct {
         fn handler(_: c_int) callconv(.C) void {
             g.sigusr1.* = 1;
+        }
+    }.handler);
+
+    // terminate process (save cache)
+    _ = cc.signal(c.SIGTERM, struct {
+        fn handler(_: c_int) callconv(.C) void {
+            g.sigterm.* = 1;
         }
     }.handler);
 
@@ -164,7 +179,7 @@ pub fn main() u8 {
 
     if (g.verdict_cache_size > 0) {
         log.info(src, "enable verdict cache, capacity: %u", .{cc.to_uint(g.verdict_cache_size)});
-        if (g.verdict_cache_path) |path| verdict_cache.load(path);
+        verdict_cache.load();
     }
 
     log.info(src, "response timeout of upstream: %u", .{cc.to_uint(g.upstream_timeout)});

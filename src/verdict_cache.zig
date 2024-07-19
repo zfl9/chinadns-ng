@@ -70,13 +70,15 @@ fn new_key(qname: []const u8, gop_res: *const GetOrPutResult) []const u8 {
 
 // =============================================================
 
-pub fn load(path: cc.ConstStr) void {
+pub fn load() void {
     assert(g.verdict_cache_size > 0);
 
     const src = @src();
+    const path = g.verdict_cache_db orelse return;
 
     const mem = cc.mmap_file(path) orelse {
-        log.warn(src, "open(%s): (%d) %m", .{ path, cc.errno() });
+        if (cc.errno() != c.ENOENT)
+            log.warn(src, "open(%s): (%d) %m", .{ path, cc.errno() });
         return;
     };
     defer _ = cc.munmap(mem);
@@ -123,17 +125,27 @@ pub fn load(path: cc.ConstStr) void {
     log.info(src, "%zu entries from %s", .{ cc.to_usize(_map.count()), path });
 }
 
-pub fn dump() void {
-    const src = @src();
-    var tmp_path = "/tmp/chinadns@tmp.XXXXXX".*;
-    const dst_path = "/tmp/chinadns@verdict-cache.txt";
-
-    const file = cc.mkstemp(&tmp_path) orelse {
-        log.warn(src, "mkstemp failed: (%d) %m", .{cc.errno()});
+pub fn save(event: enum { on_exit, on_manual }) void {
+    if (g.verdict_cache_size == 0)
         return;
+
+    const src = @src();
+
+    const path = g.verdict_cache_db orelse switch (event) {
+        .on_exit => return,
+        .on_manual => "/tmp/chinadns@verdict-cache.db",
     };
 
     var count: usize = 0;
+
+    const file = cc.fopen(path, "wb") orelse {
+        log.warn(src, "fopen(%s) failed: (%d) %m", .{ path, cc.errno() });
+        return;
+    };
+    defer {
+        _ = cc.fclose(file);
+        log.info(src, "%zu entries to %s", .{ count, path });
+    }
 
     var it = _map.iterator();
     while (it.next()) |entry| {
@@ -159,14 +171,4 @@ pub fn dump() void {
 
         count += 1;
     }
-
-    _ = cc.fclose(file);
-
-    if (cc.rename(&tmp_path, dst_path) != 0) {
-        log.warn(src, "rename(%s, %s) failed: (%d) %m", .{ &tmp_path, dst_path, cc.errno() });
-        _ = cc.unlink(&tmp_path);
-        return;
-    }
-
-    log.info(src, "%zu entries to %s", .{ count, dst_path });
 }

@@ -43,7 +43,8 @@ const help =
     \\ --cache-refresh <N>                  pre-refresh the cached data if TTL <= N(%)
     \\ --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
     \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
-    \\ --verdict-cache <size[,path]>        enable verdict caching for tag:none domains
+    \\ --verdict-cache <size>               enable verdict caching for tag:none domains
+    \\ --verdict-cache-db <path>            verdict cache persistence (from/to db file)
     \\ --hosts [path]                       load hosts file, default path is /etc/hosts
     \\ --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
     \\ --cert-verify                        enable SSL certificate validation, default: no
@@ -137,6 +138,7 @@ const optdef_array = [_]OptDef{
     .{ .short = "",  .long = "cache-nodata-ttl",   .value = .required, .optfn = opt_cache_nodata_ttl,   },
     .{ .short = "",  .long = "cache-ignore",       .value = .required, .optfn = opt_cache_ignore,       },
     .{ .short = "",  .long = "verdict-cache",      .value = .required, .optfn = opt_verdict_cache,      },
+    .{ .short = "",  .long = "verdict-cache-db",   .value = .required, .optfn = opt_verdict_cache_db,   },
     .{ .short = "",  .long = "hosts",              .value = .optional, .optfn = opt_hosts,              },
     .{ .short = "",  .long = "dns-rr-ip",          .value = .required, .optfn = opt_dns_rr_ip,          },
     .{ .short = "",  .long = "cert-verify",        .value = .no_value, .optfn = opt_cert_verify,        },
@@ -491,17 +493,13 @@ fn opt_verdict_cache(in_value: ?[]const u8) void {
     const value = in_value.?;
     const src = @src();
 
-    const sep = std.mem.indexOfScalar(u8, value, ',');
-    const cache_size = value[0..(sep orelse value.len)];
-
-    g.verdict_cache_size = str2int.parse(@TypeOf(g.verdict_cache_size), cache_size, 10) orelse
+    g.verdict_cache_size = str2int.parse(@TypeOf(g.verdict_cache_size), value, 10) orelse
         invalid_optvalue(src, value);
+}
 
-    if (sep) |p| {
-        const path = value[p + 1 ..];
-        if (path.len == 0) invalid_optvalue(src, value);
-        g.verdict_cache_path = (g.allocator.dupeZ(u8, path) catch unreachable).ptr;
-    }
+fn opt_verdict_cache_db(in_value: ?[]const u8) void {
+    const path = in_value.?;
+    g.verdict_cache_db = (g.allocator.dupeZ(u8, path) catch unreachable).ptr;
 }
 
 fn opt_hosts(in_value: ?[]const u8) void {

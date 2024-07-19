@@ -72,8 +72,8 @@ pub var cache_nodata_ttl: u16 = 60;
 /// [tag:none] verdict cache size
 pub var verdict_cache_size: u16 = 0;
 
-/// load verdict cache from this file
-pub var verdict_cache_path: ?cc.ConstStr = null;
+/// load/save verdict cache from/to this file
+pub var verdict_cache_db: ?cc.ConstStr = null;
 
 pub var evloop: EvLoop = undefined;
 
@@ -88,3 +88,7 @@ pub var ca_certs: DynStr = .{};
 /// received SIGUSR1 ?
 pub const sigusr1: *volatile c_int = &sigusr1_v;
 var sigusr1_v: c_int = 0;
+
+/// received SIGTERM ?
+pub const sigterm: *volatile c_int = &sigterm_v;
+var sigterm_v: c_int = 0;
