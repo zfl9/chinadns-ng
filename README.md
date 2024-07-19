@@ -184,6 +184,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
  --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
  --verdict-cache <size>               enable verdict caching for tag:none domains
+ --verdict-cache-db <path>            verdict cache persistence (from/to db file)
  --hosts [path]                       load hosts file, default path is /etc/hosts
  --dns-rr-ip <names>=<ips>            define local resource records of type A/AAAA
  --cert-verify                        enable SSL certificate validation, default: no
@@ -472,6 +473,10 @@ group-upstream 192.168.1.1
   - 缓存容量上限是 65535，此缓存没有 TTL 限制；缓存满时会随机删除一个旧缓存数据。
   - 建议启用此缓存，可帮助减少 tag:none 域名的重复请求和判定，还能减少 DNS 泄露。
   - 注意，判决结果缓存与 DNS 缓存是互相独立的、互补的；这两个缓存系统可同时启用。
+- `verdict-cache-db` 持久化 verdict 缓存，参数是 db 文件的路径。
+  - 启动时，从 db 文件加载缓存数据；退出时，将缓存数据写回至 db 文件。
+  - 这里说的“退出”，是指进程收到了`SIGTERM/SIGINT`信号，即`kill <PID>`或`CTRL+C`发送的信号。
+  - 发送`SIGUSR1`信号将触发缓存写回，若未指定 db 文件，则路径为`/tmp/chinadns@verdict-cache.db`。
 
 ### hosts、dns-rr-ip
 
@@ -497,7 +502,7 @@ group-upstream 192.168.1.1
 - `repeat-times` 针对可信 DNS (UDP) [重复发包](#trust上游存在一定的丢包怎么缓解)，默认为 1，最大为 5。
 - `noip-as-chnip` 接受来自 china 上游的没有 IP 地址的响应，[详细说明](#--noip-as-chnip-选项的作用)。
 - `fair-mode` 从`2023.03.06`版本开始，只有公平模式，指不指定都一样。
-- `reuse-port` 用于多进程负载均衡（实践证明没这个必要，没必要使用）。
+- `reuse-port` 用于多进程负载均衡（实践证明没必要，单进程已经够用）。
 - `verbose` 选项表示记录详细的运行日志，除非调试，否则不建议启用。
 
 ## 域名列表
