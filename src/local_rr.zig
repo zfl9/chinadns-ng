@@ -49,6 +49,7 @@ const Records = struct {
     }
 };
 
+// TODO: change to extern struct
 const RR_A = packed struct {
     name: u16, // ptr
     type: u16,
@@ -58,6 +59,7 @@ const RR_A = packed struct {
     data: [c.IPV4_LEN]u8,
 };
 
+// TODO: change to extern struct
 const RR_AAAA = packed struct {
     name: u16, // ptr
     type: u16,
