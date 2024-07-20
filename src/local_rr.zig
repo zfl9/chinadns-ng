@@ -67,6 +67,11 @@ const RR_AAAA = packed struct {
     data: [c.IPV6_LEN]u8,
 };
 
+comptime {
+    assert(@sizeOf(RR_A) == 2 * 3 + 4 + 2 + c.IPV4_LEN);
+    assert(@sizeOf(RR_AAAA) == 2 * 3 + 4 + 2 + c.IPV6_LEN);
+}
+
 /// for opt.zig
 pub fn read_hosts(path: []const u8) ?void {
     const src = @src();

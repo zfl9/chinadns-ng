@@ -469,6 +469,9 @@ group-upstream 192.168.1.1
   - “退出”是指进程收到了`SIGTERM/SIGINT`信号，即`kill <PID>`或`CTRL+C`发送的信号。
   - 发送`SIGUSR1`信号将触发缓存写回，若未指定 db 文件，则路径为`/tmp/chinadns@cache.db`。
   - 为了降低性能开销，load/dump 没有做数据校验，请勿修改 db 文件，请勿跨平台共享 db 文件。
+  - 有时你可能需要清空 db 文件来丢弃旧缓存（关闭进程，清空文件，重新启动进程），例如：
+    - 更改了`cache-ignore`、域名列表（内容更改、优先级更改等）。
+    - 需要重新触发 ip add 操作（域名在有缓存的情况下不会触发 add）。
 
 ### verdict-cache
 

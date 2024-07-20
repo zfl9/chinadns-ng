@@ -200,7 +200,7 @@ pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
 
 /// load from db file
 pub fn load() void {
-    assert(g.cache_size > 0);
+    assert(enabled());
 
     const src = @src();
     const path = g.cache_db orelse return;
@@ -216,6 +216,8 @@ pub fn load() void {
     while (CacheMsg.load(&data)) |cache_msg| {
         map.add(cache_msg);
         _list.link_to_tail(&cache_msg.list_node);
+
+        if (map._nitems >= g.cache_size) break;
     }
 
     log.info(src, "%zu entries from %s", .{ map._nitems, path });
@@ -223,7 +225,7 @@ pub fn load() void {
 
 /// dump to db file
 pub fn dump(event: enum { on_exit, on_manual }) void {
-    if (g.cache_size == 0)
+    if (!enabled())
         return;
 
     const src = @src();
