@@ -172,19 +172,18 @@ pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     const cache_msg = b: {
         const question = dns.question(msg, qnamelen);
         const hashv = cc.calc_hashv(question);
-        const old_msg = map.get(question, hashv);
-        if (old_msg) |old| {
+        if (map.get(question, hashv)) |old| {
             // avoid duplicate add
             const old_ttl = old.get_ttl();
             if (std.math.absCast(ttl - old_ttl) <= 2) return false;
             del_nofree(old);
-            break :b old.reuse_or_new(msg, qnamelen, ttl, hashv);
+            break :b old.reuse(msg, qnamelen, ttl, hashv);
         } else if (map._nitems < g.cache_size) {
             break :b CacheMsg.new(msg, qnamelen, ttl, hashv);
         } else {
             const old = CacheMsg.from_list_node(_list.tail());
             del_nofree(old);
-            break :b old.reuse_or_new(msg, qnamelen, ttl, hashv);
+            break :b old.reuse(msg, qnamelen, ttl, hashv);
         }
     };
 

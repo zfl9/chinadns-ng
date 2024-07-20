@@ -30,10 +30,8 @@ pub fn add(msg: []const u8, qnamelen: c_int, is_china_domain: bool) void {
     const qname = dns.get_qname(msg, qnamelen);
     const res = _map.getOrPut(g.allocator, qname) catch unreachable;
 
-    if (!res.found_existing) {
-        // init the new entry
+    if (!res.found_existing)
         res.key_ptr.* = new_key(qname, &res);
-    }
 
     // update the value
     res.value_ptr.* = is_china_domain;

@@ -47,9 +47,9 @@ pub fn new(in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheM
     return self.init(in_msg, qnamelen, ttl, hashv);
 }
 
-/// the `in_msg` will be copied
+/// the `in_msg` will be copied \
 /// if reuse fail, `self` will be freed
-pub fn reuse_or_new(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheMsg {
+pub fn reuse(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheMsg {
     if (self.rc.ref_count == 1 and g.allocator.resize(self.mem(), metadata_len + in_msg.len) != null) {
         return self.init(in_msg, qnamelen, ttl, hashv);
     } else {
