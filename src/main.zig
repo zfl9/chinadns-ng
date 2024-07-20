@@ -15,6 +15,7 @@ const EvLoop = @import("EvLoop.zig");
 const co = @import("co.zig");
 const groups = @import("groups.zig");
 const verdict_cache = @import("verdict_cache.zig");
+const cache = @import("cache.zig");
 
 // TODO:
 // - alloc_only allocator
@@ -81,14 +82,16 @@ pub const check_timeout = server.check_timeout;
 pub fn check_signal() void {
     // terminate process
     if (g.sigexit.* != 0) {
-        verdict_cache.save(.on_exit);
+        verdict_cache.dump(.on_exit);
+        cache.dump(.on_exit);
         cc.exit(0);
     }
 
-    // manual save cache
+    // manual dump cache
     if (g.sigusr1.* != 0) {
         g.sigusr1.* = 0;
-        verdict_cache.save(.on_manual);
+        verdict_cache.dump(.on_manual);
+        cache.dump(.on_manual);
     }
 }
 
@@ -107,7 +110,7 @@ pub fn main() u8 {
 
     _ = cc.signal(c.SIGPIPE, cc.SIG_IGN());
 
-    // manual save cache
+    // manual dump cache
     _ = cc.signal(c.SIGUSR1, struct {
         fn handler(_: c_int) callconv(.C) void {
             g.sigusr1.* = 1;
@@ -120,7 +123,7 @@ pub fn main() u8 {
         }
     }.handler;
 
-    // terminate process (save cache)
+    // terminate process (dump cache)
     _ = cc.signal(c.SIGINT, exit_handler); // CTRL + C
     _ = cc.signal(c.SIGTERM, exit_handler); // kill <PID>
 
@@ -178,6 +181,8 @@ pub fn main() u8 {
 
         if (g.cache_nodata_ttl > 0)
             log.info(src, "cache NODATA response, TTL: %u", .{cc.to_uint(g.cache_nodata_ttl)});
+
+        cache.load();
     }
 
     if (g.verdict_cache_size > 0) {

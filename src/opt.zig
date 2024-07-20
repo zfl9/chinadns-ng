@@ -43,6 +43,7 @@ const help =
     \\ --cache-refresh <N>                  pre-refresh the cached data if TTL <= N(%)
     \\ --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
     \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
+    \\ --cache-db <path>                    dns cache persistence (from/to db file)
     \\ --verdict-cache <size>               enable verdict caching for tag:none domains
     \\ --verdict-cache-db <path>            verdict cache persistence (from/to db file)
     \\ --hosts [path]                       load hosts file, default path is /etc/hosts
@@ -137,6 +138,7 @@ const optdef_array = [_]OptDef{
     .{ .short = "",  .long = "cache-refresh",      .value = .required, .optfn = opt_cache_refresh,      },
     .{ .short = "",  .long = "cache-nodata-ttl",   .value = .required, .optfn = opt_cache_nodata_ttl,   },
     .{ .short = "",  .long = "cache-ignore",       .value = .required, .optfn = opt_cache_ignore,       },
+    .{ .short = "",  .long = "cache-db",           .value = .required, .optfn = opt_cache_db,           },
     .{ .short = "",  .long = "verdict-cache",      .value = .required, .optfn = opt_verdict_cache,      },
     .{ .short = "",  .long = "verdict-cache-db",   .value = .required, .optfn = opt_verdict_cache_db,   },
     .{ .short = "",  .long = "hosts",              .value = .optional, .optfn = opt_hosts,              },
@@ -487,6 +489,11 @@ fn opt_cache_nodata_ttl(in_value: ?[]const u8) void {
 fn opt_cache_ignore(in_value: ?[]const u8) void {
     const domain = in_value.?;
     cache_ignore.add(domain) orelse invalid_optvalue(@src(), domain);
+}
+
+fn opt_cache_db(in_value: ?[]const u8) void {
+    const path = in_value.?;
+    g.cache_db = (g.allocator.dupeZ(u8, path) catch unreachable).ptr;
 }
 
 fn opt_verdict_cache(in_value: ?[]const u8) void {

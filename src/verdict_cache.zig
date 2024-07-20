@@ -68,6 +68,7 @@ fn new_key(qname: []const u8, gop_res: *const GetOrPutResult) []const u8 {
 
 // =============================================================
 
+/// load from db file
 pub fn load() void {
     assert(g.verdict_cache_size > 0);
 
@@ -123,7 +124,8 @@ pub fn load() void {
     log.info(src, "%zu entries from %s", .{ cc.to_usize(_map.count()), path });
 }
 
-pub fn save(event: enum { on_exit, on_manual }) void {
+/// dump to db file
+pub fn dump(event: enum { on_exit, on_manual }) void {
     if (g.verdict_cache_size == 0)
         return;
 

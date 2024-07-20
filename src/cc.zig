@@ -313,6 +313,15 @@ pub extern fn fopen(path: ConstStr, mode: ConstStr) ?*FILE;
 /// flush(file) and close(fd)
 pub extern fn fclose(file: *FILE) c_int;
 
+/// return the number of bytes written \
+/// `res < data.len` means write error
+pub inline fn fwrite(file: *FILE, data: []const u8) usize {
+    const raw = struct {
+        extern fn fwrite(ptr: [*]const u8, size: usize, nitems: usize, file: *FILE) usize;
+    };
+    return raw.fwrite(data.ptr, 1, data.len, file);
+}
+
 pub inline fn setvbuf(file: *FILE, buffer: ?[*]u8, mode: c_int, size: usize) ?void {
     const raw = struct {
         extern fn setvbuf(file: *FILE, buffer: ?[*]u8, mode: c_int, size: usize) c_int;

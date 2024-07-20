@@ -69,10 +69,13 @@ pub var cache_refresh: u8 = 0;
 /// rcode=NOERROR && no-records
 pub var cache_nodata_ttl: u16 = 60;
 
+/// load/dump cache from/to this file
+pub var cache_db: ?cc.ConstStr = null;
+
 /// [tag:none] verdict cache size
 pub var verdict_cache_size: u16 = 0;
 
-/// load/save verdict cache from/to this file
+/// load/dump verdict cache from/to this file
 pub var verdict_cache_db: ?cc.ConstStr = null;
 
 pub var evloop: EvLoop = undefined;

@@ -120,6 +120,11 @@ fn del_nofree(cache_msg: *CacheMsg) void {
     cache_msg.list_node.unlink();
 }
 
+/// not expired or stale cache
+fn ttl_ok(ttl: i32) bool {
+    return ttl > 0 or (g.cache_stale > 0 and -ttl <= g.cache_stale);
+}
+
 /// return the cached reply msg
 pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32, p_ttl_r: *i32) ?[]const u8 {
     if (!enabled())
@@ -134,8 +139,8 @@ pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32, p_ttl_r: *i32) ?[]con
     p_ttl.* = ttl;
     p_ttl_r.* = cache_msg.ttl_r;
 
-    if (ttl > 0 or (g.cache_stale > 0 and -ttl <= g.cache_stale)) {
-        // not expired, or stale cache
+    if (ttl_ok(ttl)) {
+        // not expired or stale cache
         _list.move_to_head(&cache_msg.list_node);
         return cache_msg.msg();
     } else {
@@ -191,4 +196,63 @@ pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     _list.link_to_head(&cache_msg.list_node);
 
     return true;
+}
+
+/// load from db file
+pub fn load() void {
+    assert(g.cache_size > 0);
+
+    const src = @src();
+    const path = g.cache_db orelse return;
+
+    const mem = cc.mmap_file(path) orelse {
+        if (cc.errno() != c.ENOENT)
+            log.warn(src, "open(%s): (%d) %m", .{ path, cc.errno() });
+        return;
+    };
+    defer _ = cc.munmap(mem);
+
+    var data = mem;
+    while (CacheMsg.load(&data)) |cache_msg| {
+        map.add(cache_msg);
+        _list.link_to_tail(&cache_msg.list_node);
+    }
+
+    log.info(src, "%zu entries from %s", .{ map._nitems, path });
+}
+
+/// dump to db file
+pub fn dump(event: enum { on_exit, on_manual }) void {
+    if (g.cache_size == 0)
+        return;
+
+    const src = @src();
+
+    const path = g.cache_db orelse switch (event) {
+        .on_exit => return,
+        .on_manual => "/tmp/chinadns@cache.db",
+    };
+
+    var count: usize = 0;
+
+    const file = cc.fopen(path, "wb") orelse {
+        log.warn(src, "fopen(%s) failed: (%d) %m", .{ path, cc.errno() });
+        return;
+    };
+    defer {
+        _ = cc.fclose(file);
+        log.info(src, "%zu entries to %s", .{ count, path });
+    }
+
+    var it = _list.iterator();
+    while (it.next()) |node| {
+        const cache_msg = CacheMsg.from_list_node(node);
+
+        const ttl = cache_msg.get_ttl();
+        if (!ttl_ok(ttl))
+            continue;
+
+        cache_msg.dump(file);
+        count += 1;
+    }
 }
