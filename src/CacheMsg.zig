@@ -125,7 +125,7 @@ pub fn get_ttl(self: *const CacheMsg) i32 {
 // =======================================================
 
 const Header = extern struct {
-    update_time: u64,
+    update_time: i64,
     hashv: u32,
     ttl: i32,
     ttl_r: i32,
@@ -169,7 +169,7 @@ pub fn load(data: *[]const u8) ?*CacheMsg {
 /// dump to db file
 pub fn dump(self: *const CacheMsg, file: *cc.FILE) void {
     const h: Header = .{
-        .update_time = @intCast(u64, self.update_time),
+        .update_time = cc.to_i64(self.update_time),
         .hashv = self.hashv,
         .ttl = self.ttl,
         .ttl_r = self.ttl_r,
