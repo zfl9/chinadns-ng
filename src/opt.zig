@@ -491,10 +491,8 @@ fn opt_cache_ignore(in_value: ?[]const u8) void {
 
 fn opt_verdict_cache(in_value: ?[]const u8) void {
     const value = in_value.?;
-    const src = @src();
-
     g.verdict_cache_size = str2int.parse(@TypeOf(g.verdict_cache_size), value, 10) orelse
-        invalid_optvalue(src, value);
+        invalid_optvalue(@src(), value);
 }
 
 fn opt_verdict_cache_db(in_value: ?[]const u8) void {
