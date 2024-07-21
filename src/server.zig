@@ -357,6 +357,14 @@ const QueryLog = struct {
         );
     }
 
+    pub noinline fn add_ip(self: *const QueryLog, setnames: cc.ConstStr) void {
+        log.info(
+            @src(),
+            "add answer_ip(id:%u, tag:%s, qtype:%u, '%s') to %s",
+            .{ cc.to_uint(self.id), self.tag.name(), cc.to_uint(self.qtype), self.name, setnames },
+        );
+    }
+
     pub noinline fn forward(self: *const QueryLog, qctx: *const QueryCtx, to_tag: Tag) void {
         const from: cc.ConstStr = if (qctx.flags.has(.from_local))
             "local"
@@ -483,12 +491,22 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     // check the cache
     var ttl: i32 = undefined;
     var ttl_r: i32 = undefined;
-    if (cache.get(msg, qnamelen, &ttl, &ttl_r)) |cache_msg| {
+    var add_ip: bool = undefined;
+    if (cache.get(msg, qnamelen, &ttl, &ttl_r, &add_ip)) |cache_msg| {
         // because send_reply is async func
         cache.ref(cache_msg);
         defer cache.unref(cache_msg);
 
         if (g.verbose()) qlog.cache(cache_msg, ttl);
+
+        // add the ip to the ipset/nftset
+        if (add_ip and tag != .none and (qtype == c.DNS_TYPE_A or qtype == c.DNS_TYPE_AAAA)) {
+            if (groups.get_ipset_addctx(tag)) |addctx| {
+                if (g.verbose()) qlog.add_ip(groups.get_ipset_name46(tag).cstr());
+                dns.add_ip(cache_msg, qnamelen, addctx);
+            }
+        }
+
         send_reply(cache_msg, fdobj, src_addr, bufsz, id, qflags);
 
         if (ttl > ttl_r)

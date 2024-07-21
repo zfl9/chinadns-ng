@@ -126,7 +126,13 @@ fn ttl_ok(ttl: i32) bool {
 }
 
 /// return the cached reply msg
-pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32, p_ttl_r: *i32) ?[]const u8 {
+pub fn get(
+    qmsg: []const u8,
+    qnamelen: c_int,
+    p_ttl: *i32,
+    p_ttl_r: *i32,
+    p_add_ip: *bool,
+) ?[]const u8 {
     if (!enabled())
         return null;
 
@@ -138,6 +144,12 @@ pub fn get(qmsg: []const u8, qnamelen: c_int, p_ttl: *i32, p_ttl_r: *i32) ?[]con
     const ttl = cache_msg.update_ttl();
     p_ttl.* = ttl;
     p_ttl_r.* = cache_msg.ttl_r;
+
+    // need to add ip to ipset/nftset ?
+    p_add_ip.* = if (!cache_msg.added_ip) b: {
+        cache_msg.added_ip = true;
+        break :b true;
+    } else false;
 
     if (ttl_ok(ttl)) {
         // not expired or stale cache

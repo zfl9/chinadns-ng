@@ -21,6 +21,7 @@ ttl_r: i32, // refresh if ttl <= ttl_r
 rc: Rc = .{},
 msg_len: u16,
 qnamelen: u8,
+added_ip: bool = true, // for db cache
 // msg: [msg_len]u8, // {header, question, answer, authority, additional}
 
 // =======================================================
@@ -159,6 +160,7 @@ pub fn load(data: *[]const u8) ?*CacheMsg {
     const cache_msg = new(in_msg, h.qnamelen, h.ttl, h.hashv);
     cache_msg.update_time = @intCast(c.time_t, h.update_time);
     cache_msg.ttl_r = h.ttl_r;
+    cache_msg.added_ip = false;
 
     // move to next
     data.* = data.*[header_len + h.msg_len ..];
