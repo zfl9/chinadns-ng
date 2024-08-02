@@ -581,6 +581,7 @@ fn build_wolfssl() *Step {
         \\  zig_cache_dir='{s}'
         \\  is_musl='{s}'
         \\  lto='{s}'
+        \\  asm='{s}'
         \\  aesni='{s}'
         \\  intelasm='{s}'
         \\  armasm='{s}'
@@ -599,6 +600,7 @@ fn build_wolfssl() *Step {
         \\
         \\  [ "$target_triple" ] && host="--host=$target_triple" || host=""
         \\  [ "$aarch64" = 1 ] && opt_sha512="--enable-sha512" || opt_sha512="--disable-sha512"
+        \\  [ "$asm" = 1 ] && opt_asm="--enable-asm" || opt_asm="--disable-asm"
         \\
         \\  ./autogen.sh
         \\  ./configure \
@@ -606,10 +608,10 @@ fn build_wolfssl() *Step {
         \\      $aesni \
         \\      $intelasm \
         \\      $armasm \
+        \\      $opt_asm \
         \\      --prefix="$install_dir" \
         \\      --enable-static \
         \\      --disable-shared \
-        \\      --enable-asm \
         \\      --disable-harden \
         \\      --disable-ocsp \
         \\      --disable-oldnames \
@@ -664,6 +666,10 @@ fn build_wolfssl() *Step {
     const opt_intelasm: [:0]const u8 = if (!_wolfssl_noasm and get_x86_64_level() >= 3) "--enable-intelasm" else "";
     const opt_armasm: [:0]const u8 = if (!_wolfssl_noasm and _target.getCpuArch() == .aarch64) "--enable-armasm" else "";
     const opt_aarch64: [:0]const u8 = if (_target.getCpuArch() == .aarch64) "1" else "0";
+    const opt_asm: [:0]const u8 = switch (_target.getCpuArch()) {
+        .mips64, .mips64el => "0",
+        else => "1",
+    };
 
     const cmd = fmt(cmd_, .{
         _b.pathFromRoot(_dep_wolfssl.base_dir),
@@ -674,6 +680,7 @@ fn build_wolfssl() *Step {
         _b.pathFromRoot(_b.cache_root),
         opt_musl,
         opt_lto,
+        opt_asm,
         opt_aesni,
         opt_intelasm,
         opt_armasm,
@@ -721,6 +728,7 @@ fn get_cflags(ex_cflags: []const []const u8) []const []const u8 {
 
     cflags.appendSlice(&.{
         "-Werror", // https://github.com/ziglang/zig/issues/10800
+        "-Wno-option-ignored",
         "-fno-pic",
         "-fno-PIC",
         "-fno-pie",
