@@ -57,9 +57,13 @@ static void list(FILE *file) {
 
     char name[DNS_NAME_MAXLEN + 1];
 
+    void *msg = malloc(DNS_MSG_MAXSIZE);
+
     s64 now = time(NULL);
-    while (next(file, h, NULL, name))
-        printf("%-50s ttl:%-10d size:%u\n", name, h->ttl - (s32)(now - h->update_time), h->msg_len);
+    while (next(file, h, msg, name))
+        printf("%-60s qtype:%-5u ttl:%-10d size:%u\n", name, dns_get_qtype(msg, h->qnamelen), h->ttl - (s32)(now - h->update_time), h->msg_len);
+
+    free(msg);
 }
 
 static void delete(FILE *file, const char *suffixes[], int suffix_n, const char *filepath) {
@@ -72,6 +76,8 @@ static void delete(FILE *file, const char *suffixes[], int suffix_n, const char 
 
     char tmp_filename[] = ".dns_cache_mgr.tmp.XXXXXX";
     int tmp_fd = mkstemp(tmp_filename);
+    if (tmp_fd < 0)
+        printf_exit("mkstemp() failed: %m");
 
 next:
     while (next(file, h, msg, name)) {
@@ -91,6 +97,8 @@ next:
         write(tmp_fd, h, sizeof(*h));
         write(tmp_fd, msg, h->msg_len);
     }
+
+    free(msg);
 
     close(tmp_fd);
     if (rename(tmp_filename, filepath) < 0)
