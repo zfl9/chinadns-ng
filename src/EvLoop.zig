@@ -96,6 +96,7 @@ pub const Fd = struct {
     write_frame: ?anyframe = null, // waiting for writable event
     fd: c_int,
     rc: Rc = .{},
+    canceled: bool = false,
 
     /// ownership of `fd` is transferred to `fdobj`
     pub fn new(fd: c_int) *Fd {
@@ -138,6 +139,31 @@ pub const Fd = struct {
             events |= EVENTS.write;
 
         return events;
+    }
+
+    pub fn cancel(self: *Fd) void {
+        if (self.canceled)
+            return;
+
+        self.canceled = true;
+        // cc.set_errno(c.ECANCELED);
+
+        if (self.read_frame) |frame|
+            co.do_resume(frame);
+        if (self.write_frame) |frame|
+            co.do_resume(frame);
+
+        assert(self.read_frame == null);
+        assert(self.write_frame == null);
+    }
+
+    /// return `true` if canceled and set errno to `ECANCELED`
+    pub fn is_canceled(self: *const Fd) bool {
+        if (self.canceled) {
+            cc.set_errno(c.ECANCELED);
+            return true;
+        }
+        return false;
     }
 };
 
@@ -256,6 +282,7 @@ fn del(self: *EvLoop, fdobj: *const Fd) bool {
 // ======================================================================
 
 fn set_frame(fdobj: *Fd, comptime field_name: []const u8, frame: anyframe) void {
+    assert(!fdobj.canceled);
     assert(@field(fdobj, field_name) == null);
     @field(fdobj, field_name) = frame;
 }
@@ -401,26 +428,34 @@ pub fn run(self: *EvLoop) void {
 
 // ========================================================================
 
-// socket API (non-blocking + async)
+// socket API (non-blocking + coroutine)
 
 comptime {
     assert(c.EAGAIN == c.EWOULDBLOCK);
 }
 
-/// used for external modules, not for this module:
-/// because the async-call chains consume at least 24 bytes per level (x86_64)
-pub fn wait_readable(self: *EvLoop, fdobj: *Fd) void {
+/// return `null` if fdobj is canceled. \
+/// used for external modules, not for this module: \
+/// because the coroutine chains consume at least 24 bytes per level (x86_64).
+pub fn wait_readable(self: *EvLoop, fdobj: *Fd) ?void {
     self.add_readable(fdobj, @frame());
     suspend {}
     self.del_readable(fdobj, @frame());
+
+    if (fdobj.is_canceled())
+        return null;
 }
 
-/// used for external modules, not for this module:
-/// because the async-call chains consume at least 24 bytes per level (x86_64)
-pub fn wait_writable(self: *EvLoop, fdobj: *Fd) void {
+/// return `null` if fdobj is canceled. \
+/// used for external modules, not for this module: \
+/// because the coroutine chains consume at least 24 bytes per level (x86_64).
+pub fn wait_writable(self: *EvLoop, fdobj: *Fd) ?void {
     self.add_writable(fdobj, @frame());
     suspend {}
     self.del_writable(fdobj, @frame());
+
+    if (fdobj.is_canceled())
+        return null;
 }
 
 pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const cc.SockAddr) ?void {
@@ -431,6 +466,9 @@ pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const cc.SockAddr) ?void {
         self.add_writable(fdobj, @frame());
         suspend {}
         self.del_writable(fdobj, @frame());
+
+        if (fdobj.is_canceled())
+            return null;
 
         if (net.getsockopt_int(fdobj.fd, c.SOL_SOCKET, c.SO_ERROR, "SO_ERROR")) |err| {
             if (err == 0) return;
@@ -444,7 +482,7 @@ pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const cc.SockAddr) ?void {
 }
 
 pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*cc.SockAddr) ?c_int {
-    while (true) {
+    while (!fdobj.is_canceled()) {
         return cc.accept4(fdobj.fd, src_addr, c.SOCK_NONBLOCK | c.SOCK_CLOEXEC) orelse {
             if (cc.errno() != c.EAGAIN)
                 return null;
@@ -455,11 +493,11 @@ pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*cc.SockAddr) ?c_int {
 
             continue;
         };
-    }
+    } else return null;
 }
 
 pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ?usize {
-    while (true) {
+    while (!fdobj.is_canceled()) {
         return cc.read(fdobj.fd, buf) orelse {
             if (cc.errno() != c.EAGAIN)
                 return null;
@@ -470,11 +508,11 @@ pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ?usize {
 
             continue;
         };
-    }
+    } else return null;
 }
 
 pub fn recvfrom(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int, src_addr: *cc.SockAddr) ?usize {
-    while (true) {
+    while (!fdobj.is_canceled()) {
         return cc.recvfrom(fdobj.fd, buf, flags, src_addr) orelse {
             if (cc.errno() != c.EAGAIN)
                 return null;
@@ -485,11 +523,11 @@ pub fn recvfrom(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int, src_addr: *c
 
             continue;
         };
-    }
+    } else return null;
 }
 
 pub fn recv(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ?usize {
-    while (true) {
+    while (!fdobj.is_canceled()) {
         return cc.recv(fdobj.fd, buf, flags) orelse {
             if (cc.errno() != c.EAGAIN)
                 return null;
@@ -500,16 +538,18 @@ pub fn recv(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ?usize {
 
             continue;
         };
-    }
+    } else return null;
 }
 
-const ReadErr = error{ eof, other };
+const ReadErr = error{ eof, errno };
 
-pub fn recv_exactly(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ReadErr!void {
+pub fn recv_full(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ReadErr!void {
     var nread: usize = 0;
     while (nread < buf.len) {
+        if (fdobj.is_canceled())
+            return ReadErr.errno; // ECANCELED
         const n = self.recv(fdobj, buf[nread..], flags) orelse
-            return ReadErr.other;
+            return ReadErr.errno;
         if (n == 0)
             return ReadErr.eof;
         nread += n;
@@ -525,6 +565,8 @@ pub fn recv_exactly(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ReadErr!
 pub fn send(self: *EvLoop, fdobj: *Fd, data: []const u8, flags: c_int) ?void {
     var nsend: usize = 0;
     while (nsend < data.len) {
+        if (fdobj.is_canceled())
+            return null;
         const n = cc.send(fdobj.fd, data[nsend..], flags) orelse b: {
             if (cc.errno() != c.EAGAIN)
                 return null;
@@ -544,6 +586,8 @@ pub fn send(self: *EvLoop, fdobj: *Fd, data: []const u8, flags: c_int) ?void {
 pub fn sendmsg(self: *EvLoop, fdobj: *Fd, msg: *const cc.msghdr_t, flags: c_int) ?void {
     var remain_len: usize = msg.calc_len();
     while (remain_len > 0) {
+        if (fdobj.is_canceled())
+            return null;
         const n = cc.sendmsg(fdobj.fd, msg, flags) orelse b: {
             if (cc.errno() != c.EAGAIN)
                 return null;

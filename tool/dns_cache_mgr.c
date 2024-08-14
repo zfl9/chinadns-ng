@@ -9,10 +9,10 @@
 #include "../src/misc.h"
 
 struct header {
-    s64 update_time;
+    i64 update_time;
     u32 hashv;
-    s32 ttl;
-    s32 ttl_r;
+    i32 ttl;
+    i32 ttl_r;
     u16 msg_len;
     u8 qnamelen;
     // msg: [msg_len]u8, // {header, question, answer, authority, additional}
@@ -55,13 +55,14 @@ static void list(FILE *file) {
     char buf[sizeof(*h)] alignto(__alignof__(*h));
     h = (void *)buf;
 
+    void *msg = malloc(DNS_MSG_MAXSIZE);
     char name[DNS_NAME_MAXLEN + 1];
 
-    void *msg = malloc(DNS_MSG_MAXSIZE);
-
-    s64 now = time(NULL);
+    i64 now = time(NULL);
     while (next(file, h, msg, name))
-        printf("%-60s qtype:%-5u ttl:%-10d size:%u\n", name, dns_get_qtype(msg, h->qnamelen), h->ttl - (s32)(now - h->update_time), h->msg_len);
+        printf("%-60s qtype:%-5u ttl:%-10d size:%u\n",
+            name, dns_get_qtype(msg, h->qnamelen),
+            h->ttl - (i32)(now - h->update_time), h->msg_len);
 
     free(msg);
 }

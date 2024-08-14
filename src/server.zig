@@ -14,7 +14,7 @@ const Upstream = @import("Upstream.zig");
 const NoAAAA = @import("NoAAAA.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
-const ListNode = @import("ListNode.zig");
+const Node = @import("Node.zig");
 const flags_op = @import("flags_op.zig");
 const verdict_cache = @import("verdict_cache.zig");
 const local_rr = @import("local_rr.zig");
@@ -28,7 +28,7 @@ comptime {
 
 const QueryCtx = struct {
     // linked list
-    list_node: ListNode = undefined,
+    list_node: Node = undefined,
 
     // alignment: 8/4
     fdobj: *EvLoop.Fd, // requester's fdobj
@@ -87,13 +87,13 @@ const QueryCtx = struct {
         g.allocator.destroy(self);
     }
 
-    pub fn from_list_node(node: *ListNode) *QueryCtx {
+    pub fn from_list_node(node: *Node) *QueryCtx {
         return @fieldParentPtr(QueryCtx, "list_node", node);
     }
 
     pub const List = struct {
         map: std.AutoHashMapUnmanaged(u16, *QueryCtx),
-        list: ListNode,
+        list: Node,
 
         var _last_qid: u16 = 0;
 
@@ -186,7 +186,7 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr, port: u16) void {
             continue;
         };
         net.setup_tcp_conn_sock(conn_fd);
-        co.create(service_tcp, .{ conn_fd, &src_addr });
+        co.start(service_tcp, .{ conn_fd, &src_addr });
     }
 }
 
@@ -215,9 +215,9 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
         while (true) {
             // read len (be16)
             var len: u16 = undefined;
-            g.evloop.recv_exactly(fdobj, std.mem.asBytes(&len), 0) catch |err| switch (err) {
+            g.evloop.recv_full(fdobj, std.mem.asBytes(&len), 0) catch |err| switch (err) {
                 error.eof => return,
-                error.other => break :e .{ .op = "read_len" },
+                error.errno => break :e .{ .op = "read_len" },
             };
 
             len = cc.ntohs(len);
@@ -238,9 +238,9 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
 
             // read msg
             qmsg.len = len;
-            g.evloop.recv_exactly(fdobj, qmsg.msg(), 0) catch |err| switch (err) {
+            g.evloop.recv_full(fdobj, qmsg.msg(), 0) catch |err| switch (err) {
                 error.eof => break :e .{ .op = "read_msg", .msg = "connection closed" },
-                error.other => break :e .{ .op = "read_msg" },
+                error.errno => break :e .{ .op = "read_msg" },
             };
 
             on_query(qmsg, fdobj, &src_addr, .from_tcp);
@@ -477,8 +477,10 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
         dns.make_reply(rmsg, msg, qnamelen, answer, answer_n);
 
-        // [async func]
-        if (g.verbose()) qlog.local_rr(answer_n, answer.len);
+        if (g.verbose())
+            qlog.local_rr(answer_n, answer.len);
+
+        // suspending
         return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
     }
 
@@ -493,7 +495,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     var ttl_r: i32 = undefined;
     var add_ip: bool = undefined;
     if (cache.get(msg, qnamelen, &ttl, &ttl_r, &add_ip)) |cache_msg| {
-        // because send_reply is async func
+        // because send_reply is a suspending func
         cache.ref(cache_msg);
         defer cache.unref(cache_msg);
 
@@ -507,6 +509,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
             }
         }
 
+        // suspending
         send_reply(cache_msg, fdobj, src_addr, bufsz, id, qflags);
 
         if (ttl > ttl_r)
@@ -768,7 +771,8 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
             dns.add_ip(msg, qnamelen, addctx);
         };
 
-    // [async] send reply to client
+    // [suspending] send reply to client
+    // TODO: change to nosuspend send_reply
     if (!qctx.flags.has(.from_local))
         send_reply(msg, qctx.fdobj, &qctx.src_addr, qctx.bufsz, qctx.id, qctx.flags);
 
@@ -782,7 +786,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     qctx.free();
 }
 
-/// [async]
+/// [suspending]
 fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, bufsz: u16, id: c.be16, qflags: QueryCtx.Flags) void {
     var iov = [_]cc.iovec_t{
         undefined, // for tcp
@@ -839,7 +843,7 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
     );
 }
 
-/// [async] for bad query msg
+/// [suspending] for bad query msg
 fn send_reply_xxx(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qflags: QueryCtx.Flags) void {
     if (msg.len >= dns.header_len())
         _ = dns.empty_reply(msg, 0);
@@ -922,10 +926,10 @@ noinline fn do_start(ip: cc.ConstStr, port: u16, socktype: net.SockType) void {
         switch (socktype) {
             .tcp => {
                 cc.listen(fd, 1024) orelse break :e "listen";
-                co.create(listen_tcp, .{ fd, ip, port });
+                co.start(listen_tcp, .{ fd, ip, port });
             },
             .udp => {
-                co.create(listen_udp, .{ fd, ip, port });
+                co.start(listen_udp, .{ fd, ip, port });
             },
         }
         return;

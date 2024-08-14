@@ -5,7 +5,7 @@ const cc = @import("cc.zig");
 const dns = @import("dns.zig");
 const log = @import("log.zig");
 const Rc = @import("Rc.zig");
-const ListNode = @import("ListNode.zig");
+const Node = @import("Node.zig");
 const Bytes = cc.Bytes;
 
 // =======================================================
@@ -13,7 +13,7 @@ const Bytes = cc.Bytes;
 const CacheMsg = @This();
 
 next: ?*CacheMsg = null, // for hashmap
-list_node: ListNode = undefined,
+list_node: Node = undefined,
 update_time: c.time_t,
 hashv: c_uint,
 ttl: i32,
@@ -73,7 +73,7 @@ pub fn free(self: *CacheMsg) void {
         g.allocator.free(self.mem());
 }
 
-pub fn from_list_node(node: *ListNode) *CacheMsg {
+pub fn from_list_node(node: *Node) *CacheMsg {
     return @fieldParentPtr(CacheMsg, "list_node", node);
 }
 

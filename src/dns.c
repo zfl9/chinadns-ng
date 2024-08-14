@@ -481,8 +481,8 @@ static bool get_ttl(struct dns_record *noalias record, int rnamelen, void *ud, b
     if (ntohs(record->rtype) != DNS_TYPE_OPT) {
         /* it is hereby specified that a TTL value is an unsigned number,
             with a minimum value of 0, and a maximum value of 2147483647. */
-        s32 ttl = ntohl(record->rttl);
-        s32 *final_ttl = ud;
+        i32 ttl = ntohl(record->rttl);
+        i32 *final_ttl = ud;
         if (ttl < *final_ttl)
             *final_ttl = ttl;
     }
@@ -497,21 +497,21 @@ static bool update_ttl(struct dns_record *noalias record, int rnamelen, void *ud
     if (ntohs(record->rtype) != DNS_TYPE_OPT) {
         /* it is hereby specified that a TTL value is an unsigned number,
             with a minimum value of 0, and a maximum value of 2147483647. */
-        s32 ttl = (s32)ntohl(record->rttl) + (intptr_t)ud;
+        i32 ttl = (i32)ntohl(record->rttl) + (intptr_t)ud;
         record->rttl = htonl(max(ttl, 1));
     }
 
     return true;
 }
 
-s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, s32 nodata_ttl) {
+i32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, i32 nodata_ttl) {
     if (!is_normal_msg(msg))
         return -1;
 
     int count = get_records_count(msg);
     move_to_records(msg, len, qnamelen);
 
-    s32 ttl = INT32_MAX;
+    i32 ttl = INT32_MAX;
 
     unlikely_if (!foreach_record((void **)&msg, &len, count, get_ttl, &ttl))
         ttl = -1;
@@ -522,7 +522,7 @@ s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, s32 nodata_t
     return ttl;
 }
 
-void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, s32 ttl_change) {
+void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, i32 ttl_change) {
     int count = get_records_count(msg);
     move_to_records(msg, len, qnamelen);
 

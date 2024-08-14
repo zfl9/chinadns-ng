@@ -3,7 +3,7 @@ const g = @import("g.zig");
 const c = @import("c.zig");
 const cc = @import("cc.zig");
 const dns = @import("dns.zig");
-const ListNode = @import("ListNode.zig");
+const Node = @import("Node.zig");
 const CacheMsg = @import("CacheMsg.zig");
 const cache_ignore = @import("cache_ignore.zig");
 const log = @import("log.zig");
@@ -11,7 +11,7 @@ const assert = std.debug.assert;
 const Bytes = cc.Bytes;
 
 /// LRU
-var _list: ListNode = undefined;
+var _list: Node = undefined;
 
 pub fn module_init() void {
     _list.init();

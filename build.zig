@@ -701,7 +701,7 @@ fn setup_libexeobj_step(step: *LibExeObjStep) void {
 
     // compile
     if (step.kind == .obj)
-        step.use_stage1 = true; // required by async/await (.zig)
+        step.use_stage1 = true; // required by coroutine (.zig)
 
     step.single_threaded = true;
 

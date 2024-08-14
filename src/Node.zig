@@ -5,36 +5,36 @@ const assert = std.debug.assert;
 
 // =====================================================
 
-const ListNode = @This();
+const Node = @This();
 
-prev: *ListNode,
-next: *ListNode,
+prev: *Node,
+next: *Node,
 
 // =================== `list_head(sentinel)` ===================
 
 /// empty list (sentinel node)
-pub fn init(list: *ListNode) void {
+pub fn init(list: *Node) void {
     list.prev = list;
     list.next = list;
 }
 
 /// first node
-pub inline fn head(list: *const ListNode) *ListNode {
+pub inline fn head(list: *const Node) *Node {
     return list.next;
 }
 
 /// last node
-pub inline fn tail(list: *const ListNode) *ListNode {
+pub inline fn tail(list: *const Node) *Node {
     return list.prev;
 }
 
 /// is sentinel node
-pub inline fn is_empty(list: *const ListNode) bool {
+pub inline fn is_empty(list: *const Node) bool {
     return list.head() == list;
 }
 
 /// `unlink(node)` and/or `free(node)` is safe
-pub fn iterator(list: *const ListNode) Iterator {
+pub fn iterator(list: *const Node) Iterator {
     return .{
         .sentinel = list,
         .node = list.head(),
@@ -42,7 +42,7 @@ pub fn iterator(list: *const ListNode) Iterator {
 }
 
 /// `unlink(node)` and/or `free(node)` is safe
-pub fn reverse_iterator(list: *const ListNode) ReverseIterator {
+pub fn reverse_iterator(list: *const Node) ReverseIterator {
     return .{
         .sentinel = list,
         .node = list.tail(),
@@ -50,10 +50,10 @@ pub fn reverse_iterator(list: *const ListNode) ReverseIterator {
 }
 
 pub const Iterator = struct {
-    sentinel: *const ListNode,
-    node: *ListNode,
+    sentinel: *const Node,
+    node: *Node,
 
-    pub fn next(it: *Iterator) ?*ListNode {
+    pub fn next(it: *Iterator) ?*Node {
         const node = it.node;
         if (node != it.sentinel) {
             it.node = node.next;
@@ -64,10 +64,10 @@ pub const Iterator = struct {
 };
 
 pub const ReverseIterator = struct {
-    sentinel: *const ListNode,
-    node: *ListNode,
+    sentinel: *const Node,
+    node: *Node,
 
-    pub fn next(it: *ReverseIterator) ?*ListNode {
+    pub fn next(it: *ReverseIterator) ?*Node {
         const node = it.node;
         if (node != it.sentinel) {
             it.node = node.prev;
@@ -79,16 +79,16 @@ pub const ReverseIterator = struct {
 
 // =================== `node` ===================
 
-pub fn link_to_head(list: *ListNode, node: *ListNode) void {
+pub fn link_to_head(list: *Node, node: *Node) void {
     return node.link(list, list.head());
 }
 
-pub fn link_to_tail(list: *ListNode, node: *ListNode) void {
+pub fn link_to_tail(list: *Node, node: *Node) void {
     return node.link(list.tail(), list);
 }
 
 /// assume that the `node` is linked to the `list`
-pub fn move_to_head(list: *ListNode, node: *ListNode) void {
+pub fn move_to_head(list: *Node, node: *Node) void {
     if (node != list.head()) {
         node.unlink();
         list.link_to_head(node);
@@ -96,14 +96,14 @@ pub fn move_to_head(list: *ListNode, node: *ListNode) void {
 }
 
 /// assume that the `node` is linked to the `list`
-pub fn move_to_tail(list: *ListNode, node: *ListNode) void {
+pub fn move_to_tail(list: *Node, node: *Node) void {
     if (node != list.tail()) {
         node.unlink();
         list.link_to_tail(node);
     }
 }
 
-fn link(node: *ListNode, prev: *ListNode, next: *ListNode) void {
+fn link(node: *Node, prev: *Node, next: *Node) void {
     prev.next = node;
     node.prev = prev;
     node.next = next;
@@ -112,7 +112,7 @@ fn link(node: *ListNode, prev: *ListNode, next: *ListNode) void {
 
 /// `node.prev` and `node.next` are unmodified, use `node.init()` if needed.
 /// `list_head.unlink()` is not allowed unless `list_head` is an empty list.
-pub fn unlink(node: *const ListNode) void {
+pub fn unlink(node: *const Node) void {
     node.prev.next = node.next;
     node.next.prev = node.prev;
 }
@@ -121,15 +121,15 @@ pub fn unlink(node: *const ListNode) void {
 
 const Object = struct {
     id: u32,
-    node: ListNode,
+    node: Node,
 
-    pub fn from_node(node: *ListNode) *Object {
+    pub fn from_node(node: *Node) *Object {
         return @fieldParentPtr(Object, "node", node);
     }
 };
 
 pub fn @"test: linked list"() !void {
-    var list: ListNode = undefined;
+    var list: Node = undefined;
     list.init();
 
     defer {
@@ -195,7 +195,7 @@ pub fn @"test: linked list"() !void {
     }
 
     // link_to_head
-    var l: ListNode = undefined;
+    var l: Node = undefined;
     l.init();
 
     defer {

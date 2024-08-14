@@ -4,14 +4,13 @@ const g = @import("g.zig");
 const assert = std.debug.assert;
 
 /// create and start a new coroutine
-pub fn create(comptime func: anytype, args: anytype) void {
+pub fn start(comptime func: anytype, args: anytype) void {
     const buf = g.allocator.alignedAlloc(u8, std.Target.stack_align, @frameSize(func)) catch unreachable;
     _ = @asyncCall(buf, {}, func, args);
-    // @call(.{ .modifier = .async_kw, .stack = buf }, func, args);
     check_terminated();
 }
 
-/// if the coroutine is at the last pause point, its memory will be freed after resume
+/// if the coroutine is at the last suspend point, its memory will be freed after resume
 pub fn do_resume(frame: anyframe) void {
     resume frame;
     check_terminated();

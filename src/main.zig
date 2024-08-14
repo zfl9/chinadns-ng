@@ -135,8 +135,8 @@ pub fn main() u8 {
     // ============================================================================
 
     // used only for business-independent initialization, such as global variables
-    init_all_module();
-    defer if (_debug) deinit_all_module();
+    call_module_fn("module_init", .{});
+    defer if (_debug) call_module_fn("module_deinit", .{});
 
     // ============================================================================
 
@@ -214,33 +214,23 @@ pub fn main() u8 {
     server.start();
 
     if (_debug)
-        co.create(memleak_checker, .{});
+        co.start(memleak_checker, .{});
 
     g.evloop.run();
 
     return 0;
 }
 
-fn init_all_module() void {
+fn call_module_fn(comptime fn_name: [:0]const u8, args: anytype) void {
     comptime var i = 0;
     inline while (i < modules.module_list.len) : (i += 1) {
         const module = modules.module_list[i];
         const module_name: cc.ConstStr = modules.name_list[i];
-        if (@hasDecl(module, "module_init")) {
-            if (false) log.debug(@src(), "%s.module_init()", .{module_name});
-            module.module_init();
-        }
-    }
-}
-
-fn deinit_all_module() void {
-    comptime var i = 0;
-    inline while (i < modules.module_list.len) : (i += 1) {
-        const module = modules.module_list[i];
-        const module_name: cc.ConstStr = modules.name_list[i];
-        if (@hasDecl(module, "module_deinit")) {
-            if (false) log.debug(@src(), "%s.module_deinit()", .{module_name});
-            module.module_deinit();
+        if (@hasDecl(module, fn_name)) {
+            if (false) log.debug(@src(), "%s.%s()", .{ module_name, fn_name.ptr });
+            const options: std.builtin.CallOptions = .{};
+            const func = @field(module, fn_name);
+            @call(options, func, args);
         }
     }
 }

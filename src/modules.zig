@@ -1,11 +1,11 @@
-pub const name_list = .{ "CacheMsg", "DynStr", "EvLoop", "ListNode", "NoAAAA", "Rc", "RcMsg", "StrList", "Upstream", "c", "cache", "cache_ignore", "cc", "co", "dnl", "dns", "flags_op", "fmtchk", "g", "groups", "ipset", "local_rr", "log", "main", "modules", "net", "opt", "sentinel_vector", "server", "str2int", "tag", "tests", "verdict_cache" };
-pub const module_list = .{ CacheMsg, DynStr, EvLoop, ListNode, NoAAAA, Rc, RcMsg, StrList, Upstream, c, cache, cache_ignore, cc, co, dnl, dns, flags_op, fmtchk, g, groups, ipset, local_rr, log, main, modules, net, opt, sentinel_vector, server, str2int, tag, tests, verdict_cache };
+pub const name_list = .{ "CacheMsg", "DynStr", "EvLoop", "NoAAAA", "Node", "Rc", "RcMsg", "StrList", "Upstream", "c", "cache", "cache_ignore", "cc", "co", "dnl", "dns", "flags_op", "fmtchk", "g", "groups", "ipset", "local_rr", "log", "main", "modules", "net", "opt", "sentinel_vector", "server", "str2int", "tag", "tests", "verdict_cache" };
+pub const module_list = .{ CacheMsg, DynStr, EvLoop, NoAAAA, Node, Rc, RcMsg, StrList, Upstream, c, cache, cache_ignore, cc, co, dnl, dns, flags_op, fmtchk, g, groups, ipset, local_rr, log, main, modules, net, opt, sentinel_vector, server, str2int, tag, tests, verdict_cache };
 
 const CacheMsg = @import("CacheMsg.zig");
 const DynStr = @import("DynStr.zig");
 const EvLoop = @import("EvLoop.zig");
-const ListNode = @import("ListNode.zig");
 const NoAAAA = @import("NoAAAA.zig");
+const Node = @import("Node.zig");
 const Rc = @import("Rc.zig");
 const RcMsg = @import("RcMsg.zig");
 const StrList = @import("StrList.zig");

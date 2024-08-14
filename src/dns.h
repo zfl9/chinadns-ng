@@ -89,10 +89,10 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen, const struct
 void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset_addctx *noalias ctx);
 
 /* return -1 if failed */
-s32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, s32 nodata_ttl);
+i32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, i32 nodata_ttl);
 
 /* it should not fail because it has been checked by `get_ttl` */
-void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, s32 ttl_change);
+void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, i32 ttl_change);
 
 /*
 * `levels`: the level of the domain to get (8 bools)

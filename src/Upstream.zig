@@ -13,6 +13,7 @@ const Tag = @import("tag.zig").Tag;
 const DynStr = @import("DynStr.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
+const Node = @import("Node.zig");
 const flags_op = @import("flags_op.zig");
 const assert = std.debug.assert;
 
@@ -29,7 +30,8 @@ comptime {
 const Upstream = @This();
 
 // runtime info
-ctx: ?*anyopaque = null,
+data: ?*anyopaque = null,
+data2: ?*anyopaque = null, // ssl session for resumption
 
 // config info
 host: ?cc.ConstStr, // DoT SNI
@@ -70,7 +72,7 @@ fn init(tag: Tag, proto: Proto, addr: *const cc.SockAddr, host: []const u8, ip: 
 }
 
 fn deinit(self: *const Upstream) void {
-    assert(self.ctx == null);
+    assert(self.data == null and self.data2 == null);
 
     if (self.host) |host|
         g.allocator.free(cc.strslice_c(host));
@@ -100,20 +102,38 @@ fn send(self: *Upstream, qmsg: *RcMsg) void {
 
 // ======================================================
 
+const TypedNode = struct {
+    type: enum { udp, tcp }, // `struct UDP` or `struct TCP`
+    node: Node,
+
+    pub fn from_node(node: *Node) *TypedNode {
+        return @fieldParentPtr(TypedNode, "node", node);
+    }
+};
+
+const UDP = struct {
+    typed_node: TypedNode,
+    fdobj: *EvLoop.Fd,
+    create_time: c.time_t,
+    query_rtime: u16, // relative to create_time
+    query_count: u16,
+    reply_count: u16,
+};
+
 fn udp_get_fdobj(self: *const Upstream) ?*EvLoop.Fd {
     assert(self.proto == .udpi or self.proto == .udp);
-    return cc.ptrcast(?*EvLoop.Fd, self.ctx);
+    return cc.ptrcast(?*EvLoop.Fd, self.data);
 }
 
 fn udp_set_fdobj(self: *Upstream, fdobj: ?*EvLoop.Fd) void {
     assert(self.proto == .udpi or self.proto == .udp);
-    self.ctx = fdobj;
+    self.data = fdobj;
 }
 
 fn udp_send(self: *Upstream, qmsg: *RcMsg) void {
     const fd = if (self.udp_get_fdobj()) |fdobj| fdobj.fd else b: {
         const fd = net.new_sock(self.addr.family(), .udp) orelse return;
-        co.create(udp_recv, .{ self, fd });
+        co.start(udp_recv, .{ self, fd });
         assert(self.udp_get_fdobj() != null);
         break :b fd;
     };
@@ -179,7 +199,7 @@ fn udp_recv(self: *Upstream, fd: c_int) void {
                     log.warn(@src(), "recv(%s) failed: (%d) %m", .{ self.url, cc.errno() });
                     return;
                 }
-                g.evloop.wait_readable(fdobj);
+                g.evloop.wait_readable(fdobj) orelse return;
                 continue;
             };
         } else return;
@@ -203,7 +223,8 @@ fn udp_on_eol(self: *Upstream) void {
     if (fdobj.read_frame) |frame| {
         co.do_resume(frame);
     } else {
-        // this coroutine may be sending a response to the tcp client (suspended)
+        // this coroutine may be sending a response to the tcp client (suspending)
+        // TODO: change to nosuspend send_reply
     }
 }
 
@@ -279,12 +300,12 @@ pub const TLS = struct {
 
 const TCP = struct {
     upstream: *const Upstream,
-    fdobj: ?*EvLoop.Fd = null,
+    fdobj: ?*EvLoop.Fd = null, // tcp connection
+    tls: TLS_ = .{}, // tls connection (DoT)
     send_list: MsgQueue = .{}, // qmsg to be sent
     ack_list: std.AutoHashMapUnmanaged(u16, *RcMsg) = .{}, // qmsg to be ack
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     healthy: bool = false, // current connection processed at least one query ?
-    tls: TLS_ = .{}, // for DoT upstream
 
     const TLS_ = if (has_tls) TLS else struct {};
 
@@ -292,13 +313,13 @@ const TCP = struct {
     const PENDING_MAX = std.math.maxInt(u16);
 
     const MsgQueue = struct {
-        head: ?*Node = null,
-        tail: ?*Node = null,
+        head: ?*MsgNode = null,
+        tail: ?*MsgNode = null,
         waiter: ?anyframe = null,
 
-        const Node = struct {
+        const MsgNode = struct {
             msg: *RcMsg,
-            next: *Node,
+            next: *MsgNode,
         };
 
         /// `null`: cancel wait
@@ -312,7 +333,7 @@ const TCP = struct {
                 return;
             }
 
-            const node = g.allocator.create(Node) catch unreachable;
+            const node = g.allocator.create(MsgNode) catch unreachable;
             node.* = .{
                 .msg = msg,
                 .next = undefined,
@@ -342,7 +363,7 @@ const TCP = struct {
         }
 
         /// `null`: cancel wait
-        pub fn pop(self: *MsgQueue, blocking: bool) ?*RcMsg {
+        pub fn pop(self: *MsgQueue, suspending: bool) ?*RcMsg {
             if (self.head) |node| {
                 defer g.allocator.destroy(node);
                 if (node == self.tail) {
@@ -354,7 +375,7 @@ const TCP = struct {
                 }
                 return node.msg;
             } else {
-                if (!blocking)
+                if (!suspending)
                     return null;
                 self.waiter = @frame();
                 suspend {}
@@ -404,8 +425,7 @@ const TCP = struct {
             self.start();
     }
 
-    /// [async] used to send qmsg to upstream
-    /// pop from send_list && add to ack_list
+    /// [suspending] pop from send_list && add to ack_list
     fn pop_qmsg(self: *TCP, fdobj: *EvLoop.Fd) ?*RcMsg {
         if (!self.fdobj_ok(fdobj)) return null;
 
@@ -477,7 +497,7 @@ const TCP = struct {
         assert(self.ack_list.count() == 0);
 
         self.healthy = false;
-        co.create(TCP.send, .{self});
+        co.start(TCP.send, .{self});
     }
 
     fn send(self: *TCP) void {
@@ -494,7 +514,7 @@ const TCP = struct {
 
         self.do_connect(fdobj) orelse return;
 
-        co.create(recv, .{self});
+        co.start(recv, .{self});
 
         while (self.pop_qmsg(fdobj)) |qmsg| {
             self.do_send(fdobj, qmsg) orelse return;
@@ -574,11 +594,11 @@ const TCP = struct {
                     var err: c_int = undefined;
                     cc.SSL_connect(self.ssl(), &err) orelse switch (err) {
                         c.WOLFSSL_ERROR_WANT_READ => {
-                            g.evloop.wait_readable(fdobj);
+                            g.evloop.wait_readable(fdobj) orelse return null;
                             continue;
                         },
                         c.WOLFSSL_ERROR_WANT_WRITE => {
-                            g.evloop.wait_writable(fdobj);
+                            g.evloop.wait_writable(fdobj) orelse return null;
                             continue;
                         },
                         else => {
@@ -624,7 +644,7 @@ const TCP = struct {
                     .msg_iov = &iov,
                     .msg_iovlen = iov.len,
                 };
-                g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e null; // async
+                g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e null;
             } else if (has_tls) {
                 // merge into one ssl record
                 var buf: [2 + c.DNS_QMSG_MAXSIZE]u8 align(2) = undefined;
@@ -638,7 +658,7 @@ const TCP = struct {
                     var err: c_int = undefined;
                     cc.SSL_write(self.ssl(), data, &err) orelse switch (err) {
                         c.WOLFSSL_ERROR_WANT_WRITE => {
-                            g.evloop.wait_writable(fdobj); // async
+                            g.evloop.wait_writable(fdobj) orelse return null;
                             continue;
                         },
                         else => {
@@ -661,9 +681,9 @@ const TCP = struct {
             if (!self.fdobj_ok(fdobj)) return null;
 
             if (self.upstream.proto != .tls) {
-                g.evloop.recv_exactly(fdobj, buf, flags) catch |err| switch (err) {
+                g.evloop.recv_full(fdobj, buf, flags) catch |err| switch (err) {
                     error.eof => return null,
-                    error.other => break :e null,
+                    error.errno => break :e null,
                 };
             } else if (has_tls) {
                 var nread: usize = 0;
@@ -676,7 +696,7 @@ const TCP = struct {
                             return null;
                         },
                         c.WOLFSSL_ERROR_WANT_READ => {
-                            g.evloop.wait_readable(fdobj); // async
+                            g.evloop.wait_readable(fdobj) orelse return null;
                             continue;
                         },
                         else => {
@@ -696,9 +716,9 @@ const TCP = struct {
 
 fn tcp_ctx(self: *Upstream) *TCP {
     assert(self.proto == .tcpi or self.proto == .tcp or self.proto == .tls);
-    if (self.ctx == null)
-        self.ctx = TCP.new(self);
-    return cc.ptrcast(*TCP, self.ctx.?);
+    if (self.data == null)
+        self.data = TCP.new(self);
+    return cc.ptrcast(*TCP, self.data.?);
 }
 
 fn tcp_send(self: *Upstream, qmsg: *RcMsg) void {
