@@ -1005,7 +1005,7 @@ pub const Group = struct {
 };
 
 pub const SendFlags = enum(u8) {
-    first_query = 1 << 0, // qctx_list: empty -> non-empty
+    first_query = 1 << 0, // query_list: empty -> non-empty
     from_tcp = 1 << 1, // query from tcp or udp(default)
     _,
     pub usingnamespace flags_op.get(SendFlags);
