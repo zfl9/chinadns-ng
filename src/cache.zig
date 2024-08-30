@@ -117,7 +117,7 @@ fn enabled() bool {
 
 fn del_nofree(cache_msg: *CacheMsg) void {
     map.del(cache_msg);
-    cache_msg.list_node.unlink();
+    cache_msg.node.unlink();
 }
 
 /// not expired or stale cache
@@ -153,7 +153,7 @@ pub fn get(
 
     if (ttl_ok(ttl)) {
         // not expired or stale cache
-        _list.move_to_head(&cache_msg.list_node);
+        _list.move_to_head(&cache_msg.node);
         return cache_msg.msg();
     } else {
         // expired
@@ -198,14 +198,14 @@ pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
         } else if (map._nitems < g.cache_size) {
             break :b CacheMsg.new(msg, qnamelen, ttl, hashv);
         } else {
-            const old = CacheMsg.from_list_node(_list.tail());
+            const old = CacheMsg.from_node(_list.tail());
             del_nofree(old);
             break :b old.reuse(msg, qnamelen, ttl, hashv);
         }
     };
 
     map.add(cache_msg);
-    _list.link_to_head(&cache_msg.list_node);
+    _list.link_to_head(&cache_msg.node);
 
     return true;
 }
@@ -227,7 +227,7 @@ pub fn load() void {
     var data = mem;
     while (CacheMsg.load(&data)) |cache_msg| {
         map.add(cache_msg);
-        _list.link_to_tail(&cache_msg.list_node);
+        _list.link_to_tail(&cache_msg.node);
 
         if (map._nitems >= g.cache_size) break;
     }
@@ -260,7 +260,7 @@ pub fn dump(event: enum { on_exit, on_manual }) void {
 
     var it = _list.iterator();
     while (it.next()) |node| {
-        const cache_msg = CacheMsg.from_list_node(node);
+        const cache_msg = CacheMsg.from_node(node);
 
         const ttl = cache_msg.get_ttl();
         if (!ttl_ok(ttl))

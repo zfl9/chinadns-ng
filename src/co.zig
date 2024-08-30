@@ -23,6 +23,21 @@ pub fn terminate(top_frame: anyframe, frame_size: usize) void {
     _frame_size = frame_size;
 }
 
+// ========================================================================
+
+const SIZE = 64;
+const ALIGN = @alignOf(std.c.max_align_t);
+var _data: [SIZE]u8 align(ALIGN) = undefined;
+
+/// pass data to the target coroutine on resume
+pub fn data(comptime T: type) *T {
+    comptime assert(@sizeOf(T) <= SIZE);
+    comptime assert(@alignOf(T) <= ALIGN);
+    return std.mem.bytesAsValue(T, _data[0..@sizeOf(T)]);
+}
+
+// ========================================================================
+
 var _terminated: ?anyframe = null;
 var _frame_size: usize = 0;
 

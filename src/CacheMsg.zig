@@ -13,7 +13,7 @@ const Bytes = cc.Bytes;
 const CacheMsg = @This();
 
 next: ?*CacheMsg = null, // for hashmap
-list_node: Node = undefined,
+node: Node = undefined,
 update_time: c.time_t,
 hashv: c_uint,
 ttl: i32,
@@ -73,8 +73,8 @@ pub fn free(self: *CacheMsg) void {
         g.allocator.free(self.mem());
 }
 
-pub fn from_list_node(node: *Node) *CacheMsg {
-    return @fieldParentPtr(CacheMsg, "list_node", node);
+pub fn from_node(node: *Node) *CacheMsg {
+    return @fieldParentPtr(CacheMsg, "node", node);
 }
 
 pub fn from_msg(in_msg: []const u8) *CacheMsg {

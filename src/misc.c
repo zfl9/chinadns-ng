@@ -3,8 +3,16 @@
 #include "uthash.h"
 #include <stdio.h>
 #include <string.h>
-#include <signal.h>
+#include <time.h>
 #include <sys/stat.h>
+
+void sig_register(int sig, sighandler_t handler) {
+    struct sigaction act;
+    act.sa_handler = handler;
+    act.sa_flags = 0;
+    sigemptyset(&act.sa_mask);
+    sigaction(sig, &act, NULL);
+}
 
 const void *SIG_IGNORE(void) {
     return SIG_IGN;
@@ -12,10 +20,6 @@ const void *SIG_IGNORE(void) {
 
 const void *SIG_DEFAULT(void) {
     return SIG_DFL;
-}
-
-const void *SIG_ERROR(void) {
-    return SIG_ERR;
 }
 
 bool is_dir(const char *path) {
@@ -55,4 +59,10 @@ bool has_aes(void) {
 out:
     if (f) fclose(f);
     return found;
+}
+
+u64 monotime(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (u64)t.tv_sec * 1000 + (u64)t.tv_nsec / 1000000;
 }

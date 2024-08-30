@@ -22,18 +22,17 @@ const assert = std.debug.assert;
 
 comptime {
     // @compileLog("sizeof(QueryCtx):", @sizeOf(QueryCtx), "alignof(QueryCtx):", @alignOf(QueryCtx));
-    // @compileLog("sizeof(c.time_t):", @sizeOf(c.time_t), "alignof(c.time_t):", @alignOf(c.time_t));
     // @compileLog("sizeof(cc.SockAddr):", @sizeOf(cc.SockAddr), "alignof(cc.SockAddr):", @alignOf(cc.SockAddr));
 }
 
 const Query = struct {
     // linked list
-    list_node: Node = undefined,
+    node: Node = undefined,
 
     // alignment: 8/4
     fdobj: *EvLoop.Fd, // requester's fdobj
     trust_msg: ?*RcMsg = null,
-    req_time: c.time_t,
+    req_time: u64, // monotime (ms)
 
     // alignment: 4
     src_addr: cc.SockAddr,
@@ -69,7 +68,7 @@ const Query = struct {
             .src_addr = if (!from_local) src_addr.* else undefined,
             .tag = tag,
             .flags = flags,
-            .req_time = cc.time(),
+            .req_time = cc.monotime(),
         };
 
         return self;
@@ -87,15 +86,48 @@ const Query = struct {
         g.allocator.destroy(self);
     }
 
-    pub fn from_list_node(node: *Node) *Query {
-        return @fieldParentPtr(Query, "list_node", node);
+    pub fn from_node(node: *Node) *Query {
+        return @fieldParentPtr(Query, "node", node);
+    }
+
+    pub fn get_deadline(self: *const Query) u64 {
+        return self.req_time + cc.to_u64(g.upstream_timeout) * 1000;
+    }
+
+    /// remove from query_list and free()
+    pub fn on_timeout(self: *const Query) void {
+        if (g.verbose()) {
+            const from: cc.ConstStr = if (self.flags.has(.from_local))
+                "local"
+            else if (self.flags.has(.from_tcp))
+                "tcp"
+            else
+                "udp";
+
+            var ip: cc.IpStrBuf = undefined;
+            var port: u16 = undefined;
+            if (self.flags.has(.from_local)) {
+                ip[0] = '0';
+                ip[1] = 0;
+                port = 0;
+            } else {
+                self.src_addr.to_text(&ip, &port);
+            }
+
+            log.warn(
+                @src(),
+                "query(qid:%u, id:%u, tag:%s) from %s://%s#%u [timeout]",
+                .{ cc.to_uint(self.qid), cc.to_uint(self.id), self.tag.name(), from, &ip, cc.to_uint(port) },
+            );
+        }
+
+        _query_list.del(self);
     }
 
     pub const List = struct {
         map: std.AutoHashMapUnmanaged(u16, *Query),
         list: Node,
-
-        var _last_qid: u16 = 0;
+        last_qid: u16 = 0,
 
         pub fn init(self: *List) void {
             self.* = .{
@@ -132,8 +164,8 @@ const Query = struct {
 
             first_query.* = self.is_empty();
 
-            _last_qid +%= 1;
-            const qid = _last_qid;
+            self.last_qid +%= 1;
+            const qid = self.last_qid;
 
             const id = dns.get_id(msg);
             dns.set_id(msg, qid);
@@ -141,7 +173,7 @@ const Query = struct {
             const q = Query.new(qid, id, bufsz, fdobj, src_addr, tag, flags);
 
             self.map.putNoClobber(g.allocator, qid, q) catch unreachable;
-            self.list.link_to_tail(&q.list_node);
+            self.list.link_to_tail(&q.node);
 
             return q;
         }
@@ -162,7 +194,7 @@ const Query = struct {
 
         /// remove from list
         pub fn del_nofree(self: *List, q: *const Query) void {
-            q.list_node.unlink();
+            q.node.unlink();
             assert(self.map.remove(q.qid));
         }
     };
@@ -215,7 +247,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
         while (true) {
             // read len (be16)
             var len: u16 = undefined;
-            g.evloop.recv_full(fdobj, std.mem.asBytes(&len), 0) catch |err| switch (err) {
+            g.evloop.read(fdobj, std.mem.asBytes(&len)) catch |err| switch (err) {
                 error.eof => return,
                 error.errno => break :e .{ .op = "read_len" },
             };
@@ -238,7 +270,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
 
             // read msg
             qmsg.len = len;
-            g.evloop.recv_full(fdobj, qmsg.msg(), 0) catch |err| switch (err) {
+            g.evloop.read(fdobj, qmsg.msg()) catch |err| switch (err) {
                 error.eof => break :e .{ .op = "read_msg", .msg = "connection closed" },
                 error.errno => break :e .{ .op = "read_msg" },
             };
@@ -278,7 +310,7 @@ fn listen_udp(fd: c_int, ip: cc.ConstStr, port: u16) void {
         }
 
         var src_addr: cc.SockAddr = undefined;
-        const len = g.evloop.recvfrom(fdobj, qmsg.buf(), 0, &src_addr) orelse {
+        const len = g.evloop.read_udp(fdobj, qmsg.buf(), &src_addr) orelse {
             log.warn(@src(), "recvfrom(fd:%d, %s#%u) failed: (%d) %m", .{ fd, ip, cc.to_uint(port), cc.errno() });
             continue;
         };
@@ -658,6 +690,7 @@ fn use_china_reply(msg: []const u8, qnamelen: c_int, p_test_res: *?dns.TestIpRes
     };
 }
 
+/// [nosuspend]
 pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     var msg = rmsg.msg();
 
@@ -752,7 +785,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     };
 
     // must be deleted from the `query_list` immediately, see the `check_timeout()`
-    _query_list.del_nofree(q);
+    _query_list.del_nofree(q); // TODO: _query_list.del(q)
 
     // AAAA filter (empty the reply)
     var ip_filtered = false;
@@ -783,13 +816,15 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
         if (g.verbose()) rlog.cache(ttl, msg.len);
 
     // must be at the end
-    q.free();
+    q.free(); // TODO: _query_list.del(q)
 }
 
-/// [suspending]
+// =========================================================================
+
+/// [nosuspend]
 fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, bufsz: u16, id: c.be16, qflags: Query.Flags) void {
-    var iov = [_]cc.iovec_t{
-        undefined, // for tcp
+    var iovec = [_]cc.iovec_t{
+        undefined, // for tcp (length field)
         .{
             .iov_base = std.mem.asBytes(&cc.to_u16(id)),
             .iov_len = 2,
@@ -801,20 +836,16 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
     };
 
     if (qflags.has(.from_tcp)) {
-        iov[0] = .{
+        iovec[0] = .{
             .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
             .iov_len = 2,
         };
-        const msghdr = cc.msghdr_t{
-            .msg_iov = &iov,
-            .msg_iovlen = iov.len,
-        };
-        if (g.evloop.sendmsg(fdobj, &msghdr, 0) != null) return;
+        _tcp_sender.push(fdobj, &iovec);
     } else {
         // from udp
         if (msg.len > bufsz) {
             const tc_msg = dns.truncate(msg); // ptr to static buffer
-            iov[2] = .{
+            iovec[2] = .{
                 .iov_base = tc_msg[2..].ptr,
                 .iov_len = tc_msg[2..].len,
             };
@@ -822,34 +853,20 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
         const msghdr = cc.msghdr_t{
             .msg_name = cc.remove_const(src_addr),
             .msg_namelen = src_addr.len(),
-            .msg_iov = iov[1..],
-            .msg_iovlen = iov[1..].len,
+            .msg_iov = iovec[1..],
+            .msg_iovlen = iovec[1..].len,
         };
-        if (cc.sendmsg(fdobj.fd, &msghdr, 0) != null) return;
+        _ = cc.sendmsg(fdobj.fd, &msghdr, 0);
     }
-
-    // error handling
-
-    const proto: cc.ConstStr = if (qflags.has(.from_tcp)) "tcp" else "udp";
-
-    var ip: cc.IpStrBuf = undefined;
-    var port: u16 = undefined;
-    src_addr.to_text(&ip, &port);
-
-    log.warn(
-        @src(),
-        "reply(id:%u, size:%zu) to %s://%s#%u failed: (%d) %m",
-        .{ cc.to_uint(dns.get_id(msg)), msg.len, proto, &ip, cc.to_uint(port), cc.errno() },
-    );
 }
 
-/// [suspending] for bad query msg
+/// [nosuspend] for bad query msg
 fn send_reply_xxx(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qflags: Query.Flags) void {
     if (msg.len >= dns.header_len())
         _ = dns.empty_reply(msg, 0);
 
     if (qflags.has(.from_tcp)) {
-        var iov = [_]cc.iovec_t{
+        var iovec = [_]cc.iovec_t{
             .{
                 .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
                 .iov_len = 2,
@@ -859,11 +876,7 @@ fn send_reply_xxx(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qf
                 .iov_len = msg.len,
             },
         };
-        const msghdr: cc.msghdr_t = .{
-            .msg_iov = &iov,
-            .msg_iovlen = iov.len,
-        };
-        _ = g.evloop.sendmsg(fdobj, &msghdr, 0);
+        _tcp_sender.push(fdobj, &iovec);
     } else {
         _ = cc.sendto(fdobj.fd, msg, 0, src_addr);
     }
@@ -871,49 +884,185 @@ fn send_reply_xxx(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qf
 
 // =========================================================================
 
-/// q will be free()
-fn on_timeout(q: *const Query) void {
-    if (g.verbose()) {
-        const from: cc.ConstStr = if (q.flags.has(.from_local))
-            "local"
-        else if (q.flags.has(.from_tcp))
-            "tcp"
-        else
-            "udp";
+var _tcp_sender: TcpSender = undefined;
 
-        var ip: cc.IpStrBuf = undefined;
-        var port: u16 = undefined;
-        if (q.flags.has(.from_local)) {
-            ip[0] = '0';
-            ip[1] = 0;
-            port = 0;
-        } else {
-            q.src_addr.to_text(&ip, &port);
+const TcpSender = struct {
+    list: Node, // queue head
+    pop_co: ?anyframe = null, // suspending on pop()
+    sending_time: u64 = 0, // start time (ms)
+    sending_fdobj: *EvLoop.Fd = undefined,
+
+    const TaskNode = struct {
+        node: Node, // queue node
+        task: Task,
+
+        pub fn from_node(node: *Node) *TaskNode {
+            return @fieldParentPtr(TaskNode, "node", node);
+        }
+    };
+
+    const Task = struct {
+        fdobj: *EvLoop.Fd, // raw_ptr (sync) | referenced (async)
+        data: union(enum) {
+            iovec: []cc.iovec_t, // raw_ptr (sync)
+            bytes: []const u8, // copied (async)
+        },
+
+        pub fn is_sync(self: *const Task) bool {
+            return self.data == .iovec;
         }
 
-        log.warn(
-            @src(),
-            "query(qid:%u, id:%u, tag:%s) from %s://%s#%u [timeout]",
-            .{ cc.to_uint(q.qid), cc.to_uint(q.id), q.tag.name(), from, &ip, cc.to_uint(port) },
-        );
+        pub fn ref(self: *Task) void {
+            assert(self.is_sync());
+
+            _ = self.fdobj.ref();
+            self.data = .{ .bytes = cc.iovec_dupe(self.data.iovec) };
+        }
+
+        pub fn unref(self: *const Task) void {
+            assert(!self.is_sync());
+
+            self.fdobj.unref();
+            g.allocator.free(self.data.bytes);
+        }
+    };
+
+    pub fn init(self: *TcpSender) void {
+        self.* = .{
+            .list = undefined,
+        };
+        self.list.init();
+
+        co.start(sender, .{self});
     }
 
-    _query_list.del(q);
-}
+    fn sender(self: *TcpSender) void {
+        defer co.terminate(@frame(), @frameSize(sender));
 
-pub fn check_timeout() c_int {
-    const now = cc.time();
+        while (true) {
+            var task: Task = undefined;
+
+            self.pop(&task);
+
+            if (task.is_sync()) {
+                const total = cc.iovec_len(task.data.iovec);
+
+                // try sending it directly (non-blocking)
+                const sent = cc.writev(task.fdobj.fd, task.data.iovec) orelse switch (cc.errno()) {
+                    c.EAGAIN => 0,
+                    else => {
+                        on_error(task.fdobj);
+                        continue;
+                    },
+                };
+
+                // in the vast majority of cases it can be sent all at once
+                if (sent == total) continue;
+
+                // very unfortunately
+                assert(sent < total);
+                cc.iovec_skip(&task.data.iovec, sent);
+
+                task.ref();
+
+                log.warn(
+                    @src(),
+                    "send(fd:%d, total:%zu, sent:%zu, remain:%zu) blocking ...",
+                    .{ task.fdobj.fd, total, sent, task.data.bytes.len },
+                );
+            }
+
+            self.sending_time = cc.monotime();
+            self.sending_fdobj = task.fdobj;
+
+            g.evloop.write(task.fdobj, task.data.bytes) orelse on_error(task.fdobj);
+
+            self.sending_time = 0;
+            self.sending_fdobj = undefined;
+
+            task.unref();
+        }
+    }
+
+    fn on_error(fdobj: *const EvLoop.Fd) void {
+        log.warn(@src(), "send(fd:%d) failed: (%d) %m", .{ fdobj.fd, cc.errno() });
+    }
+
+    pub fn get_deadline(self: *const TcpSender) ?u64 {
+        if (self.sending_time > 0)
+            return self.sending_time + 100; // 100ms
+        return null;
+    }
+
+    pub fn on_timeout(self: *TcpSender) void {
+        assert(self.sending_time > 0);
+        self.sending_fdobj.cancel();
+    }
+
+    fn co_data() *Task {
+        return co.data(Task);
+    }
+
+    fn pop(self: *TcpSender, task: *Task) void {
+        if (self.list.is_empty()) {
+            self.pop_co = @frame();
+            suspend {}
+            self.pop_co = null;
+
+            task.* = co_data().*;
+        } else {
+            const task_node = TaskNode.from_node(self.list.head());
+            task_node.node.unlink();
+
+            task.* = task_node.task;
+
+            g.allocator.destroy(task_node);
+        }
+    }
+
+    pub fn push(self: *TcpSender, fdobj: *EvLoop.Fd, iovec: []cc.iovec_t) void {
+        if (self.pop_co) |pop_co| {
+            assert(self.list.is_empty());
+            co_data().* = .{
+                .fdobj = fdobj,
+                .data = .{ .iovec = iovec },
+            };
+            co.do_resume(pop_co);
+        } else {
+            const task_node = g.allocator.create(TaskNode) catch unreachable;
+            task_node.* = .{
+                .task = .{
+                    .fdobj = fdobj,
+                    .data = .{ .iovec = iovec },
+                },
+                .node = undefined,
+            };
+            task_node.task.ref();
+            self.list.link_to_tail(&task_node.node);
+        }
+    }
+};
+
+// =========================================================================
+
+pub fn check_timeout(timer: *EvLoop.Timer) void {
+    // check tcp_sender
+    while (_tcp_sender.get_deadline()) |deadline| {
+        if (timer.check_deadline(deadline))
+            nosuspend _tcp_sender.on_timeout()
+        else
+            break;
+    }
+
+    // check query_list
     var it = _query_list.list.iterator();
     while (it.next()) |q_node| {
-        const q = Query.from_list_node(q_node);
-        const deadline = q.req_time + g.upstream_timeout;
-        if (now >= deadline) {
-            nosuspend on_timeout(q);
-        } else {
-            return cc.to_int((deadline - now) * 1000); // ms
-        }
+        const q = Query.from_node(q_node);
+        if (timer.check_deadline(q.get_deadline()))
+            nosuspend q.on_timeout()
+        else
+            break;
     }
-    return -1;
 }
 
 // =========================================================================
@@ -946,6 +1095,7 @@ noinline fn do_start(ip: cc.ConstStr, port: u16, socktype: net.SockType) void {
 
 pub fn start() void {
     _query_list.init();
+    _tcp_sender.init();
 
     for (g.bind_ips.items()) |ip| {
         for (g.bind_ports) |p| {

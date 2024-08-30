@@ -114,7 +114,7 @@ const TypedNode = struct {
 const UDP = struct {
     typed_node: TypedNode,
     fdobj: *EvLoop.Fd,
-    create_time: c.time_t,
+    create_time: u64, // monotonic time in ms
     query_rtime: u16, // relative to create_time
     query_count: u16,
     reply_count: u16,
@@ -313,27 +313,28 @@ const TCP = struct {
     const PENDING_MAX = std.math.maxInt(u16);
 
     const MsgQueue = struct {
-        head: ?*MsgNode = null,
-        tail: ?*MsgNode = null,
+        head: ?*Msg = null,
+        tail: ?*Msg = null,
         waiter: ?anyframe = null,
 
-        const MsgNode = struct {
+        const Msg = struct {
             msg: *RcMsg,
-            next: *MsgNode,
+            next: *Msg,
         };
 
-        /// `null`: cancel wait
-        var _pushed_msg: ?*RcMsg = null;
+        fn co_data() *?*RcMsg {
+            return co.data(?*RcMsg);
+        }
 
         fn do_push(self: *MsgQueue, msg: *RcMsg, pos: enum { front, back }) void {
             if (self.waiter) |waiter| {
                 assert(self.is_empty());
-                _pushed_msg = msg;
+                co_data().* = msg;
                 co.do_resume(waiter);
                 return;
             }
 
-            const node = g.allocator.create(MsgNode) catch unreachable;
+            const node = g.allocator.create(Msg) catch unreachable;
             node.* = .{
                 .msg = msg,
                 .next = undefined,
@@ -380,14 +381,14 @@ const TCP = struct {
                 self.waiter = @frame();
                 suspend {}
                 self.waiter = null;
-                return _pushed_msg;
+                return co_data().*;
             }
         }
 
         pub fn cancel_wait(self: *const MsgQueue) void {
             if (self.waiter) |waiter| {
                 assert(self.is_empty());
-                _pushed_msg = null;
+                co_data().* = null;
                 co.do_resume(waiter);
             }
         }
@@ -537,7 +538,7 @@ const TCP = struct {
         while (true) {
             // read the len
             var rlen: u16 = undefined;
-            self.do_recv(fdobj, std.mem.asBytes(&rlen), 0) orelse return;
+            self.do_recv(fdobj, std.mem.asBytes(&rlen)) orelse return;
 
             // check the len
             rlen = cc.ntohs(rlen);
@@ -557,7 +558,7 @@ const TCP = struct {
 
             // read the msg
             rmsg.len = rlen;
-            self.do_recv(fdobj, rmsg.msg(), 0) orelse return;
+            self.do_recv(fdobj, rmsg.msg()) orelse return;
 
             if (self.fdobj_ok(fdobj))
                 self.on_reply(rmsg);
@@ -630,7 +631,7 @@ const TCP = struct {
             if (!self.fdobj_ok(fdobj)) return null;
 
             if (self.upstream.proto != .tls) {
-                var iov = [_]cc.iovec_t{
+                var iovec = [_]cc.iovec_t{
                     .{
                         .iov_base = std.mem.asBytes(&cc.htons(qmsg.len)),
                         .iov_len = @sizeOf(u16),
@@ -640,11 +641,7 @@ const TCP = struct {
                         .iov_len = qmsg.len,
                     },
                 };
-                const msg = cc.msghdr_t{
-                    .msg_iov = &iov,
-                    .msg_iovlen = iov.len,
-                };
-                g.evloop.sendmsg(fdobj, &msg, 0) orelse break :e null;
+                g.evloop.writev(fdobj, &iovec) orelse break :e null;
             } else if (has_tls) {
                 // merge into one ssl record
                 var buf: [2 + c.DNS_QMSG_MAXSIZE]u8 align(2) = undefined;
@@ -675,13 +672,13 @@ const TCP = struct {
         return self.on_error("send", errmsg);
     }
 
-    fn do_recv(self: *TCP, fdobj: *EvLoop.Fd, buf: []u8, flags: c_int) ?void {
+    fn do_recv(self: *TCP, fdobj: *EvLoop.Fd, buf: []u8) ?void {
         // null means strerror(errno)
         const errmsg: ?cc.ConstStr = e: {
             if (!self.fdobj_ok(fdobj)) return null;
 
             if (self.upstream.proto != .tls) {
-                g.evloop.recv_full(fdobj, buf, flags) catch |err| switch (err) {
+                g.evloop.read(fdobj, buf) catch |err| switch (err) {
                     error.eof => return null,
                     error.errno => break :e null,
                 };
@@ -790,6 +787,7 @@ pub const Proto = enum {
 // ======================================================
 
 /// for udp upstream
+/// TODO: delete
 const UdpLife = struct {
     create_time: c.time_t = 0,
     query_count: u8 = 0,

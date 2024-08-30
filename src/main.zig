@@ -16,10 +16,7 @@ const co = @import("co.zig");
 const groups = @import("groups.zig");
 const cache = @import("cache.zig");
 const verdict_cache = @import("verdict_cache.zig");
-
-// TODO:
-// - alloc_only allocator
-// - vla/alloca allocator (another stack)
+const assert = std.debug.assert;
 
 // ============================================================================
 
@@ -34,70 +31,100 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 
 // ============================================================================
 
-const _debug = builtin.mode == .Debug;
+const FnEnum = enum {
+    module_init,
+    module_deinit,
+    check_timeout,
+};
 
-const gpa_t = if (_debug) std.heap.GeneralPurposeAllocator(.{}) else void;
-var _gpa: gpa_t = undefined;
-
-const pipe_fds_t = if (_debug) [2]c_int else void;
-var _pipe_fds: pipe_fds_t = undefined;
-
-fn memleak_checker() void {
-    defer co.terminate(@frame(), @frameSize(memleak_checker));
-
-    cc.pipe2(&_pipe_fds, c.O_CLOEXEC | c.O_NONBLOCK) orelse {
-        log.err(@src(), "pipe() failed: (%d) %m", .{cc.errno()});
-        @panic("pipe failed");
-    };
-    defer _ = cc.close(_pipe_fds[1]); // write end
-
-    // register sig_handler
-    _ = cc.signal(c.SIGUSR2, struct {
-        fn handler(_: c_int) callconv(.C) void {
-            const v: u8 = 0;
-            _ = cc.write(_pipe_fds[1], std.mem.asBytes(&v));
+pub fn call_module_fn(comptime fn_enum: FnEnum, args: anytype) void {
+    const fn_name = comptime @tagName(fn_enum);
+    comptime var i = 0;
+    inline while (i < modules.module_list.len) : (i += 1) {
+        const module = modules.module_list[i];
+        const module_name: cc.ConstStr = modules.name_list[i];
+        if (@hasDecl(module, fn_name)) {
+            if (false) log.debug(@src(), "%s.%s()", .{ module_name, fn_name.ptr });
+            const options: std.builtin.CallOptions = .{};
+            const func = @field(module, fn_name);
+            @call(options, func, args);
         }
-    }.handler);
-
-    const fdobj = EvLoop.Fd.new(_pipe_fds[0]);
-    defer fdobj.free(); // read end
-
-    while (true) {
-        var v: u8 = undefined;
-        _ = g.evloop.read(fdobj, std.mem.asBytes(&v)) orelse {
-            log.err(@src(), "read(%d) failed: (%d) %m", .{ fdobj.fd, cc.errno() });
-            continue;
-        };
-        log.info(@src(), "signal received, check memory leaks ...", .{});
-        _ = _gpa.detectLeaks();
     }
 }
 
 // ============================================================================
 
-/// called from EvLoop.check_timeout
-pub const check_timeout = server.check_timeout;
+const _debug = builtin.mode == .Debug;
 
-/// called from EvLoop.run
-pub fn check_signal() void {
-    // terminate process
-    if (g.sigexit.* != 0) {
-        cache.dump(.on_exit);
-        verdict_cache.dump(.on_exit);
-        cc.exit(0);
-    }
+const gpa_t = if (_debug) std.heap.GeneralPurposeAllocator(.{}) else void;
+var _gpa: gpa_t = undefined;
 
-    // manual dump cache
-    if (g.sigusr1.* != 0) {
-        g.sigusr1.* = 0;
-        cache.dump(.on_manual);
-        verdict_cache.dump(.on_manual);
+// ============================================================================
+
+var _pipe_fds: [2]c_int = undefined;
+
+fn sig_handler(sig: c_int) callconv(.C) void {
+    _ = cc.write(_pipe_fds[1], std.mem.asBytes(&sig));
+}
+
+fn sig_listener() void {
+    defer co.terminate(@frame(), @frameSize(sig_listener));
+
+    const src = @src();
+
+    cc.pipe2(&_pipe_fds, c.O_CLOEXEC | c.O_NONBLOCK) orelse {
+        log.err(src, "pipe() failed: (%d) %m", .{cc.errno()});
+        return;
+    };
+
+    // read side
+    const fdobj = EvLoop.Fd.new(_pipe_fds[0]);
+    defer fdobj.free();
+
+    // write side
+    defer _ = cc.close(_pipe_fds[1]);
+
+    // register signal handler
+    _ = cc.signal(c.SIGINT, sig_handler); // CTRL C
+    _ = cc.signal(c.SIGTERM, sig_handler); // kill <PID>
+    _ = cc.signal(c.SIGUSR1, sig_handler); // dump cache to file
+    if (_debug) _ = cc.signal(c.SIGUSR2, sig_handler); // detect memory leaks
+
+    // listening for signal
+    while (true) {
+        var sig: c_int = undefined;
+
+        g.evloop.read(fdobj, std.mem.asBytes(&sig)) catch |err| switch (err) {
+            error.eof => return log.err(src, "read(fd:%d) failed: EOF", .{fdobj.fd}),
+            error.errno => return log.err(src, "read(fd:%d) failed: (%d) %m", .{ fdobj.fd, cc.errno() }),
+        };
+
+        switch (sig) {
+            c.SIGINT, c.SIGTERM => {
+                cache.dump(.on_exit);
+                verdict_cache.dump(.on_exit);
+                cc.exit(0);
+            },
+            c.SIGUSR1 => {
+                cache.dump(.on_manual);
+                verdict_cache.dump(.on_manual);
+            },
+            c.SIGUSR2 => {
+                if (_debug)
+                    _ = _gpa.detectLeaks()
+                else
+                    unreachable;
+            },
+            else => unreachable,
+        }
     }
 }
 
+// ============================================================================
+
 pub fn main() u8 {
     g.allocator = if (_debug) b: {
-        _gpa = gpa_t{};
+        _gpa = .{};
         break :b _gpa.allocator();
     } else std.heap.c_allocator;
 
@@ -110,23 +137,6 @@ pub fn main() u8 {
 
     _ = cc.signal(c.SIGPIPE, cc.SIG_IGN());
 
-    // manual dump cache
-    _ = cc.signal(c.SIGUSR1, struct {
-        fn handler(_: c_int) callconv(.C) void {
-            g.sigusr1.* = 1;
-        }
-    }.handler);
-
-    const exit_handler = struct {
-        fn handler(_: c_int) callconv(.C) void {
-            g.sigexit.* = 1;
-        }
-    }.handler;
-
-    // terminate process (dump cache)
-    _ = cc.signal(c.SIGINT, exit_handler); // CTRL + C
-    _ = cc.signal(c.SIGTERM, exit_handler); // kill <PID>
-
     _ = cc.setvbuf(cc.stdout, null, c._IOLBF, 256);
 
     // setting default values for TZ
@@ -135,8 +145,8 @@ pub fn main() u8 {
     // ============================================================================
 
     // used only for business-independent initialization, such as global variables
-    call_module_fn("module_init", .{});
-    defer if (_debug) call_module_fn("module_deinit", .{});
+    call_module_fn(.module_init, .{});
+    defer if (_debug) call_module_fn(.module_deinit, .{});
 
     // ============================================================================
 
@@ -213,24 +223,9 @@ pub fn main() u8 {
 
     server.start();
 
-    if (_debug)
-        co.start(memleak_checker, .{});
+    co.start(sig_listener, .{});
 
     g.evloop.run();
 
     return 0;
-}
-
-fn call_module_fn(comptime fn_name: [:0]const u8, args: anytype) void {
-    comptime var i = 0;
-    inline while (i < modules.module_list.len) : (i += 1) {
-        const module = modules.module_list[i];
-        const module_name: cc.ConstStr = modules.name_list[i];
-        if (@hasDecl(module, fn_name)) {
-            if (false) log.debug(@src(), "%s.%s()", .{ module_name, fn_name.ptr });
-            const options: std.builtin.CallOptions = .{};
-            const func = @field(module, fn_name);
-            @call(options, func, args);
-        }
-    }
 }

@@ -370,23 +370,38 @@ const EVENTS = opaque {
     pub const err: u32 = c.EPOLLERR | c.EPOLLHUP;
 };
 
-/// check for timeout events and handles them, then return the next timeout interval (ms)
-fn check_timeout(self: *EvLoop) c_int {
-    _ = self;
-    // TODO: implement a general-purpose timer manager.
-    // there is currently only one timer, so do this.
-    return root.check_timeout();
-}
+pub const Timer = struct {
+    now: u64,
+    timeout: ?u64 = null,
+
+    /// return true if the `deadline` has been reached,
+    /// false otherwise (and update the timer state).
+    pub fn check_deadline(self: *Timer, deadline: u64) bool {
+        if (self.now >= deadline) {
+            return true;
+        } else {
+            const timeout = deadline - self.now;
+            if (self.timeout == null or timeout < self.timeout.?)
+                self.timeout = timeout;
+            return false;
+        }
+    }
+
+    /// in milliseconds (ms)
+    pub fn get_timeout(self: *const Timer) c_int {
+        if (self.timeout) |timeout|
+            return cc.to_int(timeout);
+        return -1;
+    }
+};
 
 pub fn run(self: *EvLoop) void {
     var evs: Ev.Array(64) = undefined;
 
     while (true) {
-        // check async signal
-        nosuspend root.check_signal();
-
         // handling timeout events and get the next interval
-        const timeout = nosuspend self.check_timeout();
+        var timer: Timer = .{ .now = cc.monotime() };
+        nosuspend root.call_module_fn(.check_timeout, .{&timer});
 
         // empty the list before starting a new epoll_wait
         self.destroyed.clearRetainingCapacity();
@@ -395,10 +410,12 @@ pub fn run(self: *EvLoop) void {
         self.apply_change();
 
         // waiting for I/O events
-        const n = cc.epoll_wait(self.epfd, evs.at(0), cc.to_int(evs.len()), timeout) orelse b: {
-            if (cc.errno() == c.EINTR) break :b -1;
-            log.err(@src(), "epoll_wait(%d) failed: (%d) %m", .{ self.epfd, cc.errno() });
-            cc.exit(1);
+        const n = cc.epoll_wait(self.epfd, evs.at(0), cc.to_int(evs.len()), timer.get_timeout()) orelse switch (cc.errno()) {
+            c.EINTR => -1,
+            else => {
+                log.err(@src(), "epoll_wait(%d) failed: (%d) %m", .{ self.epfd, cc.errno() });
+                cc.exit(1);
+            },
         };
 
         // handling I/O events
@@ -496,63 +513,25 @@ pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*cc.SockAddr) ?c_int {
     } else return null;
 }
 
-pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ?usize {
-    while (!fdobj.is_canceled()) {
-        return cc.read(fdobj.fd, buf) orelse {
-            if (cc.errno() != c.EAGAIN)
-                return null;
-
-            self.add_readable(fdobj, @frame());
-            suspend {}
-            self.del_readable(fdobj, @frame());
-
-            continue;
-        };
-    } else return null;
-}
-
-pub fn recvfrom(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int, src_addr: *cc.SockAddr) ?usize {
-    while (!fdobj.is_canceled()) {
-        return cc.recvfrom(fdobj.fd, buf, flags, src_addr) orelse {
-            if (cc.errno() != c.EAGAIN)
-                return null;
-
-            self.add_readable(fdobj, @frame());
-            suspend {}
-            self.del_readable(fdobj, @frame());
-
-            continue;
-        };
-    } else return null;
-}
-
-pub fn recv(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ?usize {
-    while (!fdobj.is_canceled()) {
-        return cc.recv(fdobj.fd, buf, flags) orelse {
-            if (cc.errno() != c.EAGAIN)
-                return null;
-
-            self.add_readable(fdobj, @frame());
-            suspend {}
-            self.del_readable(fdobj, @frame());
-
-            continue;
-        };
-    } else return null;
-}
-
 const ReadErr = error{ eof, errno };
 
-pub fn recv_full(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ReadErr!void {
+/// read the `buf` full (for stream-based file/socket/pipe)
+pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ReadErr!void {
     var nread: usize = 0;
+
     while (nread < buf.len) {
         if (fdobj.is_canceled())
             return ReadErr.errno; // ECANCELED
-        const n = self.recv(fdobj, buf[nread..], flags) orelse
-            return ReadErr.errno;
-        if (n == 0)
-            return ReadErr.eof;
-        nread += n;
+
+        if (cc.read(fdobj.fd, buf[nread..])) |n| {
+            if (n == 0)
+                return ReadErr.eof;
+            nread += n;
+        } else {
+            if (cc.errno() != c.EAGAIN)
+                return ReadErr.errno;
+        }
+
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (nread < buf.len) {
             self.add_readable(fdobj, @frame());
@@ -562,17 +541,35 @@ pub fn recv_full(self: *EvLoop, fdobj: *Fd, buf: []u8, flags: c_int) ReadErr!voi
     }
 }
 
-pub fn send(self: *EvLoop, fdobj: *Fd, data: []const u8, flags: c_int) ?void {
+pub fn read_udp(self: *EvLoop, fdobj: *Fd, buf: []u8, src_addr: *cc.SockAddr) ?usize {
+    while (!fdobj.is_canceled()) {
+        return cc.recvfrom(fdobj.fd, buf, 0, src_addr) orelse {
+            if (cc.errno() != c.EAGAIN)
+                return null;
+
+            self.add_readable(fdobj, @frame());
+            suspend {}
+            self.del_readable(fdobj, @frame());
+
+            continue;
+        };
+    } else return null;
+}
+
+pub fn write(self: *EvLoop, fdobj: *Fd, data: []const u8) ?void {
     var nsend: usize = 0;
+
     while (nsend < data.len) {
         if (fdobj.is_canceled())
             return null;
-        const n = cc.send(fdobj.fd, data[nsend..], flags) orelse b: {
+
+        if (cc.send(fdobj.fd, data[nsend..], 0)) |n| {
+            nsend += n;
+        } else {
             if (cc.errno() != c.EAGAIN)
                 return null;
-            break :b 0;
-        };
-        nsend += n;
+        }
+
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (nsend < data.len) {
             self.add_writable(fdobj, @frame());
@@ -582,23 +579,25 @@ pub fn send(self: *EvLoop, fdobj: *Fd, data: []const u8, flags: c_int) ?void {
     }
 }
 
-/// the `iov` struct will be modified
-pub fn sendmsg(self: *EvLoop, fdobj: *Fd, msg: *const cc.msghdr_t, flags: c_int) ?void {
-    var remain_len: usize = msg.calc_len();
-    while (remain_len > 0) {
+/// the `iovec` struct will be modified
+pub fn writev(self: *EvLoop, fdobj: *Fd, in_iovec: []cc.iovec_t) ?void {
+    var iovec = in_iovec;
+    var iovec_len = cc.iovec_len(iovec);
+
+    while (iovec_len > 0) {
         if (fdobj.is_canceled())
             return null;
-        const n = cc.sendmsg(fdobj.fd, msg, flags) orelse b: {
+
+        if (cc.writev(fdobj.fd, iovec)) |n| {
+            iovec_len -= n;
+            cc.iovec_skip(&iovec, n);
+        } else {
             if (cc.errno() != c.EAGAIN)
                 return null;
-            break :b 0;
-        };
-        if (n > 0) {
-            remain_len -= n;
-            msg.skip_iov(n);
         }
+
         // https://man7.org/linux/man-pages/man7/epoll.7.html
-        if (remain_len > 0) {
+        if (iovec_len > 0) {
             self.add_writable(fdobj, @frame());
             suspend {}
             self.del_writable(fdobj, @frame());

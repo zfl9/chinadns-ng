@@ -87,11 +87,3 @@ pub var cert_verify: bool = false;
 
 /// the location of CA certs
 pub var ca_certs: DynStr = .{};
-
-/// received SIGUSR1 ?
-pub const sigusr1: *volatile c_int = &sigusr1_v;
-var sigusr1_v: c_int = 0;
-
-/// received SIGTERM ?
-pub const sigexit: *volatile c_int = &sigexit_v;
-var sigexit_v: c_int = 0;

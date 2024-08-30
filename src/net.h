@@ -5,7 +5,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <assert.h>
-#include <signal.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/epoll.h>

@@ -85,7 +85,7 @@ pub fn load() void {
     var line_it = std.mem.split(u8, mem, "\n");
     while (line_it.next()) |line| {
         var err: ?cc.ConstStr = null;
-        defer if (err) |e| log.err(src, "%s: %.*s", .{ e, cc.to_int(line.len), line.ptr });
+        defer if (err) |e| log.warn(src, "%s: %.*s", .{ e, cc.to_int(line.len), line.ptr });
 
         // is_china_domain(1/0) domain_name(ascii_format)
         var it = std.mem.tokenize(u8, line, " \t\r");

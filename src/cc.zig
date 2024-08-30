@@ -82,7 +82,7 @@ pub inline fn ptrdiff_u(comptime T: type, p1: [*]const T, p2: [*]const T) usize 
 
 /// `@ptrCast(P, @alignCast(alignment, ptr))`
 pub inline fn ptrcast(comptime P: type, ptr: anytype) P {
-    return @ptrCast(P, @alignCast(@alignOf(meta.Child(P)), ptr));
+    return @ptrCast(P, @alignCast(meta.alignment(P), ptr));
 }
 
 fn IntCast(comptime DestType: type) type {
@@ -331,6 +331,7 @@ pub inline fn setvbuf(file: *FILE, buffer: ?[*]u8, mode: c_int, size: usize) ?vo
 
 // ==============================================================
 
+/// unix timestamp in seconds
 pub inline fn time() c.time_t {
     const raw = struct {
         extern fn time(t: ?*c.time_t) c.time_t;
@@ -343,6 +344,11 @@ pub inline fn localtime(t: c.time_t) ?*c.struct_tm {
         extern fn localtime(t: *const c.time_t) ?*c.struct_tm;
     };
     return raw.localtime(&t);
+}
+
+/// CLOCK_MONOTONIC in milliseconds (ms)
+pub inline fn monotime() u64 {
+    return c.monotime();
 }
 
 // ==============================================================
@@ -422,6 +428,14 @@ pub inline fn write(fd: c_int, buf: []const u8) ?usize {
         extern fn write(fd: c_int, buf: [*]const u8, len: usize) isize;
     };
     const n = raw.write(fd, buf.ptr, buf.len);
+    return if (n >= 0) to_usize(n) else null;
+}
+
+pub inline fn writev(fd: c_int, iovec: []const iovec_t) ?usize {
+    const raw = struct {
+        extern fn writev(fd: c_int, iovec: [*]const iovec_t, iovec_n: c_int) isize;
+    };
+    const n = raw.writev(fd, iovec.ptr, to_int(iovec.len));
     return if (n >= 0) to_usize(n) else null;
 }
 
@@ -554,11 +568,8 @@ pub inline fn epoll_wait(epfd: c_int, evs: *anyopaque, n_evs: c_int, timeout: c_
 /// SIG_DFL may have address 0
 pub const sighandler_t = ?std.meta.FnPtr(fn (sig: c_int) callconv(.C) void);
 
-pub inline fn signal(sig: c_int, handler: sighandler_t) ?void {
-    const raw = struct {
-        extern fn signal(sig: c_int, handler: sighandler_t) sighandler_t;
-    };
-    return if (raw.signal(sig, handler) == SIG_ERR()) null;
+pub inline fn signal(sig: c_int, handler: sighandler_t) void {
+    return c.sig_register(sig, handler);
 }
 
 pub inline fn SIG_DFL() sighandler_t {
@@ -567,10 +578,6 @@ pub inline fn SIG_DFL() sighandler_t {
 
 pub inline fn SIG_IGN() sighandler_t {
     return @ptrCast(sighandler_t, c.SIG_IGNORE());
-}
-
-inline fn SIG_ERR() sighandler_t {
-    return @ptrCast(sighandler_t, c.SIG_ERROR());
 }
 
 // ==============================================================
@@ -670,6 +677,39 @@ pub const iovec_t = extern struct {
     iov_len: usize,
 };
 
+pub fn iovec_len(iovec: []const iovec_t) usize {
+    var len: usize = 0;
+    for (iovec) |*iov|
+        len += iov.iov_len;
+    return len;
+}
+
+pub fn iovec_dupe(iovec: []const iovec_t) []u8 {
+    const len = iovec_len(iovec);
+    const buffer = g.allocator.alloc(u8, len) catch unreachable;
+    var offset: usize = 0;
+    for (iovec) |*iov| {
+        @memcpy(buffer[offset..].ptr, iov.iov_base, iov.iov_len);
+        offset += iov.iov_len;
+    }
+    return buffer;
+}
+
+pub fn iovec_skip(iovec: *[]iovec_t, in_skip_len: usize) void {
+    var skip_len = in_skip_len;
+    while (skip_len > 0) {
+        const iov = &iovec.*[0];
+        if (skip_len >= iov.iov_len) {
+            iovec.* = iovec.*[1..];
+            skip_len -= iov.iov_len;
+        } else {
+            iov.iov_base += skip_len;
+            iov.iov_len -= skip_len;
+            return;
+        }
+    }
+}
+
 pub const msghdr_t = extern struct {
     msg_name: ?*SockAddr = null,
     msg_namelen: c.socklen_t = 0,
@@ -678,33 +718,6 @@ pub const msghdr_t = extern struct {
     msg_control: ?[*]u8 = null,
     msg_controllen: usize = 0,
     msg_flags: c_int = 0,
-
-    pub fn iov_items(self: *const msghdr_t) []iovec_t {
-        return self.msg_iov[0..self.msg_iovlen];
-    }
-
-    /// data length
-    pub fn calc_len(self: *const msghdr_t) usize {
-        var len: usize = 0;
-        for (self.iov_items()) |*iov|
-            len += iov.iov_len;
-        return len;
-    }
-
-    /// for sendmsg
-    pub fn skip_iov(self: *const msghdr_t, skip_len: usize) void {
-        assert(skip_len > 0);
-        var remain_skip = skip_len;
-        for (self.iov_items()) |*iov| {
-            if (iov.iov_len == 0) continue;
-            const n = std.math.min(iov.iov_len, remain_skip);
-            iov.iov_base += n;
-            iov.iov_len -= n;
-            remain_skip -= n;
-            if (remain_skip == 0) return;
-        }
-        unreachable;
-    }
 };
 
 pub const mmsghdr_t = extern struct {
