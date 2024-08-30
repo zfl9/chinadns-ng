@@ -661,7 +661,8 @@ fn build_wolfssl() *Step {
     ;
 
     const opt_musl: [:0]const u8 = if (is_musl()) "1" else "0";
-    const opt_lto: [:0]const u8 = if (_lto) "-flto" else "";
+    // const opt_lto: [:0]const u8 = if (_lto) "-flto" else "";
+    const opt_lto: [:0]const u8 = ""; // wolfssl may have bugs when building with LTO
     const opt_aesni: [:0]const u8 = if (_target.getCpuArch() == .x86_64) "--enable-aesni" else "";
     const opt_intelasm: [:0]const u8 = if (!_wolfssl_noasm and get_x86_64_level() >= 3) "--enable-intelasm" else "";
     const opt_armasm: [:0]const u8 = if (!_wolfssl_noasm and _target.getCpuArch() == .aarch64) "--enable-armasm" else "";
