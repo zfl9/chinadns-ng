@@ -908,20 +908,19 @@ const TcpSender = struct {
             bytes: []const u8, // copied (async)
         },
 
-        pub fn is_sync(self: *const Task) bool {
+        pub fn in_sync_ctx(self: *const Task) bool {
             return self.data == .iovec;
         }
 
         pub fn ref(self: *Task) void {
-            assert(self.is_sync());
-
+            assert(self.in_sync_ctx());
             _ = self.fdobj.ref();
-            self.data = .{ .bytes = cc.iovec_dupe(self.data.iovec) };
+            const bytes = cc.iovec_dupe(self.data.iovec);
+            self.data = .{ .bytes = bytes };
         }
 
         pub fn unref(self: *const Task) void {
-            assert(!self.is_sync());
-
+            assert(!self.in_sync_ctx());
             self.fdobj.unref();
             g.allocator.free(self.data.bytes);
         }
@@ -939,12 +938,15 @@ const TcpSender = struct {
     fn sender(self: *TcpSender) void {
         defer co.terminate(@frame(), @frameSize(sender));
 
+        const src = @src();
+
         while (true) {
             var task: Task = undefined;
-
             self.pop(&task);
 
-            if (task.is_sync()) {
+            var logging = false;
+
+            if (task.in_sync_ctx()) {
                 const total = cc.iovec_len(task.data.iovec);
 
                 // try sending it directly (non-blocking)
@@ -966,16 +968,24 @@ const TcpSender = struct {
                 task.ref();
 
                 log.warn(
-                    @src(),
-                    "send(fd:%d, total:%zu, sent:%zu, remain:%zu) blocking ...",
-                    .{ task.fdobj.fd, total, sent, task.data.bytes.len },
+                    src,
+                    "send(fd:%d, total:%zu, sent:%zu) blocking ...",
+                    .{ task.fdobj.fd, total, sent },
                 );
+                logging = true;
             }
 
             self.sending_time = cc.monotime();
             self.sending_fdobj = task.fdobj;
 
             g.evloop.write(task.fdobj, task.data.bytes) orelse on_error(task.fdobj);
+
+            if (logging)
+                log.warn(
+                    src,
+                    "send(fd:%d, bytes:%zu, time:%llu) blocking end",
+                    .{ task.fdobj.fd, task.data.bytes.len, cc.to_ulonglong(cc.monotime() - self.sending_time) },
+                );
 
             self.sending_time = 0;
             self.sending_fdobj = undefined;
