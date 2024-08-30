@@ -76,7 +76,7 @@
 git clone https://github.com/zfl9/chinadns-ng
 cd chinadns-ng
 
-# 本机
+# 本机 (某些环境中可能无法构建，请手动指定"-Dtarget"和"-Dcpu")
 zig build # 链接到glibc
 zig build -Dtarget=native-native-musl # 静态链接到musl
 
