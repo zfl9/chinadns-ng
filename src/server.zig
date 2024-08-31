@@ -188,14 +188,9 @@ const Query = struct {
 
         /// remove from list and free(q)
         pub fn del(self: *List, q: *const Query) void {
-            self.del_nofree(q);
-            q.free();
-        }
-
-        /// remove from list
-        pub fn del_nofree(self: *List, q: *const Query) void {
-            q.node.unlink();
             assert(self.map.remove(q.qid));
+            q.node.unlink();
+            q.free();
         }
     };
 };
@@ -275,7 +270,7 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
                 error.errno => break :e .{ .op = "read_msg" },
             };
 
-            on_query(qmsg, fdobj, &src_addr, .from_tcp);
+            nosuspend on_query(qmsg, fdobj, &src_addr, .from_tcp);
         }
     };
 
@@ -316,7 +311,7 @@ fn listen_udp(fd: c_int, ip: cc.ConstStr, port: u16) void {
         };
         qmsg.len = cc.to_u16(len);
 
-        on_query(qmsg, fdobj, &src_addr, Query.Flags.empty());
+        nosuspend on_query(qmsg, fdobj, &src_addr, Query.Flags.empty());
     }
 }
 
@@ -419,6 +414,7 @@ const QueryLog = struct {
     }
 };
 
+/// nosuspend
 fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qflags: Query.Flags) void {
     const msg = qmsg.msg();
     var qflags = in_qflags;
@@ -432,7 +428,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         var src_port: u16 = undefined;
         src_addr.to_text(&src_ip, &src_port);
         log.warn(@src(), "dns.check_query(%s#%u) failed: invalid query msg", .{ &src_ip, cc.to_uint(src_port) });
-        return send_reply_xxx(msg, fdobj, src_addr, qflags); // make the requester happy
+        return send_reply_bad(msg, fdobj, src_addr, qflags); // make the requester happy
     }
 
     const id = dns.get_id(msg);
@@ -484,35 +480,13 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     // check the local records
     var answer_n: u16 = undefined;
     if (local_rr.find_answer(msg, qnamelen, &answer_n)) |answer| {
-        const static = struct {
-            var free_msg: ?[]u8 = null;
-        };
-
-        const msgsz = dns.header_len() + dns.question_len(qnamelen) + answer.len;
-
-        const rmsg = if (static.free_msg) |free_msg| b: {
-            static.free_msg = null;
-            break :b if (msgsz <= free_msg.len)
-                free_msg
-            else
-                g.allocator.realloc(free_msg, msgsz) catch unreachable;
-        } else b: {
-            break :b g.allocator.alloc(u8, msgsz) catch unreachable;
-        };
-
-        defer {
-            if (static.free_msg == null)
-                static.free_msg = rmsg
-            else
-                g.allocator.free(rmsg);
-        }
-
-        dns.make_reply(rmsg, msg, qnamelen, answer, answer_n);
-
         if (g.verbose())
             qlog.local_rr(answer_n, answer.len);
 
-        // suspending
+        const len = dns.header_len() + dns.question_len(qnamelen) + answer.len;
+        const rmsg = cc.static_buf(len); // global static buffer
+        dns.make_reply(rmsg, msg, qnamelen, answer, answer_n);
+
         return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
     }
 
@@ -527,10 +501,6 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     var ttl_r: i32 = undefined;
     var add_ip: bool = undefined;
     if (cache.get(msg, qnamelen, &ttl, &ttl_r, &add_ip)) |cache_msg| {
-        // because send_reply is a suspending func
-        cache.ref(cache_msg);
-        defer cache.unref(cache_msg);
-
         if (g.verbose()) qlog.cache(cache_msg, ttl);
 
         // add the ip to the ipset/nftset
@@ -541,7 +511,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
             }
         }
 
-        // suspending
+        // sync && nosuspend
         send_reply(cache_msg, fdobj, src_addr, bufsz, id, qflags);
 
         if (ttl > ttl_r)
@@ -739,7 +709,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     var ip_test_res: ?dns.TestIpResult = null;
 
     // end the query context ?
-    nosuspend if (q.tag == .none and is_qtype_A_AAAA) {
+    if (q.tag == .none and is_qtype_A_AAAA) {
         switch (upstream.tag) {
             .chn => {
                 if (q.flags.has(.is_china_domain) or use_china_reply(msg, qnamelen, &ip_test_res, &rlog)) {
@@ -782,10 +752,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     } else {
         if (g.verbose())
             rlog.reply("accept", null);
-    };
-
-    // must be deleted from the `query_list` immediately, see the `check_timeout()`
-    _query_list.del_nofree(q); // TODO: _query_list.del(q)
+    }
 
     // AAAA filter (empty the reply)
     var ip_filtered = false;
@@ -804,8 +771,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
             dns.add_ip(msg, qnamelen, addctx);
         };
 
-    // [suspending] send reply to client
-    // TODO: change to nosuspend send_reply
+    // [sync && nosuspend] send reply to client
     if (!q.flags.has(.from_local))
         send_reply(msg, q.fdobj, &q.src_addr, q.bufsz, q.id, q.flags);
 
@@ -816,12 +782,12 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
         if (g.verbose()) rlog.cache(ttl, msg.len);
 
     // must be at the end
-    q.free(); // TODO: _query_list.del(q)
+    _query_list.del(q);
 }
 
 // =========================================================================
 
-/// [nosuspend]
+/// [sync && nosuspend]
 fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, bufsz: u16, id: c.be16, qflags: Query.Flags) void {
     var iovec = [_]cc.iovec_t{
         undefined, // for tcp (length field)
@@ -844,7 +810,7 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
     } else {
         // from udp
         if (msg.len > bufsz) {
-            const tc_msg = dns.truncate(msg); // ptr to static buffer
+            const tc_msg = dns.truncate(msg); // global static buffer
             iovec[2] = .{
                 .iov_base = tc_msg[2..].ptr,
                 .iov_len = tc_msg[2..].len,
@@ -860,8 +826,8 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
     }
 }
 
-/// [nosuspend] for bad query msg
-fn send_reply_xxx(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qflags: Query.Flags) void {
+/// [sync && nosuspend] for bad query msg
+fn send_reply_bad(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qflags: Query.Flags) void {
     if (msg.len >= dns.header_len())
         _ = dns.empty_reply(msg, 0);
 
@@ -902,10 +868,10 @@ const TcpSender = struct {
     };
 
     const Task = struct {
-        fdobj: *EvLoop.Fd, // raw_ptr (sync) | referenced (async)
+        fdobj: *EvLoop.Fd, // raw_ptr (sync_ctx) | referenced (async_ctx)
         data: union(enum) {
-            iovec: []cc.iovec_t, // raw_ptr (sync)
-            bytes: []const u8, // copied (async)
+            iovec: []cc.iovec_t, // raw_ptr (sync_ctx)
+            bytes: []const u8, // copied (async_ctx)
         },
 
         pub fn in_sync_ctx(self: *const Task) bool {
@@ -938,12 +904,11 @@ const TcpSender = struct {
     fn sender(self: *TcpSender) void {
         defer co.terminate(@frame(), @frameSize(sender));
 
-        const src = @src();
-
         while (true) {
             var task: Task = undefined;
             self.pop(&task);
 
+            const src = @src();
             var logging = false;
 
             if (task.in_sync_ctx()) {

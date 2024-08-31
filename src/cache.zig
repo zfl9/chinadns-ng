@@ -163,16 +163,6 @@ pub fn get(
     }
 }
 
-/// call before using the cache msg
-pub fn ref(msg: []const u8) void {
-    return CacheMsg.from_msg(msg).ref();
-}
-
-/// call after using the cache msg (defer)
-pub fn unref(msg: []const u8) void {
-    return CacheMsg.from_msg(msg).unref();
-}
-
 pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (!enabled())
         return false;

@@ -151,12 +151,12 @@ pub noinline fn static_buf(size: usize) []u8 {
     return static.buf.ptr[0..size];
 }
 
-/// convert to C string (static buffer)
+/// convert to C string (global static buffer)
 pub inline fn to_cstr(str: []const u8) Str {
     return to_cstr_x(&.{str});
 }
 
-/// convert to C string (static buffer)
+/// convert to C string (global static buffer)
 pub noinline fn to_cstr_x(str_list: []const []const u8) Str {
     var total_len: usize = 0;
     for (str_list) |str|

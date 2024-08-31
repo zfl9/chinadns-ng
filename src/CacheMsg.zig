@@ -4,7 +4,6 @@ const c = @import("c.zig");
 const cc = @import("cc.zig");
 const dns = @import("dns.zig");
 const log = @import("log.zig");
-const Rc = @import("Rc.zig");
 const Node = @import("Node.zig");
 const Bytes = cc.Bytes;
 
@@ -18,7 +17,6 @@ update_time: c.time_t,
 hashv: c_uint,
 ttl: i32,
 ttl_r: i32, // refresh if ttl <= ttl_r
-rc: Rc = .{},
 msg_len: u16,
 qnamelen: u8,
 added_ip: bool = true, // for db cache
@@ -52,7 +50,7 @@ pub fn new(in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheM
 /// the `in_msg` will be copied \
 /// if reuse fail, `self` will be freed
 pub fn reuse(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32, hashv: c_uint) *CacheMsg {
-    if (self.rc.ref_count == 1 and g.allocator.resize(self.mem(), metadata_len + in_msg.len) != null) {
+    if (g.allocator.resize(self.mem(), metadata_len + in_msg.len) != null) {
         return self.init(in_msg, qnamelen, ttl, hashv);
     } else {
         self.free(); // free the old cache
@@ -60,17 +58,8 @@ pub fn reuse(self: *CacheMsg, in_msg: []const u8, qnamelen: c_int, ttl: i32, has
     }
 }
 
-pub fn ref(self: *CacheMsg) void {
-    return self.rc.ref();
-}
-
-pub fn unref(self: *CacheMsg) void {
-    return self.free();
-}
-
 pub fn free(self: *CacheMsg) void {
-    if (self.rc.unref() == 0)
-        g.allocator.free(self.mem());
+    return g.allocator.free(self.mem());
 }
 
 pub fn from_node(node: *Node) *CacheMsg {
@@ -103,9 +92,6 @@ fn calc_ttl_change(self: *const CacheMsg, now: c.time_t) i32 {
 
 /// return `ttl` (<= 0 means expired)
 pub fn update_ttl(self: *CacheMsg) i32 {
-    if (self.rc.ref_count > 1)
-        return self.get_ttl();
-
     const now = cc.time();
     const ttl_change = self.calc_ttl_change(now);
 

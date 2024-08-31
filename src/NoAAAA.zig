@@ -30,7 +30,7 @@ pub const Rule = opaque {
         return @as(Flags.T, 1) << @intCast(u4, rule);
     }
 
-    /// static buffer
+    /// global static buffer
     pub fn to_name(rule: Rule.T) cc.ConstStr {
         if (rule < ip_china) {
             const tag_name = Tag.from_int(rule).name();
