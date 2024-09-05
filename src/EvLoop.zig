@@ -148,6 +148,9 @@ pub const Fd = struct {
         self.canceled = true;
         // cc.set_errno(c.ECANCELED);
 
+        _ = self.ref();
+        defer self.unref();
+
         if (self.read_frame) |frame|
             co.do_resume(frame);
         if (self.write_frame) |frame|
@@ -541,7 +544,7 @@ pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ReadErr!void {
     }
 }
 
-pub fn read_udp(self: *EvLoop, fdobj: *Fd, buf: []u8, src_addr: *cc.SockAddr) ?usize {
+pub fn read_udp(self: *EvLoop, fdobj: *Fd, buf: []u8, src_addr: ?*cc.SockAddr) ?usize {
     while (!fdobj.is_canceled()) {
         return cc.recvfrom(fdobj.fd, buf, 0, src_addr) orelse {
             if (cc.errno() != c.EAGAIN)

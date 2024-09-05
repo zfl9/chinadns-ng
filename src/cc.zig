@@ -406,12 +406,13 @@ pub inline fn sendto(fd: c_int, buf: []const u8, flags: c_int, addr: *const Sock
     return if (n >= 0) to_usize(n) else null;
 }
 
-pub inline fn recvfrom(fd: c_int, buf: []u8, flags: c_int, addr: *SockAddr) ?usize {
+pub inline fn recvfrom(fd: c_int, buf: []u8, flags: c_int, addr: ?*SockAddr) ?usize {
     const raw = struct {
-        extern fn recvfrom(fd: c_int, buf: [*]u8, len: usize, flags: c_int, addr: *anyopaque, addrlen: *c.socklen_t) isize;
+        extern fn recvfrom(fd: c_int, buf: [*]u8, len: usize, flags: c_int, addr: ?*anyopaque, addrlen: ?*c.socklen_t) isize;
     };
-    var addrlen: c.socklen_t = @sizeOf(SockAddr);
-    const n = raw.recvfrom(fd, buf.ptr, buf.len, flags, addr, &addrlen);
+    var len: c.socklen_t = @sizeOf(SockAddr);
+    const addrlen = if (addr != null) &len else null;
+    const n = raw.recvfrom(fd, buf.ptr, buf.len, flags, addr, addrlen);
     return if (n >= 0) to_usize(n) else null;
 }
 

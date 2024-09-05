@@ -154,15 +154,11 @@ const Query = struct {
             bufsz: u16,
             tag: Tag,
             flags: Flags,
-            /// out param
-            first_query: *bool,
         ) ?*Query {
             if (self.len() >= std.math.maxInt(u16) + 1) {
                 log.warn(@src(), "too many pending requests: %zu", .{self.len()});
                 return null;
             }
-
-            first_query.* = self.is_empty();
 
             self.last_qid +%= 1;
             const qid = self.last_qid;
@@ -200,8 +196,8 @@ var _query_list: Query.List = undefined;
 
 // =======================================================================================================
 
-fn listen_tcp(fd: c_int, ip: cc.ConstStr, port: u16) void {
-    defer co.terminate(@frame(), @frameSize(listen_tcp));
+fn tcp_listener(fd: c_int, ip: cc.ConstStr, port: u16) void {
+    defer co.terminate(@frame(), @frameSize(tcp_listener));
 
     const fdobj = EvLoop.Fd.new(fd);
     defer fdobj.free();
@@ -213,12 +209,12 @@ fn listen_tcp(fd: c_int, ip: cc.ConstStr, port: u16) void {
             continue;
         };
         net.setup_tcp_conn_sock(conn_fd);
-        co.start(service_tcp, .{ conn_fd, &src_addr });
+        co.start(tcp_server, .{ conn_fd, &src_addr });
     }
 }
 
-fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
-    defer co.terminate(@frame(), @frameSize(service_tcp));
+fn tcp_server(fd: c_int, p_src_addr: *const cc.SockAddr) void {
+    defer co.terminate(@frame(), @frameSize(tcp_server));
 
     const fdobj = EvLoop.Fd.new(fd);
     defer fdobj.free();
@@ -284,8 +280,8 @@ fn service_tcp(fd: c_int, p_src_addr: *const cc.SockAddr) void {
         log.warn(src, "%s(fd:%d, %s#%u) failed: (%d) %m", .{ e.op, fd, &ip, cc.to_uint(port), cc.errno() });
 }
 
-fn listen_udp(fd: c_int, ip: cc.ConstStr, port: u16) void {
-    defer co.terminate(@frame(), @frameSize(listen_udp));
+fn udp_server(fd: c_int, ip: cc.ConstStr, port: u16) void {
+    defer co.terminate(@frame(), @frameSize(udp_server));
 
     const fdobj = EvLoop.Fd.new(fd);
     defer fdobj.free();
@@ -491,10 +487,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     }
 
     // for upstream_group.send()
-    var send_flags: Upstream.SendFlags = Upstream.SendFlags.empty();
-
-    if (qflags.has(.from_tcp))
-        send_flags.add(.from_tcp);
+    var from_tcp = qflags.has(.from_tcp);
 
     // check the cache
     var ttl: i32 = undefined;
@@ -522,8 +515,8 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
             qlog.refresh(ttl);
 
         // avoid receiving truncated response
-        if (!send_flags.has(.from_tcp) and cache_msg.len + 30 > c.DNS_EDNS_MINSIZE)
-            send_flags.add(.from_tcp);
+        if (!from_tcp and cache_msg.len + 30 > c.DNS_EDNS_MINSIZE)
+            from_tcp = true;
 
         // mark the q
         qflags.add(.from_local);
@@ -546,8 +539,6 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         }
     }
 
-    var first_query: bool = undefined;
-
     const q = _query_list.add(
         msg,
         fdobj,
@@ -555,26 +546,22 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         bufsz,
         tag,
         qflags,
-        &first_query,
     ) orelse return;
-
-    if (first_query)
-        send_flags.add(.first_query);
 
     if (tag == .none) {
         if (tagnone_china)
-            send_query(.chn, qmsg, send_flags, q, &qlog);
+            send_query(.chn, qmsg, from_tcp, q, &qlog);
         if (tagnone_trust)
-            send_query(.gfw, qmsg, send_flags, q, &qlog);
+            send_query(.gfw, qmsg, from_tcp, q, &qlog);
     } else {
-        send_query(tag, qmsg, send_flags, q, &qlog);
+        send_query(tag, qmsg, from_tcp, q, &qlog);
     }
 }
 
 /// nosuspend
-fn send_query(to_tag: Tag, qmsg: *RcMsg, send_flags: Upstream.SendFlags, q: *const Query, qlog: *const QueryLog) void {
+fn send_query(to_tag: Tag, qmsg: *RcMsg, from_tcp: bool, q: *const Query, qlog: *const QueryLog) void {
     if (g.verbose()) qlog.forward(q, to_tag);
-    nosuspend groups.get_upstream_group(to_tag).send(qmsg, send_flags);
+    nosuspend groups.get_upstream_group(to_tag).send(qmsg, from_tcp);
 }
 
 // =========================================================================
@@ -806,7 +793,7 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
             .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
             .iov_len = 2,
         };
-        _tcp_sender.push(fdobj, &iovec);
+        _tcp_sender.send(fdobj, &iovec);
     } else {
         // from udp
         if (msg.len > bufsz) {
@@ -842,7 +829,7 @@ fn send_reply_bad(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qf
                 .iov_len = msg.len,
             },
         };
-        _tcp_sender.push(fdobj, &iovec);
+        _tcp_sender.send(fdobj, &iovec);
     } else {
         _ = cc.sendto(fdobj.fd, msg, 0, src_addr);
     }
@@ -995,7 +982,7 @@ const TcpSender = struct {
         }
     }
 
-    pub fn push(self: *TcpSender, fdobj: *EvLoop.Fd, iovec: []cc.iovec_t) void {
+    pub fn send(self: *TcpSender, fdobj: *EvLoop.Fd, iovec: []cc.iovec_t) void {
         if (self.pop_co) |pop_co| {
             assert(self.list.is_empty());
             co_data().* = .{
@@ -1050,10 +1037,10 @@ noinline fn do_start(ip: cc.ConstStr, port: u16, socktype: net.SockType) void {
         switch (socktype) {
             .tcp => {
                 cc.listen(fd, 1024) orelse break :e "listen";
-                co.start(listen_tcp, .{ fd, ip, port });
+                co.start(tcp_listener, .{ fd, ip, port });
             },
             .udp => {
-                co.start(listen_udp, .{ fd, ip, port });
+                co.start(udp_server, .{ fd, ip, port });
             },
         }
         return;
