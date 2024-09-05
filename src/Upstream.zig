@@ -95,11 +95,11 @@ fn deinit(self: *const Upstream) void {
 
 /// [nosuspend] send query to upstream
 fn send(self: *Upstream, qmsg: *RcMsg) void {
-    switch (self.proto) {
+    nosuspend switch (self.proto) {
         .udpi, .udp => if (self.udp_session()) |s| s.send_query(qmsg),
         .tcpi, .tcp, .tls => if (self.tcp_session()) |s| s.send_query(qmsg),
         else => unreachable,
-    }
+    };
 }
 
 fn udp_session(self: *Upstream) ?*UDP {
@@ -223,7 +223,7 @@ const UDP = struct {
             self.upstream.session = new_session;
 
             if (new_session) |s|
-                s.send_query(qmsg);
+                nosuspend s.send_query(qmsg);
 
             if (self.is_idle())
                 self.free();
@@ -409,9 +409,12 @@ const TCP = struct {
     query_time: u64 = undefined, // last query time
     query_count: u16 = 0, // total query count
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
-    healthy: bool = false, // current connection processed at least one query
-    freed: bool = false,
-    stopping: bool = false,
+    flags: packed struct {
+        server_ok: bool = false, // the server processed at least one query
+        starting: bool = false, // see the `query_sender`
+        stopping: bool = false,
+        freed: bool = false,
+    } = .{},
 
     const TLS_ = if (has_tls) TLS else struct {};
 
@@ -520,8 +523,8 @@ const TCP = struct {
     }
 
     pub fn free(self: *TCP) void {
-        if (self.freed) return;
-        self.freed = true;
+        if (self.flags.freed) return;
+        self.flags.freed = true;
 
         if (!self.is_idle())
             self.typed_node.node.unlink();
@@ -529,15 +532,17 @@ const TCP = struct {
         if (self.upstream.session_eql(self))
             self.upstream.session = null;
 
+        self.send_list.cancel_wait();
+
         if (self.fdobj) |fdobj| {
             fdobj.cancel();
             fdobj.free();
+            self.fdobj = null;
         }
 
         if (has_tls)
             self.tls.on_close();
 
-        self.send_list.cancel_wait();
         self.send_list.clear();
         self.clear_ack_list(.unref);
 
@@ -581,7 +586,7 @@ const TCP = struct {
             const new_session = new(self.upstream);
             self.upstream.session = new_session;
 
-            new_session.send_query(qmsg);
+            nosuspend new_session.send_query(qmsg);
 
             if (self.is_idle())
                 self.free();
@@ -612,12 +617,12 @@ const TCP = struct {
     /// [suspending] pop from send_list && add to ack_list
     fn pop_qmsg(self: *TCP) ?*RcMsg {
         const qmsg = self.send_list.pop(true) orelse return null;
-        self.on_query(qmsg);
+        self.on_send_msg(qmsg);
         return qmsg;
     }
 
     /// add qmsg to ack_list
-    fn on_query(self: *TCP, qmsg: *RcMsg) void {
+    fn on_send_msg(self: *TCP, qmsg: *RcMsg) void {
         const qid = dns.get_id(qmsg.msg());
         if (self.ack_list.fetchPut(g.allocator, qid, qmsg) catch unreachable) |old| {
             old.value.unref();
@@ -628,10 +633,10 @@ const TCP = struct {
     }
 
     /// remove qmsg from ack_list && qmsg.unref()
-    fn on_reply(self: *TCP, rmsg: *const RcMsg) void {
+    fn on_recv_msg(self: *TCP, rmsg: *const RcMsg) void {
         const qid = dns.get_id(rmsg.msg());
         if (self.ack_list.fetchRemove(qid)) |kv| {
-            self.healthy = true;
+            self.flags.server_ok = true;
             self.pending_n -= 1;
             kv.value.unref();
         } else {
@@ -639,13 +644,19 @@ const TCP = struct {
         }
     }
 
-    fn on_stop(self: *TCP) void {
-        if (self.stopping) return;
+    fn stop(self: *TCP) void {
+        if (self.flags.starting) {
+            self.flags.stopping = true;
+            return;
+        }
+
+        if (self.flags.stopping or self.flags.freed)
+            return;
 
         {
             // cleanup
-            self.stopping = true;
-            defer self.stopping = false;
+            self.flags.stopping = true;
+            defer self.flags.stopping = false;
 
             self.send_list.cancel_wait();
 
@@ -661,7 +672,7 @@ const TCP = struct {
 
         if (self.pending_n > 0) {
             // restart
-            if (self.healthy) {
+            if (self.flags.server_ok) {
                 self.clear_ack_list(.resend);
                 self.start();
             } else {
@@ -695,7 +706,7 @@ const TCP = struct {
         assert(!self.send_list.is_empty());
         assert(self.ack_list.count() == 0);
 
-        self.healthy = false;
+        self.flags.server_ok = false;
         self.create_time = cc.monotime();
 
         co.start(query_sender, .{self});
@@ -704,14 +715,22 @@ const TCP = struct {
     fn query_sender(self: *TCP) void {
         defer co.terminate(@frame(), @frameSize(query_sender));
 
-        defer self.on_stop();
+        defer self.stop();
 
         const fd = net.new_tcp_conn_sock(self.upstream.addr.family()) orelse return;
         self.fdobj = EvLoop.Fd.new(fd);
 
         self.connect() orelse return;
 
+        self.flags.starting = true;
         co.start(reply_receiver, .{self});
+        self.flags.starting = false;
+
+        // `self.stop()` was called
+        if (self.flags.stopping) {
+            self.flags.stopping = false;
+            return; // defer self.stop()
+        }
 
         while (self.pop_qmsg()) |qmsg|
             self.send(qmsg) orelse return;
@@ -720,7 +739,7 @@ const TCP = struct {
     fn reply_receiver(self: *TCP) void {
         defer co.terminate(@frame(), @frameSize(reply_receiver));
 
-        defer self.on_stop();
+        defer self.stop();
 
         var free_rmsg: ?*RcMsg = null;
         defer if (free_rmsg) |rmsg| rmsg.free();
@@ -752,7 +771,7 @@ const TCP = struct {
             self.recv(rmsg.msg()) orelse return;
 
             // update ack_list
-            self.on_reply(rmsg);
+            self.on_recv_msg(rmsg);
 
             // will modify the msg.id
             nosuspend server.on_reply(rmsg, self.upstream);

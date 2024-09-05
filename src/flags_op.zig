@@ -63,7 +63,7 @@ pub fn get(comptime Self: type) type {
 
         // =====================================================
 
-        /// for single flag bit
+        /// for single flag bit \
         /// for multiple flag bits, equivalent to `has_all`
         pub inline fn has(self: Self, in_flags: anytype) bool {
             const flags = init(in_flags);
