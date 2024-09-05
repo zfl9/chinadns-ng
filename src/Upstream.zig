@@ -545,6 +545,7 @@ const TCP = struct {
 
         self.send_list.clear();
         self.clear_ack_list(.unref);
+        self.ack_list.clearAndFree(g.allocator);
 
         g.allocator.destroy(self);
     }
