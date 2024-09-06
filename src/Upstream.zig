@@ -13,6 +13,7 @@ const Tag = @import("tag.zig").Tag;
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
 const Node = @import("Node.zig");
+const str2int = @import("str2int.zig");
 const assert = std.debug.assert;
 
 // ======================================================
@@ -36,10 +37,14 @@ session: ?*anyopaque = null, // `struct UDP` or `struct TCP`
 host: ?cc.ConstStr, // DoT SNI
 url: cc.ConstStr, // for printing
 addr: cc.SockAddr,
-max_count: u16 = 10, // max queries per session (0 means no limit)
-max_life: u16 = 10, // max lifetime(sec) per session (0 means no limit)
+count: ParamValue, // max queries per session (0 means no limit)
+life: ParamValue, // max lifetime(sec) per session (0 means no limit)
 proto: Proto,
 tag: Tag,
+
+const ParamValue = u16;
+const DEFAULT_COUNT: ParamValue = 10;
+const DEFAULT_LIFE: ParamValue = 10;
 
 // ======================================================
 
@@ -51,7 +56,16 @@ fn eql(self: *const Upstream, proto: Proto, addr: *const cc.SockAddr, host: []co
 }
 
 /// for `Group.do_add` (at startup)
-fn init(tag: Tag, proto: Proto, addr: *const cc.SockAddr, host: []const u8, ip: []const u8, port: u16) Upstream {
+fn init(
+    tag: Tag,
+    proto: Proto,
+    addr: *const cc.SockAddr,
+    host: []const u8,
+    ip: []const u8,
+    port: u16,
+    count: ParamValue,
+    life: ParamValue,
+) Upstream {
     const dupe_host: ?cc.ConstStr = if (host.len > 0)
         (g.allocator.dupeZ(u8, host) catch unreachable).ptr
     else
@@ -77,6 +91,8 @@ fn init(tag: Tag, proto: Proto, addr: *const cc.SockAddr, host: []const u8, ip: 
         .addr = addr.*,
         .host = dupe_host,
         .url = dupe_url,
+        .count = count,
+        .life = life,
     };
 }
 
@@ -284,8 +300,8 @@ const UDP = struct {
         if (!self.upstream.session_eql(self))
             return true;
 
-        if ((self.upstream.max_count > 0 and self.query_count >= self.upstream.max_count) or
-            (self.upstream.max_life > 0 and g.evloop.time >= self.create_time + cc.to_u64(self.upstream.max_life) * 1000))
+        if ((self.upstream.count > 0 and self.query_count >= self.upstream.count) or
+            (self.upstream.life > 0 and g.evloop.time >= self.create_time + cc.to_u64(self.upstream.life) * 1000))
         {
             self.upstream.session = null;
             return true;
@@ -569,8 +585,8 @@ const TCP = struct {
         if (!self.upstream.session_eql(self))
             return true;
 
-        if ((self.upstream.max_count > 0 and self.query_count >= self.upstream.max_count) or
-            (self.upstream.max_life > 0 and g.evloop.time >= self.create_time + cc.to_u64(self.upstream.max_life) * 1000))
+        if ((self.upstream.count > 0 and self.query_count >= self.upstream.count) or
+            (self.upstream.life > 0 and g.evloop.time >= self.create_time + cc.to_u64(self.upstream.life) * 1000))
         {
             self.upstream.session = null;
             return true;
@@ -989,17 +1005,17 @@ pub const Group = struct {
         return null;
     }
 
-    /// "[proto://][host@]ip[#port]"
-    pub fn add(self: *Group, tag: Tag, in_value: []const u8) ?void {
+    /// "[proto://][host@]ip[#port][?count=N][?life=N]"
+    pub fn add(self: *Group, tag: Tag, url: []const u8) ?void {
         @setCold(true);
 
-        var value = in_value;
+        var rest = url;
 
         // proto
         const proto = b: {
-            if (std.mem.indexOf(u8, value, "://")) |i| {
-                const proto = value[0 .. i + 3];
-                value = value[i + 3 ..];
+            if (std.mem.indexOf(u8, rest, "://")) |i| {
+                const proto = rest[0 .. i + 3];
+                rest = rest[i + 3 ..];
                 break :b Proto.from_str(proto) orelse
                     return parse_failed("invalid proto", proto);
             }
@@ -1008,9 +1024,9 @@ pub const Group = struct {
 
         // host, only DoT needs it
         const host = b: {
-            if (std.mem.indexOf(u8, value, "@")) |i| {
-                const host = value[0..i];
-                value = value[i + 1 ..];
+            if (std.mem.indexOf(u8, rest, "@")) |i| {
+                const host = rest[0..i];
+                rest = rest[i + 1 ..];
                 if (host.len == 0)
                     return parse_failed("invalid host", host);
                 if (!proto.require_host())
@@ -1020,41 +1036,73 @@ pub const Group = struct {
             break :b "";
         };
 
+        var count = DEFAULT_COUNT;
+        var life = DEFAULT_LIFE;
+
+        // ?param=value
+        while (std.mem.lastIndexOfScalar(u8, rest, '?')) |i| {
+            const name_value = rest[i + 1 ..];
+            rest = rest[0..i];
+            const sep = std.mem.indexOfScalar(u8, name_value, '=') orelse
+                return parse_failed("invalid param format", name_value);
+            const name = name_value[0..sep];
+            const value_str = name_value[sep + 1 ..];
+            const value_int = str2int.parse(ParamValue, value_str, 10) orelse
+                return parse_failed("invalid param value", name_value);
+            if (std.mem.eql(u8, name, "count")) {
+                count = value_int;
+            } else if (std.mem.eql(u8, name, "life")) {
+                life = value_int;
+            } else {
+                return parse_failed("unknown param name", name_value);
+            }
+        }
+
         // port
         const port = b: {
-            if (std.mem.indexOfScalar(u8, value, '#')) |i| {
-                const port = value[i + 1 ..];
-                value = value[0..i];
+            if (std.mem.lastIndexOfScalar(u8, rest, '#')) |i| {
+                const port = rest[i + 1 ..];
+                rest = rest[0..i];
                 break :b opt.check_port(port) orelse return null;
             }
             break :b proto.std_port();
         };
 
-        // TODO: ?count=10 ?life=20
-
         // ip
-        const ip = value;
+        const ip = rest;
         opt.check_ip(ip) orelse return null;
 
         if (proto == .raw) {
             // `bind_tcp/bind_udp` conditions can't be checked because `opt.parse()` is being executed
-            self.do_add(tag, .udpi, host, ip, port);
-            self.do_add(tag, .tcpi, host, ip, port);
+            self.do_add(tag, .udpi, host, ip, port, count, life);
+            self.do_add(tag, .tcpi, host, ip, port, count, life);
         } else {
-            self.do_add(tag, proto, host, ip, port);
+            self.do_add(tag, proto, host, ip, port, count, life);
         }
     }
 
-    fn do_add(self: *Group, tag: Tag, proto: Proto, host: []const u8, ip: []const u8, port: u16) void {
+    fn do_add(
+        self: *Group,
+        tag: Tag,
+        proto: Proto,
+        host: []const u8,
+        ip: []const u8,
+        port: u16,
+        count: ParamValue,
+        life: ParamValue,
+    ) void {
         const addr = cc.SockAddr.from_text(cc.to_cstr(ip), port);
 
         for (self.items()) |*upstream| {
-            if (upstream.eql(proto, &addr, host))
+            if (upstream.eql(proto, &addr, host)) {
+                upstream.count = count;
+                upstream.life = life;
                 return;
+            }
         }
 
         const ptr = self.list.addOne(g.allocator) catch unreachable;
-        ptr.* = Upstream.init(tag, proto, &addr, host, ip, port);
+        ptr.* = Upstream.init(tag, proto, &addr, host, ip, port, count, life);
     }
 
     pub fn rm_useless(self: *Group) void {
