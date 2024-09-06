@@ -22,6 +22,7 @@ const assert = std.debug.assert;
 comptime {
     // @compileLog("sizeof(QueryCtx):", @sizeOf(QueryCtx), "alignof(QueryCtx):", @alignOf(QueryCtx));
     // @compileLog("sizeof(cc.SockAddr):", @sizeOf(cc.SockAddr), "alignof(cc.SockAddr):", @alignOf(cc.SockAddr));
+    // @compileLog("sizeof(Query.Flags):", @sizeOf(Query.Flags), "bit_sizeof(Query.Flags):", @bitSizeOf(Query.Flags));
 }
 
 const Query = struct {

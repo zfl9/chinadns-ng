@@ -23,6 +23,8 @@ comptime {
     // @compileLog("sizeof([:0]const u8):", @sizeOf([:0]const u8), "alignof([:0]const u8):", @alignOf([:0]const u8));
     // @compileLog("sizeof(cc.SockAddr):", @sizeOf(cc.SockAddr), "alignof(cc.SockAddr):", @alignOf(cc.SockAddr));
     // @compileLog("sizeof(Proto):", @sizeOf(Proto), "alignof(Proto):", @alignOf(Proto));
+    // @compileLog("sizeof(UDP):", @sizeOf(UDP), "alignof(UDP):", @alignOf(UDP));
+    // @compileLog("sizeof(TCP):", @sizeOf(TCP), "alignof(TCP):", @alignOf(TCP));
 }
 
 const Upstream = @This();

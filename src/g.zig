@@ -9,6 +9,10 @@ const StrList = @import("StrList.zig");
 const EvLoop = @import("EvLoop.zig");
 const Tag = @import("tag.zig").Tag;
 
+comptime {
+    // @compileLog("sizeof(flags)", @sizeOf(@TypeOf(flags)));
+}
+
 pub var flags: packed struct {
     verbose: bool = false,
     reuse_port: bool = false,
