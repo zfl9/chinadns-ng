@@ -7,7 +7,6 @@ const NoAAAA = @import("NoAAAA.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const EvLoop = @import("EvLoop.zig");
-const flags_op = @import("flags_op.zig");
 const Tag = @import("tag.zig").Tag;
 
 pub var flags: packed struct {

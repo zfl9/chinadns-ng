@@ -15,7 +15,6 @@ const NoAAAA = @import("NoAAAA.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
 const Node = @import("Node.zig");
-const flags_op = @import("flags_op.zig");
 const verdict_cache = @import("verdict_cache.zig");
 const local_rr = @import("local_rr.zig");
 const assert = std.debug.assert;
@@ -46,26 +45,33 @@ const Query = struct {
     tag: Tag,
     flags: Flags,
 
-    pub const Flags = enum(u8) {
-        from_local = 1 << 0, // {fdobj, src_addr} have undefined values (priority over other `.from_*`)
-        from_tcp = 1 << 1, // default: from_udp
-        is_china_domain = 1 << 2, // tag:none [verdict]
-        non_china_domain = 1 << 3, // tag:none [verdict]
-        _, // non-exhaustive enum
-        pub usingnamespace flags_op.get(Flags);
+    pub const Flags = packed struct {
+        from: enum(u2) { udp, tcp, local }, // from.local: {fdobj, src_addr} = undefined
+        verdict: enum(u2) { nil, is_china, non_china } = .nil, // [tag:none] `?bool` is better, but can't be used in packed struct
+
+        /// query from udp/tcp client
+        pub inline fn from_client(self: Flags) bool {
+            return self.from != .local;
+        }
+
+        pub inline fn get_from_str(self: Flags) cc.ConstStr {
+            return switch (self.from) {
+                .udp => "udp",
+                .tcp => "tcp",
+                .local => "local",
+            };
+        }
     };
 
     fn new(qid: u16, id: c.be16, bufsz: u16, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, tag: Tag, flags: Flags) *Query {
-        const from_local = flags.has(.from_local);
-
         const self = g.allocator.create(Query) catch unreachable;
 
         self.* = .{
             .qid = qid,
             .id = id,
             .bufsz = bufsz,
-            .fdobj = if (!from_local) fdobj.ref() else undefined,
-            .src_addr = if (!from_local) src_addr.* else undefined,
+            .fdobj = if (flags.from_client()) fdobj.ref() else undefined,
+            .src_addr = if (flags.from_client()) src_addr.* else undefined,
             .tag = tag,
             .flags = flags,
             .req_time = cc.monotime(),
@@ -75,7 +81,7 @@ const Query = struct {
     }
 
     fn free(self: *const Query) void {
-        if (!self.flags.has(.from_local))
+        if (self.flags.from_client())
             self.fdobj.unref();
 
         if (self.trust_msg) |msg| {
@@ -97,21 +103,17 @@ const Query = struct {
     /// remove from query_list and free()
     pub fn on_timeout(self: *const Query) void {
         if (g.verbose()) {
-            const from: cc.ConstStr = if (self.flags.has(.from_local))
-                "local"
-            else if (self.flags.has(.from_tcp))
-                "tcp"
-            else
-                "udp";
+            const from = self.flags.get_from_str();
 
             var ip: cc.IpStrBuf = undefined;
             var port: u16 = undefined;
-            if (self.flags.has(.from_local)) {
+
+            if (self.flags.from_client()) {
+                self.src_addr.to_text(&ip, &port);
+            } else {
                 ip[0] = '0';
                 ip[1] = 0;
                 port = 0;
-            } else {
-                self.src_addr.to_text(&ip, &port);
             }
 
             log.warn(
@@ -266,7 +268,7 @@ fn tcp_server(fd: c_int, p_src_addr: *const cc.SockAddr) void {
                 error.errno => break :e .{ .op = "read_msg" },
             };
 
-            nosuspend on_query(qmsg, fdobj, &src_addr, .from_tcp);
+            nosuspend on_query(qmsg, fdobj, &src_addr, .{ .from = .tcp });
         }
     };
 
@@ -307,7 +309,7 @@ fn udp_server(fd: c_int, ip: cc.ConstStr, port: u16) void {
         };
         qmsg.len = cc.to_u16(len);
 
-        nosuspend on_query(qmsg, fdobj, &src_addr, Query.Flags.empty());
+        nosuspend on_query(qmsg, fdobj, &src_addr, .{ .from = .udp });
     }
 }
 
@@ -389,12 +391,7 @@ const QueryLog = struct {
     }
 
     pub noinline fn forward(self: *const QueryLog, q: *const Query, to_tag: Tag) void {
-        const from: cc.ConstStr = if (q.flags.has(.from_local))
-            "local"
-        else if (q.flags.has(.from_tcp))
-            "tcp"
-        else
-            "udp";
+        const from = q.flags.get_from_str();
 
         const to: cc.ConstStr = switch (to_tag) {
             .chn => "china",
@@ -446,10 +443,11 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         qlog.query();
     }
 
-    const bufsz = if (qflags.has(.from_tcp))
-        cc.to_u16(c.DNS_MSG_MAXSIZE)
-    else
-        dns.get_bufsz(msg, qnamelen);
+    const bufsz = switch (qflags.from) {
+        .udp => dns.get_bufsz(msg, qnamelen),
+        .tcp => cc.to_u16(c.DNS_MSG_MAXSIZE),
+        .local => unreachable,
+    };
 
     // tag:null filter
     if (tag.is_null()) {
@@ -487,7 +485,7 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     }
 
     // for upstream_group.send()
-    var from_tcp = qflags.has(.from_tcp);
+    var udpi = qflags.from == .udp;
 
     // check the cache
     var ttl: i32 = undefined;
@@ -515,26 +513,26 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
             qlog.refresh(ttl);
 
         // avoid receiving truncated response
-        if (!from_tcp and cache_msg.len + 30 > c.DNS_EDNS_MINSIZE)
-            from_tcp = true;
+        if (udpi and cache_msg.len + 30 > c.DNS_EDNS_MINSIZE)
+            udpi = false; // change to tcpi://
 
-        // mark the q
-        qflags.add(.from_local);
+        // mark the query
+        qflags.from = .local;
     }
 
     // [verdict cache]
-    var tagnone_china = true;
-    var tagnone_trust = true;
+    var tagnone_to_china = true;
+    var tagnone_to_trust = true;
 
     // verdict cache for tag:none domain
     if (tag == .none) {
         if (verdict_cache.get(msg, qnamelen)) |is_china_domain| {
             if (is_china_domain) {
-                tagnone_trust = false;
-                qflags.add(.is_china_domain);
+                tagnone_to_trust = false;
+                qflags.verdict = .is_china;
             } else {
-                tagnone_china = false;
-                qflags.add(.non_china_domain);
+                tagnone_to_china = false;
+                qflags.verdict = .non_china;
             }
         }
     }
@@ -549,19 +547,19 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     ) orelse return;
 
     if (tag == .none) {
-        if (tagnone_china)
-            send_query(.chn, qmsg, from_tcp, q, &qlog);
-        if (tagnone_trust)
-            send_query(.gfw, qmsg, from_tcp, q, &qlog);
+        if (tagnone_to_china)
+            send_query(.chn, qmsg, udpi, q, &qlog);
+        if (tagnone_to_trust)
+            send_query(.gfw, qmsg, udpi, q, &qlog);
     } else {
-        send_query(tag, qmsg, from_tcp, q, &qlog);
+        send_query(tag, qmsg, udpi, q, &qlog);
     }
 }
 
 /// nosuspend
-fn send_query(to_tag: Tag, qmsg: *RcMsg, from_tcp: bool, q: *const Query, qlog: *const QueryLog) void {
+fn send_query(to_tag: Tag, qmsg: *RcMsg, udpi: bool, q: *const Query, qlog: *const QueryLog) void {
     if (g.verbose()) qlog.forward(q, to_tag);
-    nosuspend groups.get_upstream_group(to_tag).send(qmsg, from_tcp);
+    nosuspend groups.get_upstream_group(to_tag).send(qmsg, udpi);
 }
 
 // =========================================================================
@@ -685,9 +683,8 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     if (g.verbose())
         rlog.tag = q.tag;
 
-    // query from tcp client && reply is truncated
     // NOTE: udp resolver will auto retry with TCP
-    if (dns.is_tc(msg) and q.flags.has(.from_tcp)) {
+    if (q.flags.from != .udp and dns.is_tc(msg)) {
         if (g.verbose())
             rlog.reply("drop_tc", null);
         return;
@@ -699,7 +696,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     if (q.tag == .none and is_qtype_A_AAAA) {
         switch (upstream.tag) {
             .chn => {
-                if (q.flags.has(.is_china_domain) or use_china_reply(msg, qnamelen, &ip_test_res, &rlog)) {
+                if (q.flags.verdict == .is_china or use_china_reply(msg, qnamelen, &ip_test_res, &rlog)) {
                     if (g.verbose()) {
                         rlog.reply("accept", null);
 
@@ -716,13 +713,13 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
                         msg = trust_msg.msg();
                     } else {
                         // waiting for response from trust
-                        q.flags.add(.non_china_domain);
+                        q.flags.verdict = .non_china;
                         return;
                     }
                 }
             },
             .gfw => {
-                if (q.flags.has(.non_china_domain)) {
+                if (q.flags.verdict == .non_china) {
                     if (g.verbose())
                         rlog.reply("accept", null);
                 } else {
@@ -759,7 +756,7 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
         };
 
     // [sync && nosuspend] send reply to client
-    if (!q.flags.has(.from_local))
+    if (q.flags.from_client())
         send_reply(msg, q.fdobj, &q.src_addr, q.bufsz, q.id, q.flags);
 
     // add to cache (may modify the msg)
@@ -788,28 +785,31 @@ fn send_reply(msg: []const u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, 
         },
     };
 
-    if (qflags.has(.from_tcp)) {
-        iovec[0] = .{
-            .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
-            .iov_len = 2,
-        };
-        _tcp_sender.send(fdobj, &iovec);
-    } else {
-        // from udp
-        if (msg.len > bufsz) {
-            const tc_msg = dns.truncate(msg); // global static buffer
-            iovec[2] = .{
-                .iov_base = tc_msg[2..].ptr,
-                .iov_len = tc_msg[2..].len,
+    switch (qflags.from) {
+        .udp => {
+            if (msg.len > bufsz) {
+                const tc_msg = dns.truncate(msg); // global static buffer
+                iovec[2] = .{
+                    .iov_base = tc_msg[2..].ptr,
+                    .iov_len = tc_msg[2..].len,
+                };
+            }
+            const msghdr = cc.msghdr_t{
+                .msg_name = cc.remove_const(src_addr),
+                .msg_namelen = src_addr.len(),
+                .msg_iov = iovec[1..],
+                .msg_iovlen = iovec[1..].len,
             };
-        }
-        const msghdr = cc.msghdr_t{
-            .msg_name = cc.remove_const(src_addr),
-            .msg_namelen = src_addr.len(),
-            .msg_iov = iovec[1..],
-            .msg_iovlen = iovec[1..].len,
-        };
-        _ = cc.sendmsg(fdobj.fd, &msghdr, 0);
+            _ = cc.sendmsg(fdobj.fd, &msghdr, 0);
+        },
+        .tcp => {
+            iovec[0] = .{
+                .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
+                .iov_len = 2,
+            };
+            _tcp_sender.send(fdobj, &iovec);
+        },
+        .local => unreachable,
     }
 }
 
@@ -818,20 +818,24 @@ fn send_reply_bad(msg: []u8, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, qf
     if (msg.len >= dns.header_len())
         _ = dns.empty_reply(msg, 0);
 
-    if (qflags.has(.from_tcp)) {
-        var iovec = [_]cc.iovec_t{
-            .{
-                .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
-                .iov_len = 2,
-            },
-            .{
-                .iov_base = msg.ptr,
-                .iov_len = msg.len,
-            },
-        };
-        _tcp_sender.send(fdobj, &iovec);
-    } else {
-        _ = cc.sendto(fdobj.fd, msg, 0, src_addr);
+    switch (qflags.from) {
+        .udp => {
+            _ = cc.sendto(fdobj.fd, msg, 0, src_addr);
+        },
+        .tcp => {
+            var iovec = [_]cc.iovec_t{
+                .{
+                    .iov_base = std.mem.asBytes(&cc.htons(cc.to_u16(msg.len))),
+                    .iov_len = 2,
+                },
+                .{
+                    .iov_base = msg.ptr,
+                    .iov_len = msg.len,
+                },
+            };
+            _tcp_sender.send(fdobj, &iovec);
+        },
+        .local => unreachable,
     }
 }
 

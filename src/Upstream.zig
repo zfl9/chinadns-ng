@@ -1095,16 +1095,16 @@ pub const Group = struct {
     // ======================================================
 
     /// [nosuspend]
-    pub fn send(self: *Group, qmsg: *RcMsg, from_tcp: bool) void {
+    pub fn send(self: *Group, qmsg: *RcMsg, udpi: bool) void {
         const verbose_info = if (g.verbose()) .{
             .qid = dns.get_id(qmsg.msg()),
-            .from = cc.b2s(from_tcp, "tcp", "udp"),
+            .from = cc.b2s(udpi, "udp", "tcp"),
         } else undefined;
 
-        const in_proto: Proto = if (from_tcp) .tcpi else .udpi;
+        const in_proto: Proto = if (udpi) .udpi else .tcpi;
 
         for (self.items()) |*upstream| {
-            if (upstream.proto == .tcpi or upstream.proto == .udpi)
+            if (upstream.proto == .udpi or upstream.proto == .tcpi)
                 if (upstream.proto != in_proto) continue;
 
             if (g.verbose())
