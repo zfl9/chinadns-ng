@@ -32,7 +32,7 @@ const Query = struct {
     // alignment: 8/4
     fdobj: *EvLoop.Fd, // requester's fdobj
     trust_msg: ?*RcMsg = null,
-    req_time: u64, // monotime (ms)
+    req_time: u64, // monotonic time (ms)
 
     // alignment: 4
     src_addr: cc.SockAddr,
@@ -75,7 +75,7 @@ const Query = struct {
             .src_addr = if (flags.from_client()) src_addr.* else undefined,
             .tag = tag,
             .flags = flags,
-            .req_time = cc.monotime(),
+            .req_time = g.evloop.time,
         };
 
         return self;
@@ -932,7 +932,7 @@ const TcpSender = struct {
                 logging = true;
             }
 
-            self.sending_time = cc.monotime();
+            self.sending_time = g.evloop.time;
             self.sending_fdobj = task.fdobj;
 
             g.evloop.write(task.fdobj, task.data.bytes) orelse on_error(task.fdobj);
@@ -941,7 +941,7 @@ const TcpSender = struct {
                 log.warn(
                     src,
                     "send(fd:%d, bytes:%zu, time:%llu) blocking end",
-                    .{ task.fdobj.fd, task.data.bytes.len, cc.to_ulonglong(cc.monotime() - self.sending_time) },
+                    .{ task.fdobj.fd, task.data.bytes.len, cc.to_ulonglong(g.evloop.time - self.sending_time) },
                 );
 
             self.sending_time = 0;

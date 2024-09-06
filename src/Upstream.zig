@@ -37,7 +37,7 @@ host: ?cc.ConstStr, // DoT SNI
 url: cc.ConstStr, // for printing
 addr: cc.SockAddr,
 max_count: u16 = 10, // max queries per session (0 means no limit)
-max_life: u16 = 20, // max lifetime(sec) per session (0 means no limit)
+max_life: u16 = 10, // max lifetime(sec) per session (0 means no limit)
 proto: Proto,
 tag: Tag,
 
@@ -179,7 +179,7 @@ const UDP = struct {
         self.* = .{
             .upstream = upstream,
             .fdobj = EvLoop.Fd.new(fd),
-            .create_time = cc.monotime(),
+            .create_time = g.evloop.time,
         };
         return self;
     }
@@ -265,7 +265,7 @@ const UDP = struct {
             _session_list.move_to_tail(&self.typed_node.node);
 
         self.query_list.put(g.allocator, dns.get_id(qmsg.msg()), {}) catch unreachable;
-        self.query_time = cc.monotime();
+        self.query_time = g.evloop.time;
         self.query_count +|= 1;
 
         // start recv coroutine, must be at the end
@@ -285,7 +285,7 @@ const UDP = struct {
             return true;
 
         if ((self.upstream.max_count > 0 and self.query_count >= self.upstream.max_count) or
-            (self.upstream.max_life > 0 and cc.monotime() >= self.create_time + cc.to_u64(self.upstream.max_life) * 1000))
+            (self.upstream.max_life > 0 and g.evloop.time >= self.create_time + cc.to_u64(self.upstream.max_life) * 1000))
         {
             self.upstream.session = null;
             return true;
@@ -409,7 +409,6 @@ const TCP = struct {
     query_count: u16 = 0, // total query count
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     flags: packed struct {
-        server_ok: bool = false, // the server processed at least one query
         starting: bool = false, // see the `query_sender`
         stopping: bool = false,
         freed: bool = false,
@@ -516,7 +515,7 @@ const TCP = struct {
         const self = g.allocator.create(TCP) catch unreachable;
         self.* = .{
             .upstream = upstream,
-            .create_time = cc.monotime(),
+            .create_time = g.evloop.time,
         };
         return self;
     }
@@ -571,7 +570,7 @@ const TCP = struct {
             return true;
 
         if ((self.upstream.max_count > 0 and self.query_count >= self.upstream.max_count) or
-            (self.upstream.max_life > 0 and cc.monotime() >= self.create_time + cc.to_u64(self.upstream.max_life) * 1000))
+            (self.upstream.max_life > 0 and g.evloop.time >= self.create_time + cc.to_u64(self.upstream.max_life) * 1000))
         {
             self.upstream.session = null;
             return true;
@@ -607,7 +606,7 @@ const TCP = struct {
         self.pending_n += 1;
         self.send_list.push(qmsg.ref());
 
-        self.query_time = cc.monotime();
+        self.query_time = g.evloop.time;
         self.query_count +|= 1;
 
         if (self.fdobj == null)
@@ -636,7 +635,6 @@ const TCP = struct {
     fn on_recv_msg(self: *TCP, rmsg: *const RcMsg) void {
         const qid = dns.get_id(rmsg.msg());
         if (self.ack_list.fetchRemove(qid)) |kv| {
-            self.flags.server_ok = true;
             self.pending_n -= 1;
             kv.value.unref();
         } else {
@@ -672,16 +670,8 @@ const TCP = struct {
 
         if (self.pending_n > 0) {
             // restart
-            if (self.flags.server_ok) {
-                self.clear_ack_list(.resend);
-                self.start();
-            } else {
-                self.clear_ack_list(.unref);
-                self.send_list.clear();
-                self.pending_n = 0;
-                self.typed_node.node.unlink();
-                if (self.is_retire()) self.free();
-            }
+            self.clear_ack_list(.resend);
+            self.start();
         } else {
             // idle
             if (self.is_retire()) self.free();
@@ -706,8 +696,7 @@ const TCP = struct {
         assert(!self.send_list.is_empty());
         assert(self.ack_list.count() == 0);
 
-        self.flags.server_ok = false;
-        self.create_time = cc.monotime();
+        self.create_time = g.evloop.time;
 
         co.start(query_sender, .{self});
     }

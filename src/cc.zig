@@ -346,7 +346,8 @@ pub inline fn localtime(t: c.time_t) ?*c.struct_tm {
     return raw.localtime(&t);
 }
 
-/// CLOCK_MONOTONIC in milliseconds (ms)
+/// CLOCK_MONOTONIC in milliseconds (ms). \
+/// please consider using `g.evloop.time` (faster)
 pub inline fn monotime() u64 {
     return c.monotime();
 }

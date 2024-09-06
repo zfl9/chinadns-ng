@@ -21,10 +21,19 @@ destroyed: std.AutoHashMapUnmanaged(*const Fd, void) = .{},
 /// cache fd's add/del operation (reducing epoll_ctl calls)
 change_list: std.AutoHashMapUnmanaged(*const Fd, Change.Set) = .{},
 
+/// monotonic time (in milliseconds)
+time: u64,
+
 /// epoll instance (fd)
 epfd: c_int,
 
 // =============================================================
+
+const EVENTS = opaque {
+    pub const read: u32 = c.EPOLLIN | c.EPOLLRDHUP | c.EPOLLPRI;
+    pub const write: u32 = c.EPOLLOUT;
+    pub const err: u32 = c.EPOLLERR | c.EPOLLHUP;
+};
 
 const Change = opaque {
     pub const T = u8;
@@ -246,7 +255,10 @@ pub noinline fn init() EvLoop {
         log.err(@src(), "epoll_create() failed: (%d) %m", .{cc.errno()});
         cc.exit(1);
     };
-    return .{ .epfd = epfd };
+    return .{
+        .epfd = epfd,
+        .time = cc.monotime(),
+    };
 }
 
 /// return true if ok (internal api)
@@ -367,30 +379,23 @@ fn on_close_fd(self: *EvLoop, fdobj: *const Fd) void {
 
 // ========================================================================
 
-const EVENTS = opaque {
-    pub const read: u32 = c.EPOLLIN | c.EPOLLRDHUP | c.EPOLLPRI;
-    pub const write: u32 = c.EPOLLOUT;
-    pub const err: u32 = c.EPOLLERR | c.EPOLLHUP;
-};
-
 pub const Timer = struct {
-    now: u64,
     timeout: ?u64 = null,
 
     /// return true if the `deadline` has been reached,
     /// false otherwise (and update the timer state).
     pub fn check_deadline(self: *Timer, deadline: u64) bool {
-        if (self.now >= deadline) {
+        if (g.evloop.time >= deadline) {
             return true;
         } else {
-            const timeout = deadline - self.now;
+            const timeout = deadline - g.evloop.time;
             if (self.timeout == null or timeout < self.timeout.?)
                 self.timeout = timeout;
             return false;
         }
     }
 
-    /// in milliseconds (ms)
+    /// for epoll_wait
     pub fn get_timeout(self: *const Timer) c_int {
         if (self.timeout) |timeout|
             return cc.to_int(timeout);
@@ -402,8 +407,10 @@ pub fn run(self: *EvLoop) void {
     var evs: Ev.Array(64) = undefined;
 
     while (true) {
+        self.time = cc.monotime();
+
         // handling timeout events and get the next interval
-        var timer: Timer = .{ .now = cc.monotime() };
+        var timer: Timer = .{};
         nosuspend root.call_module_fn(.check_timeout, .{&timer});
 
         // empty the list before starting a new epoll_wait
@@ -424,6 +431,9 @@ pub fn run(self: *EvLoop) void {
         // handling I/O events
         var i: c_int = 0;
         while (i < n) : (i += 1) {
+            if (@mod(i, 10) == 0)
+                self.time = cc.monotime();
+
             const ev = evs.at(cc.to_usize(i));
 
             const revents = ev.get_events();

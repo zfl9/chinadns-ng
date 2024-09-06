@@ -144,6 +144,8 @@ pub fn main() u8 {
 
     // ============================================================================
 
+    g.evloop = EvLoop.init();
+
     // used only for business-independent initialization, such as global variables
     call_module_fn(.module_init, .{});
     defer if (_debug) call_module_fn(.module_deinit, .{});
@@ -218,8 +220,6 @@ pub fn main() u8 {
         log.info(src, "printing the verbose runtime log", .{});
 
     // ============================================================================
-
-    g.evloop = EvLoop.init();
 
     server.start();
 
