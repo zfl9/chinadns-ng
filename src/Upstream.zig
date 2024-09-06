@@ -10,12 +10,9 @@ const dns = @import("dns.zig");
 const log = @import("log.zig");
 const server = @import("server.zig");
 const Tag = @import("tag.zig").Tag;
-const DynStr = @import("DynStr.zig");
 const EvLoop = @import("EvLoop.zig");
-const Rc = @import("Rc.zig");
 const RcMsg = @import("RcMsg.zig");
 const Node = @import("Node.zig");
-const flags_op = @import("flags_op.zig");
 const assert = std.debug.assert;
 
 // ======================================================

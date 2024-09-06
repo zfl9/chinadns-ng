@@ -358,7 +358,7 @@ fn opt_gfwlist_file(in_value: ?[]const u8) void {
 }
 
 fn opt_chnlist_first(_: ?[]const u8) void {
-    g.flags.rm(.gfwlist_first);
+    g.flags.gfwlist_first = false;
 }
 
 fn opt_default_tag(in_value: ?[]const u8) void {
@@ -555,7 +555,7 @@ fn opt_repeat_times(in_value: ?[]const u8) void {
 }
 
 fn opt_noip_as_chnip(_: ?[]const u8) void {
-    g.flags.add(.noip_as_chnip);
+    g.flags.noip_as_chnip = true;
 }
 
 fn opt_fair_mode(_: ?[]const u8) void {
@@ -563,11 +563,11 @@ fn opt_fair_mode(_: ?[]const u8) void {
 }
 
 fn opt_reuse_port(_: ?[]const u8) void {
-    g.flags.add(.reuse_port);
+    g.flags.reuse_port = true;
 }
 
 fn opt_verbose(_: ?[]const u8) void {
-    g.flags.add(.verbose);
+    g.flags.verbose = true;
 }
 
 fn opt_version(_: ?[]const u8) void {

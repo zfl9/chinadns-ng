@@ -610,7 +610,7 @@ const ReplyLog = struct {
     }
 
     pub noinline fn china_noip(self: *const ReplyLog) void {
-        const action = cc.b2s(g.flags.has(.noip_as_chnip), "accept", "filter");
+        const action = cc.b2s(g.flags.noip_as_chnip, "accept", "filter");
         log.info(
             @src(),
             "reply(qid:%u, tag:%s, qtype:%u, '%s') has no answer ip [%s]",
@@ -641,7 +641,7 @@ fn use_china_reply(msg: []const u8, qnamelen: c_int, p_test_res: *?dns.TestIpRes
         },
         .no_ip_found => b: {
             if (g.verbose()) rlog.china_noip();
-            break :b g.flags.has(.noip_as_chnip);
+            break :b g.flags.noip_as_chnip;
         },
         .other_case => dns.is_tc(msg), // `truncated` or `rcode != 0`
     };

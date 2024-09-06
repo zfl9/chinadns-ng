@@ -187,7 +187,7 @@ pub fn @"test: dnl.c"() !void {
         add_dnl(.gfw, "res/gfwlist.txt").?;
         add_upstream(.chn, "223.5.5.5").?;
         add_upstream(.gfw, "1.1.1.1").?;
-        g.flags.rm(.gfwlist_first);
+        g.flags.gfwlist_first = false;
         on_start();
     }
 }

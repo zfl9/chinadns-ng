@@ -9,7 +9,7 @@ const testing = std.testing;
 pub const filenames_t = [*:null]?cc.ConstStr;
 
 pub inline fn init(tag_to_filenames: *const [c.TAG__MAX + 1]?filenames_t) void {
-    return c.dnl_init(tag_to_filenames, g.flags.has(.gfwlist_first));
+    return c.dnl_init(tag_to_filenames, g.flags.gfwlist_first);
 }
 
 pub inline fn is_empty() bool {

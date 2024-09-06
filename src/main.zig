@@ -207,11 +207,11 @@ pub fn main() u8 {
         log.info(src, "num of packets to trustdns: %u", .{cc.to_uint(g.trustdns_packet_n)});
 
     if (g.default_tag == .none) {
-        const action = cc.b2s(g.flags.has(.noip_as_chnip), "accept", "filter");
+        const action = cc.b2s(g.flags.noip_as_chnip, "accept", "filter");
         log.info(src, "%s no-ip reply from chinadns", .{action});
     }
 
-    if (g.flags.has(.reuse_port))
+    if (g.flags.reuse_port)
         log.info(src, "SO_REUSEPORT for listening socket", .{});
 
     if (g.verbose())

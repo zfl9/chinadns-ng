@@ -73,7 +73,7 @@ pub noinline fn setsockopt_int(fd: c_int, level: c_int, opt: c_int, optname: cc.
 fn setup_listen_sock(fd: c_int, family: c.sa_family_t) void {
     _ = setsockopt_int(fd, c.SOL_SOCKET, c.SO_REUSEADDR, "SO_REUSEADDR", 1);
 
-    if (g.flags.has(.reuse_port))
+    if (g.flags.reuse_port)
         _ = setsockopt_int(fd, c.SOL_SOCKET, c.SO_REUSEPORT, "SO_REUSEPORT", 1);
 
     if (family == c.AF_INET6)

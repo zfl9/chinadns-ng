@@ -10,19 +10,15 @@ const EvLoop = @import("EvLoop.zig");
 const flags_op = @import("flags_op.zig");
 const Tag = @import("tag.zig").Tag;
 
-pub const Flags = enum(u8) {
-    verbose = 1 << 0,
-    reuse_port = 1 << 1,
-    noip_as_chnip = 1 << 2,
-    gfwlist_first = 1 << 3,
-    _,
-    pub usingnamespace flags_op.get(Flags);
-};
-
-pub var flags: Flags = Flags.init(.{.gfwlist_first});
+pub var flags: packed struct {
+    verbose: bool = false,
+    reuse_port: bool = false,
+    noip_as_chnip: bool = false,
+    gfwlist_first: bool = true,
+} = .{};
 
 pub inline fn verbose() bool {
-    return flags.has(.verbose);
+    return flags.verbose;
 }
 
 pub var noaaaa_rule: NoAAAA = .{};
