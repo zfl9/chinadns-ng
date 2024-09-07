@@ -140,12 +140,8 @@ const Query = struct {
             self.list.init();
         }
 
-        pub fn len(self: *const List) usize {
+        pub fn count(self: *const List) usize {
             return self.map.count();
-        }
-
-        pub fn is_empty(self: *const List) bool {
-            return self.len() == 0;
         }
 
         /// [on_query] msg.id => qid
@@ -158,13 +154,23 @@ const Query = struct {
             tag: Tag,
             flags: Flags,
         ) ?*Query {
-            if (self.len() >= std.math.maxInt(u16) + 1) {
-                log.warn(@src(), "too many pending requests: %zu", .{self.len()});
+            const src = @src();
+
+            if (self.count() >= std.math.maxInt(u16) + 1) {
+                log.warn(src, "too many pending queries: %zu", .{self.count()});
                 return null;
             }
 
-            self.last_qid +%= 1;
-            const qid = self.last_qid;
+            var i: u32 = 0;
+            const qid = while (i < 10) : (i += 1) {
+                self.last_qid +%= 1;
+                const qid = self.last_qid;
+                if (!self.map.contains(qid))
+                    break qid;
+            } else {
+                log.warn(src, "no available qid. pending queries: %zu", .{self.count()});
+                return null;
+            };
 
             const id = dns.get_id(msg);
             dns.set_id(msg, qid);

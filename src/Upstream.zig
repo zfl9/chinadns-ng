@@ -438,10 +438,10 @@ const TCP = struct {
     query_count: u16 = 0, // total query count
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     flags: packed struct {
-        starting: bool = false, // start()
-        receiver_starting: bool = false, // query_sender()
-        stopping: bool = false, // stop()
         freed: bool = false, // free()
+        starting: bool = false, // start()
+        stopping: bool = false, // stop()
+        in_sender: bool = false, // query_sender()
     } = .{},
 
     const TLS_ = if (has_tls) TLS else struct {};
@@ -666,7 +666,7 @@ const TCP = struct {
     }
 
     fn stop(self: *TCP) void {
-        if (self.flags.receiver_starting) {
+        if (self.flags.in_sender) {
             self.flags.stopping = true;
             return;
         }
@@ -704,6 +704,7 @@ const TCP = struct {
                 self.session_node.on_idle();
             }
         } else {
+            // idle
             if (!self.flags.starting and self.is_retire())
                 self.free();
         }
@@ -748,9 +749,9 @@ const TCP = struct {
 
         self.connect() orelse return;
 
-        self.flags.receiver_starting = true;
+        self.flags.in_sender = true;
         co.start(reply_receiver, .{self});
-        self.flags.receiver_starting = false;
+        self.flags.in_sender = false;
 
         if (self.flags.stopping) {
             self.flags.stopping = false;
