@@ -147,17 +147,17 @@ pub fn module_init() void {
 pub fn check_timeout(timer: *EvLoop.Timer) void {
     var it = _session_list.iterator();
     while (it.next()) |node| {
-        const typed_node = TypedNode.from_node(node);
-        switch (typed_node.type) {
+        const session_node = SessionNode.from(node);
+        switch (session_node.type) {
             .udp => {
-                const session = UDP.from_typed_node(typed_node);
+                const session = session_node.udp();
                 if (timer.check_deadline(session.get_deadline()))
                     session.free()
                 else
                     break;
             },
             .tcp => {
-                const session = TCP.from_typed_node(typed_node);
+                const session = session_node.tcp();
                 if (timer.check_deadline(session.get_deadline()))
                     session.free()
                 else
@@ -167,12 +167,33 @@ pub fn check_timeout(timer: *EvLoop.Timer) void {
     }
 }
 
-const TypedNode = struct {
+const SessionNode = struct {
     type: enum { udp, tcp }, // `struct UDP` or `struct TCP`
-    node: Node, // _session_list node
+    node: Node = undefined, // _session_list node
 
-    pub fn from_node(node: *Node) *TypedNode {
-        return @fieldParentPtr(TypedNode, "node", node);
+    pub fn from(node: *Node) *SessionNode {
+        return @fieldParentPtr(SessionNode, "node", node);
+    }
+
+    pub fn udp(self: *SessionNode) *UDP {
+        assert(self.type == .udp);
+        return @fieldParentPtr(UDP, "session_node", self);
+    }
+
+    pub fn tcp(self: *SessionNode) *TCP {
+        assert(self.type == .tcp);
+        return @fieldParentPtr(TCP, "session_node", self);
+    }
+
+    pub fn on_work(self: *SessionNode, from_idle_state: bool) void {
+        if (from_idle_state)
+            _session_list.link_to_tail(&self.node)
+        else
+            _session_list.move_to_tail(&self.node);
+    }
+
+    pub fn on_idle(self: *SessionNode) void {
+        self.node.unlink();
     }
 };
 
@@ -180,7 +201,7 @@ const TypedNode = struct {
 
 /// udp session
 const UDP = struct {
-    typed_node: TypedNode = .{ .type = .udp, .node = undefined }, // _session_list node
+    session_node: SessionNode = .{ .type = .udp }, // _session_list node
     upstream: *Upstream,
     fdobj: *EvLoop.Fd,
     query_list: std.AutoHashMapUnmanaged(u16, void) = .{}, // outstanding queries (qid)
@@ -208,7 +229,7 @@ const UDP = struct {
         self.freed = true;
 
         if (!self.is_idle())
-            self.typed_node.node.unlink();
+            self.session_node.on_idle();
 
         if (self.upstream.session_eql(self))
             self.upstream.session = null;
@@ -219,11 +240,6 @@ const UDP = struct {
         self.query_list.clearAndFree(g.allocator);
 
         g.allocator.destroy(self);
-    }
-
-    pub fn from_typed_node(typed_node: *TypedNode) *UDP {
-        assert(typed_node.type == .udp);
-        return @fieldParentPtr(UDP, "typed_node", typed_node);
     }
 
     pub fn get_deadline(self: *const UDP) u64 {
@@ -275,10 +291,7 @@ const UDP = struct {
             _ = cc.sendto(self.fdobj.fd, qmsg.msg(), 0, &self.upstream.addr) orelse self.on_error("send");
         }
 
-        if (self.is_idle())
-            _session_list.link_to_tail(&self.typed_node.node)
-        else
-            _session_list.move_to_tail(&self.typed_node.node);
+        self.session_node.on_work(self.is_idle());
 
         self.query_list.put(g.allocator, dns.get_id(qmsg.msg()), {}) catch unreachable;
         self.query_time = g.evloop.time;
@@ -343,7 +356,7 @@ const UDP = struct {
 
             // all queries completed
             if (self.is_idle()) {
-                self.typed_node.node.unlink();
+                self.session_node.on_idle();
                 if (self.is_retire()) return; // free
             }
         }
@@ -414,7 +427,7 @@ pub const TLS = struct {
 
 /// tcp/tls session
 const TCP = struct {
-    typed_node: TypedNode = .{ .type = .tcp, .node = undefined }, // _session_list node
+    session_node: SessionNode = .{ .type = .tcp }, // _session_list node
     upstream: *Upstream,
     fdobj: ?*EvLoop.Fd = null, // tcp connection
     tls: TLS_ = .{}, // tls connection (DoT)
@@ -425,9 +438,10 @@ const TCP = struct {
     query_count: u16 = 0, // total query count
     pending_n: u16 = 0, // outstanding queries: send_list + ack_list
     flags: packed struct {
-        starting: bool = false, // see the `query_sender`
-        stopping: bool = false,
-        freed: bool = false,
+        starting: bool = false, // start()
+        receiver_starting: bool = false, // query_sender()
+        stopping: bool = false, // stop()
+        freed: bool = false, // free()
     } = .{},
 
     const TLS_ = if (has_tls) TLS else struct {};
@@ -541,7 +555,7 @@ const TCP = struct {
         self.flags.freed = true;
 
         if (!self.is_idle())
-            self.typed_node.node.unlink();
+            self.session_node.on_idle();
 
         if (self.upstream.session_eql(self))
             self.upstream.session = null;
@@ -562,11 +576,6 @@ const TCP = struct {
         self.ack_list.clearAndFree(g.allocator);
 
         g.allocator.destroy(self);
-    }
-
-    pub fn from_typed_node(typed_node: *TypedNode) *TCP {
-        assert(typed_node.type == .tcp);
-        return @fieldParentPtr(TCP, "typed_node", typed_node);
     }
 
     pub fn get_deadline(self: *const TCP) u64 {
@@ -614,10 +623,7 @@ const TCP = struct {
             return;
         }
 
-        if (self.is_idle())
-            _session_list.link_to_tail(&self.typed_node.node)
-        else
-            _session_list.move_to_tail(&self.typed_node.node);
+        self.session_node.on_work(self.is_idle());
 
         self.pending_n += 1;
         self.send_list.push(qmsg.ref());
@@ -625,6 +631,7 @@ const TCP = struct {
         self.query_time = g.evloop.time;
         self.query_count +|= 1;
 
+        // must be at the end
         if (self.fdobj == null)
             self.start();
     }
@@ -659,7 +666,7 @@ const TCP = struct {
     }
 
     fn stop(self: *TCP) void {
-        if (self.flags.starting) {
+        if (self.flags.receiver_starting) {
             self.flags.stopping = true;
             return;
         }
@@ -685,12 +692,20 @@ const TCP = struct {
         }
 
         if (self.pending_n > 0) {
-            // restart
-            self.clear_ack_list(.resend);
-            self.start();
+            if (!self.flags.starting) {
+                // restart
+                self.clear_ack_list(.resend);
+                self.start(); // must be at the end
+            } else {
+                // local error
+                self.clear_ack_list(.unref);
+                self.send_list.clear();
+                self.pending_n = 0;
+                self.session_node.on_idle();
+            }
         } else {
-            // idle
-            if (self.is_retire()) self.free();
+            if (!self.flags.starting and self.is_retire())
+                self.free();
         }
     }
 
@@ -706,6 +721,7 @@ const TCP = struct {
         self.ack_list.clearRetainingCapacity();
     }
 
+    /// may call `self.free()`
     fn start(self: *TCP) void {
         assert(self.fdobj == null);
         assert(self.pending_n > 0);
@@ -714,7 +730,12 @@ const TCP = struct {
 
         self.create_time = g.evloop.time;
 
+        self.flags.starting = true;
         co.start(query_sender, .{self});
+        self.flags.starting = false;
+
+        if (self.is_idle() and self.is_retire())
+            self.free();
     }
 
     fn query_sender(self: *TCP) void {
@@ -727,14 +748,13 @@ const TCP = struct {
 
         self.connect() orelse return;
 
-        self.flags.starting = true;
+        self.flags.receiver_starting = true;
         co.start(reply_receiver, .{self});
-        self.flags.starting = false;
+        self.flags.receiver_starting = false;
 
-        // `self.stop()` was called
         if (self.flags.stopping) {
             self.flags.stopping = false;
-            return; // defer self.stop()
+            return; // do stop()
         }
 
         while (self.pop_qmsg()) |qmsg|
@@ -783,7 +803,7 @@ const TCP = struct {
 
             // all queries completed
             if (self.is_idle()) {
-                self.typed_node.node.unlink();
+                self.session_node.on_idle();
                 if (self.is_retire()) return; // stop and free
             }
         }
