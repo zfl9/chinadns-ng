@@ -634,7 +634,7 @@ fn build_wolfssl() *Step {
         \\      --enable-aesgcm \
         \\      --disable-aescbc \
         \\      --enable-sni \
-        \\      --enable-session-ticket \
+        \\      --disable-session-ticket \
         \\      --disable-md5 \
         \\      --disable-sha \
         \\      --disable-sha3 \

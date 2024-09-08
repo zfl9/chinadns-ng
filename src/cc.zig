@@ -848,7 +848,7 @@ pub fn SSL_set_fd(ssl: *c.WOLFSSL, fd: c_int) ?void {
     return if (c.wolfSSL_set_fd(ssl, fd) == 1) {} else null;
 }
 
-/// set SNI && enable hostname validation during SSL handshake
+/// set SNI && enable cert validation during SSL handshake
 pub fn SSL_set_host(ssl: *c.WOLFSSL, host: ?ConstStr, cert_verify: bool) ?void {
     if (host) |name| {
         // tls_ext: SNI (ClientHello)
@@ -863,14 +863,6 @@ pub fn SSL_set_host(ssl: *c.WOLFSSL, host: ?ConstStr, cert_verify: bool) ?void {
     // ssl cert validation
     const mode = if (cert_verify) c.WOLFSSL_VERIFY_PEER else c.WOLFSSL_VERIFY_NONE;
     c.wolfSSL_set_verify(ssl, mode, null);
-}
-
-/// set session to be used when the TLS/SSL connection is to be established (resumption) \
-/// when the session is set, the reference count of session is incremented by 1 (owner by ssl) \
-/// after session is set, wolfSSL_SESSION_free() can be called to dereference it (release ownership)
-pub fn SSL_set_session(ssl: *c.WOLFSSL, session: *c.WOLFSSL_SESSION) void {
-    // may fail due to session timeout, don't care about it
-    _ = c.wolfSSL_set_session(ssl, session);
 }
 
 /// for SSL I/O operation
@@ -907,11 +899,6 @@ pub fn SSL_get_cipher(ssl: *c.WOLFSSL) ConstStr {
     return c.wolfSSL_get_cipher(ssl) orelse "NULL";
 }
 
-/// queries whether session resumption occurred during the handshake
-pub fn SSL_session_reused(ssl: *c.WOLFSSL) bool {
-    return c.wolfSSL_session_reused(ssl) != 0;
-}
-
 /// return the number of bytes read (> 0) \
 /// `p_err`: to save the failure reason (SSL_ERROR_*)
 pub fn SSL_read(ssl: *c.WOLFSSL, buf: []u8, p_err: *c_int) ?usize {
@@ -934,16 +921,6 @@ pub fn SSL_write(ssl: *c.WOLFSSL, buf: []const u8, p_err: *c_int) ?void {
         p_err.* = SSL_get_error(ssl, res);
         return null;
     }
-}
-
-/// the reference count of the SSL_SESSION is incremented by one \
-/// in TLSv1.3 it is recommended that each SSL_SESSION object is only used for resumption once
-pub fn SSL_get1_session(ssl: *c.WOLFSSL) ?*c.WOLFSSL_SESSION {
-    return c.wolfSSL_get1_session(ssl);
-}
-
-pub fn SSL_SESSION_free(session: *c.WOLFSSL_SESSION) void {
-    return c.wolfSSL_SESSION_free(session);
 }
 
 // ==============================================================
