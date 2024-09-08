@@ -811,8 +811,11 @@ const TCP = struct {
     }
 
     /// `errmsg`: null means strerror(errno)
-    noinline fn on_error(self: *const TCP, op: cc.ConstStr, errmsg: ?cc.ConstStr) ?void {
+    fn on_error(self: *const TCP, op: cc.ConstStr, errmsg: ?cc.ConstStr) ?void {
         const src = @src();
+
+        if (self.fdobj.?.canceled)
+            return null;
 
         if (errmsg) |msg|
             log.warn(src, "%s(%s) failed: %s", .{ op, self.upstream.url, msg })
