@@ -360,7 +360,7 @@ cache-refresh 20
 
 - 完整格式：`proto:// host@ ip #port ?count=N ?life=N`
 - 注：加空格只是为了方便阅读和说明，实际格式中并没有空格。
-- `proto://`：可省略，协议限定，默认为`无`。
+- `proto://`：可省略，查询协议，默认为`无`。
   - `无`：UDP/TCP 上游，根据查询方的传入协议来决定使用 UDP 查询还是 TCP 查询。
   - `udp://`：UDP 上游。
   - `tcp://`；TCP 上游。
@@ -368,8 +368,8 @@ cache-refresh 20
 - `host@`：可省略，用于 DoT 上游。
   - 提供 SSL/TLS 握手时的 SNI（服务器名称指示）信息。
   - 启用 SSL/TLS 证书验证时，将检查证书中的域名是否与之匹配。
-- `ip`：不可省略，支持 IPv4 和 IPv6 地址（不需要使用 `[]` 括起来）。
-- `#port`：可省略，默认为当前所选定协议的标准端口（UDP/TCP 是 53，DoT 是 853）。
+- `ip`：不可省略，支持 IPv4 和 IPv6 地址（不需要用 `[]` 括起来）。
+- `#port`：可省略，默认为所选定协议的标准端口（UDP/TCP 是 53，DoT 是 853）。
 - `?count=N`：可省略，默认为 10，表示单个会话最多处理多少个查询，见 [#189](https://github.com/zfl9/chinadns-ng/issues/189)。
 - `?life=N`：可省略，默认为 10，表示单个会话最多存活多少秒，见 [#189](https://github.com/zfl9/chinadns-ng/issues/189)。
 
