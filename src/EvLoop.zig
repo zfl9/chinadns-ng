@@ -18,78 +18,14 @@ const EvLoop = @This();
 /// avoid touching freed ptr, see evloop.run()
 destroyed: std.AutoHashMapUnmanaged(*const Fd, void) = .{},
 
-/// cache fd's add/del operation (reducing epoll_ctl calls)
-change_list: std.AutoHashMapUnmanaged(*const Fd, Change.Set) = .{},
+/// cache I/O event changes | [fd] = original_state(epoll_state)
+change_list: std.AutoHashMapUnmanaged(*const Fd, Fd.State) = .{},
 
 /// monotonic time (in milliseconds)
 time: u64,
 
 /// epoll instance (fd)
 epfd: c_int,
-
-// =============================================================
-
-const EVENTS = opaque {
-    pub const read: u32 = c.EPOLLIN | c.EPOLLRDHUP | c.EPOLLPRI;
-    pub const write: u32 = c.EPOLLOUT;
-    pub const err: u32 = c.EPOLLERR | c.EPOLLHUP;
-};
-
-const Change = opaque {
-    pub const T = u8;
-
-    pub const ADD_READ: T = 1 << 0;
-    pub const DEL_READ: T = 1 << 1;
-    pub const ADD_WRITE: T = 1 << 2;
-    pub const DEL_WRITE: T = 1 << 3;
-
-    /// wrapper for T
-    pub const Set = struct {
-        set: T = 0,
-
-        pub fn is_empty(self: Set) bool {
-            return self.set == 0;
-        }
-
-        /// has all
-        pub fn has(self: Set, v: T) bool {
-            return self.set & v == v;
-        }
-
-        pub fn has_any(self: Set, v: T) bool {
-            return self.set & v != 0;
-        }
-
-        pub fn del(self: *Set, v: T) void {
-            self.set &= ~v;
-        }
-
-        pub fn add(self: *Set, v: T) void {
-            self.set |= v;
-
-            if (self.has(ADD_READ | DEL_READ))
-                self.del(ADD_READ | DEL_READ);
-
-            if (self.has(ADD_WRITE | DEL_WRITE))
-                self.del(ADD_WRITE | DEL_WRITE);
-        }
-
-        pub fn equal(self: Set, events: u32) bool {
-            if (self.has_any(DEL_READ | DEL_WRITE))
-                return false;
-
-            var my_events: u32 = 0;
-
-            if (self.has(ADD_READ))
-                my_events |= EVENTS.read;
-
-            if (self.has(ADD_WRITE))
-                my_events |= EVENTS.write;
-
-            return my_events == events;
-        }
-    };
-};
 
 // =============================================================
 
@@ -106,6 +42,31 @@ pub const Fd = struct {
     fd: c_int,
     rc: Rc = .{},
     canceled: bool = false,
+
+    /// for evloop.change_list
+    pub const State = packed struct {
+        read: bool,
+        write: bool,
+
+        pub fn is_empty(self: State) bool {
+            return !self.read and !self.write;
+        }
+
+        pub fn to_events(self: State) u32 {
+            var events: u32 = 0;
+
+            if (self.read)
+                events |= EVENTS.read;
+
+            if (self.write)
+                events |= EVENTS.write;
+
+            if (events != 0)
+                events |= EVENTS.ET;
+
+            return events;
+        }
+    };
 
     /// ownership of `fd` is transferred to `fdobj`
     pub fn new(fd: c_int) *Fd {
@@ -138,7 +99,14 @@ pub const Fd = struct {
         g.evloop.destroyed.put(g.allocator, self, {}) catch unreachable;
     }
 
-    pub fn interest_events(self: *const Fd) u32 {
+    pub fn get_state(self: *const Fd) State {
+        return .{
+            .read = self.read_frame != null,
+            .write = self.write_frame != null,
+        };
+    }
+
+    pub fn get_events(self: *const Fd) u32 {
         var events: u32 = 0;
 
         if (self.read_frame != null)
@@ -146,6 +114,9 @@ pub const Fd = struct {
 
         if (self.write_frame != null)
             events |= EVENTS.write;
+
+        if (events != 0)
+            events |= EVENTS.ET;
 
         return events;
     }
@@ -181,7 +152,16 @@ pub const Fd = struct {
 
 // =============================================================
 
-/// epoll_event is a packed struct and need to be wrapped
+const EVENTS = opaque {
+    pub const read: u32 = c.EPOLLIN | c.EPOLLRDHUP | c.EPOLLPRI;
+    pub const write: u32 = c.EPOLLOUT;
+    pub const err: u32 = c.EPOLLERR | c.EPOLLHUP;
+    pub const ET: u32 = c.EPOLLET;
+};
+
+// =============================================================
+
+/// struct epoll_event
 const Ev = opaque {
     /// raw type
     pub const Raw = c.struct_epoll_event;
@@ -308,63 +288,51 @@ fn unset_frame(fdobj: *Fd, comptime field_name: []const u8, frame: anyframe) voi
     @field(fdobj, field_name) = null;
 }
 
-/// before suspend {}
-fn add_readable(self: *EvLoop, fdobj: *Fd, frame: anyframe) void {
-    set_frame(fdobj, "read_frame", frame);
-    return self.cache_change(fdobj, Change.ADD_READ);
-}
+const EvType = enum {
+    read,
+    write,
 
-/// after suspend {}
-fn del_readable(self: *EvLoop, fdobj: *Fd, frame: anyframe) void {
-    unset_frame(fdobj, "read_frame", frame);
-    return self.cache_change(fdobj, Change.DEL_READ);
-}
-
-/// before suspend {}
-fn add_writable(self: *EvLoop, fdobj: *Fd, frame: anyframe) void {
-    set_frame(fdobj, "write_frame", frame);
-    return self.cache_change(fdobj, Change.ADD_WRITE);
-}
-
-/// after suspend {}
-fn del_writable(self: *EvLoop, fdobj: *Fd, frame: anyframe) void {
-    unset_frame(fdobj, "write_frame", frame);
-    return self.cache_change(fdobj, Change.DEL_WRITE);
-}
-
-fn cache_change(self: *EvLoop, fdobj: *const Fd, change: Change.T) void {
-    const v = self.change_list.getOrPut(g.allocator, fdobj) catch unreachable;
-    const change_set = v.value_ptr;
-    if (v.found_existing) {
-        change_set.add(change);
-        if (change_set.is_empty())
-            assert(self.change_list.remove(fdobj));
-    } else {
-        change_set.* = .{};
-        change_set.add(change);
-        assert(!change_set.is_empty());
+    pub fn field_name(self: EvType) []const u8 {
+        return switch (self) {
+            .read => "read_frame",
+            .write => "write_frame",
+        };
     }
+};
+
+/// before suspend {}
+fn add_event_listener(self: *EvLoop, fdobj: *Fd, comptime ev: EvType, frame: anyframe) void {
+    self.cache_change(fdobj); // save the original state
+    set_frame(fdobj, comptime ev.field_name(), frame);
+}
+
+/// after suspend {}
+fn del_event_listener(self: *EvLoop, fdobj: *Fd, comptime ev: EvType, frame: anyframe) void {
+    self.cache_change(fdobj); // save the original state
+    unset_frame(fdobj, comptime ev.field_name(), frame);
+}
+
+fn cache_change(self: *EvLoop, fdobj: *const Fd) void {
+    const res = self.change_list.getOrPut(g.allocator, fdobj) catch unreachable;
+    if (!res.found_existing)
+        res.value_ptr.* = fdobj.get_state();
 }
 
 fn apply_change(self: *EvLoop) void {
     var it = self.change_list.iterator();
     while (it.next()) |v| {
         const fdobj = v.key_ptr.*;
-        const change_set = v.value_ptr.*;
-
-        const events = fdobj.interest_events();
-        assert(!change_set.is_empty());
-
-        if (events == 0) {
-            // del
-            assert(change_set.has_any(Change.DEL_READ | Change.DEL_WRITE));
+        const state: Fd.State = v.value_ptr.*;
+        const old_events = state.to_events();
+        const new_events = fdobj.get_events();
+        if (old_events == new_events) {
+            continue;
+        } else if (old_events == 0) {
+            assert(self.add(fdobj, new_events));
+        } else if (new_events == 0) {
             assert(self.del(fdobj));
         } else {
-            // add or mod
-            if (change_set.equal(events))
-                assert(self.add(fdobj, events | c.EPOLLET))
-            else
-                assert(self.mod(fdobj, events | c.EPOLLET));
+            assert(self.mod(fdobj, new_events));
         }
     }
     self.change_list.clearRetainingCapacity();
@@ -372,7 +340,8 @@ fn apply_change(self: *EvLoop) void {
 
 fn on_close_fd(self: *EvLoop, fdobj: *const Fd) void {
     if (self.change_list.fetchRemove(fdobj)) |v| {
-        if (v.value.has_any(Change.DEL_READ | Change.DEL_WRITE))
+        const state: Fd.State = v.value;
+        if (!state.is_empty())
             assert(self.del(fdobj));
     }
 }
@@ -404,7 +373,7 @@ pub const Timer = struct {
 };
 
 pub fn run(self: *EvLoop) void {
-    var evs: Ev.Array(64) = undefined;
+    var evs: Ev.Array(100) = undefined;
 
     while (true) {
         self.time = cc.monotime();
@@ -468,9 +437,9 @@ comptime {
 /// used for external modules, not for this module: \
 /// because the coroutine chains consume at least 24 bytes per level (x86_64).
 pub fn wait_readable(self: *EvLoop, fdobj: *Fd) ?void {
-    self.add_readable(fdobj, @frame());
+    self.add_event_listener(fdobj, .read, @frame());
     suspend {}
-    self.del_readable(fdobj, @frame());
+    self.del_event_listener(fdobj, .read, @frame());
 
     if (fdobj.is_canceled())
         return null;
@@ -480,9 +449,9 @@ pub fn wait_readable(self: *EvLoop, fdobj: *Fd) ?void {
 /// used for external modules, not for this module: \
 /// because the coroutine chains consume at least 24 bytes per level (x86_64).
 pub fn wait_writable(self: *EvLoop, fdobj: *Fd) ?void {
-    self.add_writable(fdobj, @frame());
+    self.add_event_listener(fdobj, .write, @frame());
     suspend {}
-    self.del_writable(fdobj, @frame());
+    self.del_event_listener(fdobj, .write, @frame());
 
     if (fdobj.is_canceled())
         return null;
@@ -493,9 +462,9 @@ pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const cc.SockAddr) ?void {
         if (cc.errno() != c.EINPROGRESS)
             return null;
 
-        self.add_writable(fdobj, @frame());
+        self.add_event_listener(fdobj, .write, @frame());
         suspend {}
-        self.del_writable(fdobj, @frame());
+        self.del_event_listener(fdobj, .write, @frame());
 
         if (fdobj.is_canceled())
             return null;
@@ -517,9 +486,9 @@ pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*cc.SockAddr) ?c_int {
             if (cc.errno() != c.EAGAIN)
                 return null;
 
-            self.add_readable(fdobj, @frame());
+            self.add_event_listener(fdobj, .read, @frame());
             suspend {}
-            self.del_readable(fdobj, @frame());
+            self.del_event_listener(fdobj, .read, @frame());
 
             continue;
         };
@@ -547,9 +516,9 @@ pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ReadErr!void {
 
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (nread < buf.len) {
-            self.add_readable(fdobj, @frame());
+            self.add_event_listener(fdobj, .read, @frame());
             suspend {}
-            self.del_readable(fdobj, @frame());
+            self.del_event_listener(fdobj, .read, @frame());
         }
     }
 }
@@ -560,9 +529,9 @@ pub fn read_udp(self: *EvLoop, fdobj: *Fd, buf: []u8, src_addr: ?*cc.SockAddr) ?
             if (cc.errno() != c.EAGAIN)
                 return null;
 
-            self.add_readable(fdobj, @frame());
+            self.add_event_listener(fdobj, .read, @frame());
             suspend {}
-            self.del_readable(fdobj, @frame());
+            self.del_event_listener(fdobj, .read, @frame());
 
             continue;
         };
@@ -585,9 +554,9 @@ pub fn write(self: *EvLoop, fdobj: *Fd, data: []const u8) ?void {
 
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (nsend < data.len) {
-            self.add_writable(fdobj, @frame());
+            self.add_event_listener(fdobj, .write, @frame());
             suspend {}
-            self.del_writable(fdobj, @frame());
+            self.del_event_listener(fdobj, .write, @frame());
         }
     }
 }
@@ -611,9 +580,9 @@ pub fn writev(self: *EvLoop, fdobj: *Fd, in_iovec: []cc.iovec_t) ?void {
 
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (iovec_len > 0) {
-            self.add_writable(fdobj, @frame());
+            self.add_event_listener(fdobj, .write, @frame());
             suspend {}
-            self.del_writable(fdobj, @frame());
+            self.del_event_listener(fdobj, .write, @frame());
         }
     }
 }
