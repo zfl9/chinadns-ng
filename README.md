@@ -151,9 +151,14 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 
 ## 配置示例
 
-- chinadns-ng 通常与 iptables/nftables 透明代理一起用。
-- 这里列举的三个例子其实就是 [ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的使用范例。
-- 当然也可以在其他 Linux 环境下使用，具体看你的需求。
+- chinadns-ng 通常与 iptables/nftables 透明代理一起使用。
+- 也可作为单纯的 DNS 转发器（如 UDP->TCP）、分流器使用。
+- 下面列举的 3 种分流模式配置其实都是 [zfl9/ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的用例。
+
+**注意**
+
+- 程序不会自动创建 ipset/nftset 集合；若需要 ip test/add，请先导入/创建 set。
+- 所有带 ipset 字眼的配置都支持 nftset，如需使用 nftset，请阅读 [nftset 相关说明](#ipset/nftset-相关说明)。
 
 ---
 
@@ -201,6 +206,8 @@ verdict-cache 4096
 
 </p></details>
 
+---
+
 ### gfwlist 分流模式
 
 - gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
@@ -235,6 +242,8 @@ cache-refresh 20
 ```
 
 </p></details>
+
+---
 
 ### global 分流模式
 
@@ -273,9 +282,11 @@ cache-refresh 20
 
 ## 命令选项
 
+- `-f` 短选项、`--foobar` 长选项
 - `--foo <value>`：选项值是 required 的
 - `--bar [value]`：选项值是 optional 的
 - `--flag`：没有选项值，即 bool/flag 选项
+- 配置文件中使用长选项格式（没有`--`），如 `verbose`
 
 <details><summary><b>点我展开所有选项</b></summary><p>
 
@@ -424,13 +435,28 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - 2024.04.13 版本起，也用于 `--no-ipv6` 的 `ip:china`、`ip:non_china` 规则。
 - 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用。
 
-nftset 参数格式及注意事项（`add-tag*-ip`、`group-ipset`、`ipset-name*`）
+### ipset/nftset 相关说明
 
-- nftset 名称格式：`family名@table名@set名`
+相关配置/命令行选项：
+
+- **ip test**：`ipset-name4`、`ipset-name6`（默认为 chnroute、chnroute6）
+- **ip add**： `add-tagchn-ip`、`add-taggfw-ip`、`group-ipset`（无默认行为）
+- 注意：所有相关配置要么使用 ipset 后端，要么使用 nftset 后端，不允许混用
+- 程序不会自动创建 ipset/nftset 集合，如果需要，请先手动导入/创建相关集合
+
+ipset 相关说明：
+
+- 集合名正常给出即可，如 chnroute
+- res/chnroute.ipset 文件的集合名：`chnroute`
+- res/chnroute6.ipset 文件的集合名：`chnroute6`
+
+nftset 相关说明：
+
+- 集合名的完整格式：`family名@table名@set名`
 - 创建 nftset 集合时，必须带上 `flags interval` 标志
 - 支持的 family：`ip`、`ip6`、`inet`、`arp`、`bridge`、`netdev`
-- 自带的 chnroute.nftset 文件的集合名为 `inet@global@chnroute`
-- 自带的 chnroute6.nftset 文件的集合名为 `inet@global@chnroute6`
+- res/chnroute.nftset 文件的集合名：`inet@global@chnroute`
+- res/chnroute6.nftset 文件的集合名：`inet@global@chnroute6`
 
 ### group、group-*
 
