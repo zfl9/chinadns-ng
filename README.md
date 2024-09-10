@@ -152,13 +152,10 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 ## 配置示例
 
 - chinadns-ng 通常与 iptables/nftables 透明代理一起使用。
-- 也可作为单纯的 DNS 转发器（如 UDP->TCP）、分流器使用。
-- 下面列举的 3 种分流模式配置其实都是 [zfl9/ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的用例。
-
-**注意**
-
-- 程序不会自动创建 ipset/nftset 集合；若需要 ip test/add，请先导入/创建 set。
-- 所有带 ipset 字眼的配置都支持 nftset，如需使用 nftset，请阅读 [nftset 相关说明](#ipset/nftset-相关说明)。
+- chinadns-ng 也可作为 DNS 转发器（如 UDP->TCP）、分流器。
+- 下面列举的 3 种分流模式配置其实都是 [zfl9/ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的相关用例。
+- 程序不会自动创建 ipset/nftset 集合；如需 ip test/add，请先导入/创建 set。
+- 所有带 ipset 字眼的配置都支持 nftset，如需使用 nftset，请阅读 [nftset 说明](#ipsetnftset-相关说明)。
 
 ---
 
@@ -279,6 +276,23 @@ cache-refresh 20
 ```
 
 </p></details>
+
+---
+
+### 作为 DNS 转发器
+
+- 转发器不执行分流操作，但其他功能仍可正常使用，如 DNS 缓存、ip add、ipv6 过滤等。
+- 核心在于 `-d chn`，由于未指定域名列表，因此所有查询都是 tag:chn，从而实现单纯转发。
+
+```bash
+# 127.0.0.1:53(udp/tcp) => 1.1.1.1(udp/tcp/tls)
+# 允许指定任意多个 upstream，多次给出 -c 选项即可
+# 使用 -d gfw 也是一样的，只不过将 -c 改为 -t 选项
+chinadns-ng -b 127.0.0.1 -l 53 -d chn -c 1.1.1.1
+chinadns-ng -b 127.0.0.1 -l 53 -d chn -c udp://1.1.1.1
+chinadns-ng -b 127.0.0.1 -l 53 -d chn -c tcp://1.1.1.1
+chinadns-ng -b 127.0.0.1 -l 53 -d chn -c tls://1.1.1.1
+```
 
 ## 命令选项
 
