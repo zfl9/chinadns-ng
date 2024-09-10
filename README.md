@@ -377,12 +377,11 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
   - 2023.10.28 版本起，若监听地址为 `::`，则允许来自 IPv4/IPv6 的 DNS 查询。
   - 2024.03.07 版本起，`bind-addr` 允许指定多次，以便监听多个不同的 ip 地址。
 - `bind-port` 用于指定监听端口，默认为 65353。
-  - 2024.03.07 版本起，将同时监听 TCP 和 UDP 端口，之前只监听了 UDP 端口。
-  - 2024.03.25 版本起，可以给 `bind-port` 选项指定要监听的协议（TCP、UDP）：
-    - `--bind-port 65353`：监听 TCP + UDP，默认值。
-    - `--bind-port 65353@tcp+udp`：监听 TCP + UDP，同上。
-    - `--bind-port 65353@tcp`：只监听 TCP。
+  - 2024.03.07 版本起，将同时监听 UDP 和 TCP 端口，之前只监听了 UDP。
+  - 2024.03.25 版本起，可以给 `bind-port` 指定要监听的协议（UDP、TCP）：
+    - `--bind-port 65353`：监听 UDP 和 TCP（默认）。
     - `--bind-port 65353@udp`：只监听 UDP。
+    - `--bind-port 65353@tcp`：只监听 TCP。
   - 2024.07.16 版本起，`bind-port` 允许指定多次，以便监听多个不同的 port。
 
 ### china-dns、trust-dns
