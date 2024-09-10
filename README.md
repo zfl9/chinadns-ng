@@ -152,7 +152,7 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 ## 配置示例
 
 - chinadns-ng 通常与 iptables/nftables 透明代理一起使用。
-- chinadns-ng 也可作为 DNS 转发器（如 UDP->TCP）、分流器。
+- chinadns-ng 也可作为单纯的 DNS 转发器（如 UDP->TCP）使用。
 - 下面列举的 3 种分流模式配置其实都是 [zfl9/ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的相关用例。
 - 程序不会自动创建 ipset/nftset 集合；如需 ip test/add，请先导入/创建 set。
 - 所有带 ipset 字眼的配置都支持 nftset，如需使用 nftset，请阅读 [nftset 说明](#ipsetnftset-相关说明)。
@@ -181,11 +181,11 @@ chnlist-file /etc/chinadns/chnlist.txt
 gfwlist-file /etc/chinadns/gfwlist.txt
 # chnlist-first
 
-# 收集 tag:chn、tag:gfw 域名的 IP
+# 收集 tag:chn、tag:gfw 域名的 IP (可选)
 add-tagchn-ip chnip,chnip6
 add-taggfw-ip gfwip,gfwip6
 
-# 用于测试 tag:none 域名的 IP (国内上游)
+# 测试 tag:none 域名的 IP (针对国内上游)
 ipset-name4 chnroute
 ipset-name6 chnroute6
 
@@ -226,7 +226,7 @@ trust-dns tcp://8.8.8.8
 gfwlist-file /etc/chinadns/gfwlist.txt
 default-tag chn
 
-# 收集 tag:gfw 域名的 IP
+# 收集 tag:gfw 域名的 IP (可选)
 add-taggfw-ip gfwip,gfwip6
 
 # dns 缓存
@@ -263,7 +263,7 @@ trust-dns tcp://8.8.8.8
 chnlist-file /etc/chinadns/chnlist.txt
 default-tag gfw
 
-# 收集 tag:chn 域名的 IP
+# 收集 tag:chn 域名的 IP (可选)
 add-tagchn-ip chnip,chnip6
 
 # dns 缓存
