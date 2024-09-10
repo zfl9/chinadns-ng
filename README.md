@@ -361,15 +361,14 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ### config
 
-- 2024.03.07 版本起，开始支持 `-C/--config <path>` 选项。
-- `config` 配置文件，一行一个，空行和`#`开头的行被忽略。
+- `-C/--config <path>` 指定配置文件路径，支持多个配置文件。
+  - 配置文件是一个 UTF-8 纯文本文件，没有特定的文件扩展名。
   - 格式 `optname [value]`，`optname` 是不带 `--` 的长命令行选项名。
   - 例如 `bind-addr 127.0.0.1`、`bind-port 65353`、`noip-as-chnip`。
-  - 不支持行尾注释（如 `verbose # foo`），请使用单独的`#`开头行。
-  - 配置文件内可使用 `config path/to/config` 实现文件包含的效果。
-  - 命令行选项中也可以指定多个 `-C/--config` 来使用多个配置文件。
-- `-C/--config/config` 只是从文件读取“命令行选项”并处理，无其他特别之处。
-- `-C/--config` 与其他命令行选项可随意混用，不可重复的选项以最后一个为准。
+  - 空白行、`#`开头的行 被忽略；不支持行尾注释（如`verbose #foo`）。
+  - 文件中可多次使用 `config <path>` 配置行来实现配置文件包含的效果。
+- `-C/--config` 只是从给定文本文件读取“命令行选项”并处理，无其他特别之处。
+- `-C/--config` 和其他命令行选项可随意混用，不可重复的选项以最后一个为准。
 
 ### bind-addr、bind-port
 
