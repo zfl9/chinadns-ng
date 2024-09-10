@@ -159,10 +159,10 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 
 ---
 
-### chnroute 分流模式
+### chnroute 分流
 
-- chnlist.txt (tag:chn) 走国内上游，将 IP 收集至 `chnip,chnip6` ipset
-- gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
+- chnlist.txt (tag:chn) 走国内上游，将 IP 收集至 `chnip,chnip6` ipset（可选）
+- gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset（可选）
 - 其他域名 (tag:none) 同时走国内和可信上游，根据 IP 测试结果决定最终响应
 
 <details><summary><b>点我展开</b></summary><p>
@@ -173,7 +173,7 @@ bind-addr 0.0.0.0
 bind-port 53
 
 # 国内上游、可信上游
-china-dns 114.114.114.114
+china-dns 223.5.5.5
 trust-dns tcp://8.8.8.8
 
 # 域名列表，用于分流
@@ -205,9 +205,9 @@ verdict-cache 4096
 
 ---
 
-### gfwlist 分流模式
+### gfwlist 分流
 
-- gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
+- gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset（可选）
 - 其他域名 (tag:chn) 走国内上游，不需要收集 IP（未指定 add-tagchn-ip）
 
 <details><summary><b>点我展开</b></summary><p>
@@ -218,7 +218,7 @@ bind-addr 0.0.0.0
 bind-port 53
 
 # 国内上游、可信上游
-china-dns 114.114.114.114
+china-dns 223.5.5.5
 trust-dns tcp://8.8.8.8
 
 # 域名列表，用于分流
@@ -242,9 +242,9 @@ cache-refresh 20
 
 ---
 
-### global 分流模式
+### chnlist 分流
 
-- ignlist.txt (tag:chn) 走国内上游，将 IP 收集至 `ignip,ignip6` ipset
+- chnlist.txt (tag:chn) 走国内上游，将 IP 收集至 `chnip,chnip6` ipset（可选）
 - 其他域名 (tag:gfw) 走可信上游，不需要收集 IP（未指定 add-taggfw-ip）
 
 <details><summary><b>点我展开</b></summary><p>
@@ -255,16 +255,16 @@ bind-addr 0.0.0.0
 bind-port 53
 
 # 国内上游、可信上游
-china-dns 114.114.114.114
+china-dns 223.5.5.5
 trust-dns tcp://8.8.8.8
 
 # 域名列表，用于分流
-# 未被 ignlist.txt 匹配的归为 tag:gfw
-chnlist-file /etc/chinadns/ignlist.txt
+# 未被 chnlist.txt 匹配的归为 tag:gfw
+chnlist-file /etc/chinadns/chnlist.txt
 default-tag gfw
 
 # 收集 tag:chn 域名的 IP
-add-tagchn-ip ignip,ignip6
+add-tagchn-ip chnip,chnip6
 
 # dns 缓存
 cache 4096
@@ -729,7 +729,7 @@ chinadns-ng -g gfwlist.txt -m chnlist.txt 其他参数... # 重新运行 chinadn
 dns2tcp -L "127.0.0.1#5353" -R "8.8.8.8#53"
 
 # 运行 chinadns-ng
-chinadns-ng -c 114.114.114.114 -t '127.0.0.1#5353'
+chinadns-ng -c 223.5.5.5 -t '127.0.0.1#5353'
 ```
 
 ---
