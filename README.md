@@ -76,7 +76,7 @@
 git clone https://github.com/zfl9/chinadns-ng
 cd chinadns-ng
 
-# 本机 (某些环境中可能无法构建，请手动指定"-Dtarget"和"-Dcpu")
+# 本机 (若构建失败，请手动指定"-Dtarget"和"-Dcpu")
 zig build # 链接到glibc
 zig build -Dtarget=native-native-musl # 静态链接到musl
 
@@ -130,7 +130,10 @@ ARCH=mips32r2 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 ARCH=mips32r3 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
 ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$ARCH
 
-# mips64、mips64el 暂不支持，需要等 zig 这边的版本更新
+# mips64/mips64el 请前往 releases 页面下载预编译的可执行文件
+# 如果想自己编译，请先前往 zig 根目录，按顺序 apply 这两个补丁
+# - https://github.com/ziglang/zig/pull/14541.patch
+# - https://github.com/ziglang/zig/pull/14556.patch
 ```
 
 </p></details>
