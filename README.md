@@ -140,14 +140,136 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 
 ## Docker
 
-由于运行时会访问内核 ipset/nft 子系统，所以 docker run 时请带上 `--privileged`。
+因为要访问内核的 ipset/nftset，docker run 时请带上 `--privileged` 参数。
 
-建议去 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载预编译好的 musl 静态链接二进制，这样就不需要 build 了。
+请前往 [releases](https://github.com/zfl9/chinadns-ng/releases) 页面下载可执行文件（无依赖），cp 至目标容器，运行即可。
 
 ## OpenWrt
 
-- pexcn：https://github.com/pexcn/openwrt-chinadns-ng
-- 部分科学上网插件自带了 chinadns-ng，你也可以直接使用它们
+- 某些科学上网插件附带了 chinadns-ng，请查看对应插件的文档。
+- https://github.com/pexcn/openwrt-chinadns-ng (未适配 2.0 的新功能)。
+
+## 配置示例
+
+- chinadns-ng 通常与 iptables/nftables 透明代理一起用。
+- 这里列举的三个例子其实就是 [ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的使用范例。
+- 当然也可以在其他 Linux 环境下使用，具体看你的需求。
+
+---
+
+### chnroute 分流模式
+
+- chnlist.txt (tag:chn) 走国内上游，将 IP 收集至 `chnip,chnip6` ipset
+- gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
+- 其他域名 (tag:none) 同时走国内和可信上游，根据 IP 测试结果决定最终响应
+
+<details><summary><b>点我展开</b></summary><p>
+
+```shell
+# 监听地址和端口
+bind-addr 0.0.0.0
+bind-port 53
+
+# 国内上游、可信上游
+china-dns 114.114.114.114
+trust-dns tcp://8.8.8.8
+
+# 域名列表，用于分流
+chnlist-file /etc/chinadns/chnlist.txt
+gfwlist-file /etc/chinadns/gfwlist.txt
+# chnlist-first
+
+# 收集 tag:chn、tag:gfw 域名的 IP
+add-tagchn-ip chnip,chnip6
+add-taggfw-ip gfwip,gfwip6
+
+# 用于测试 tag:none 域名的 IP (国内上游)
+ipset-name4 chnroute
+ipset-name6 chnroute6
+
+# dns 缓存
+cache 4096
+cache-stale 86400
+cache-refresh 20
+
+# verdict 缓存 (用于 tag:none 域名)
+verdict-cache 4096
+
+# 详细日志
+# verbose
+```
+
+</p></details>
+
+### gfwlist 分流模式
+
+- gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
+- 其他域名 (tag:chn) 走国内上游，不需要收集 IP（未指定 add-tagchn-ip）
+
+<details><summary><b>点我展开</b></summary><p>
+
+```shell
+# 监听地址和端口
+bind-addr 0.0.0.0
+bind-port 53
+
+# 国内上游、可信上游
+china-dns 114.114.114.114
+trust-dns tcp://8.8.8.8
+
+# 域名列表，用于分流
+# 未被 gfwlist.txt 匹配的归为 tag:chn
+gfwlist-file /etc/chinadns/gfwlist.txt
+default-tag chn
+
+# 收集 tag:gfw 域名的 IP
+add-taggfw-ip gfwip,gfwip6
+
+# dns 缓存
+cache 4096
+cache-stale 86400
+cache-refresh 20
+
+# 详细日志
+# verbose
+```
+
+</p></details>
+
+### global 分流模式
+
+- ignlist.txt (tag:chn) 走国内上游，将 IP 收集至 `ignip,ignip6` ipset
+- 其他域名 (tag:gfw) 走可信上游，不需要收集 IP（未指定 add-taggfw-ip）
+
+<details><summary><b>点我展开</b></summary><p>
+
+```shell
+# 监听地址和端口
+bind-addr 0.0.0.0
+bind-port 53
+
+# 国内上游、可信上游
+china-dns 114.114.114.114
+trust-dns tcp://8.8.8.8
+
+# 域名列表，用于分流
+# 未被 ignlist.txt 匹配的归为 tag:gfw
+chnlist-file /etc/chinadns/ignlist.txt
+default-tag gfw
+
+# 收集 tag:chn 域名的 IP
+add-tagchn-ip ignip,ignip6
+
+# dns 缓存
+cache 4096
+cache-stale 86400
+cache-refresh 20
+
+# 详细日志
+# verbose
+```
+
+</p></details>
 
 ## 命令选项
 
@@ -206,122 +328,6 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -V, --version                        print `chinadns-ng` version number and exit
  -h, --help                           print `chinadns-ng` help information and exit
 bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
-```
-
-</p></details>
-
-### 配置示例
-
-- chinadns-ng 通常与 iptables/nftables 透明代理一起用。
-- 这里列举的三个例子其实就是 [ss-tproxy](https://github.com/zfl9/ss-tproxy) 中的使用范例。
-- 当然也可以在其他 Linux 环境下使用，具体看你的需求。
-
----
-
-<details><summary><b>chnroute 分流模式 [点我展开]</b></summary><p>
-
-- chnlist.txt (tag:chn) 走国内上游，将 IP 收集至 `chnip,chnip6` ipset
-- gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
-- 其他域名 (tag:none) 同时走国内和可信上游，根据 IP 测试结果决定最终响应
-
-```shell
-# 监听地址和端口
-bind-addr 0.0.0.0
-bind-port 53
-
-# 国内上游、可信上游
-china-dns 114.114.114.114
-trust-dns tcp://8.8.8.8
-
-# 域名列表，用于分流
-chnlist-file /etc/chinadns/chnlist.txt
-gfwlist-file /etc/chinadns/gfwlist.txt
-# chnlist-first
-
-# 收集 tag:chn、tag:gfw 域名的 IP
-add-tagchn-ip chnip,chnip6
-add-taggfw-ip gfwip,gfwip6
-
-# 用于测试 tag:none 域名的 IP (国内上游)
-ipset-name4 chnroute
-ipset-name6 chnroute6
-
-# dns 缓存
-cache 4096
-cache-stale 86400
-cache-refresh 20
-
-# verdict 缓存 (用于 tag:none 域名)
-verdict-cache 4096
-
-# 详细日志
-# verbose
-```
-
-</p></details>
-
-<details><summary><b>gfwlist 分流模式 [点我展开]</b></summary><p>
-
-- gfwlist.txt (tag:gfw) 走可信上游，将 IP 收集至 `gfwip,gfwip6` ipset
-- 其他域名 (tag:chn) 走国内上游，不需要收集 IP（未指定 add-tagchn-ip）
-
-```shell
-# 监听地址和端口
-bind-addr 0.0.0.0
-bind-port 53
-
-# 国内上游、可信上游
-china-dns 114.114.114.114
-trust-dns tcp://8.8.8.8
-
-# 域名列表，用于分流
-# 未被 gfwlist.txt 匹配的归为 tag:chn
-gfwlist-file /etc/chinadns/gfwlist.txt
-default-tag chn
-
-# 收集 tag:gfw 域名的 IP
-add-taggfw-ip gfwip,gfwip6
-
-# dns 缓存
-cache 4096
-cache-stale 86400
-cache-refresh 20
-
-# 详细日志
-# verbose
-```
-
-</p></details>
-
-<details><summary><b>global 分流模式 [点我展开]</b></summary><p>
-
-- ignlist.txt (tag:chn) 走国内上游，将 IP 收集至 `ignip,ignip6` ipset
-- 其他域名 (tag:gfw) 走可信上游，不需要收集 IP（未指定 add-taggfw-ip）
-
-```shell
-# 监听地址和端口
-bind-addr 0.0.0.0
-bind-port 53
-
-# 国内上游、可信上游
-china-dns 114.114.114.114
-trust-dns tcp://8.8.8.8
-
-# 域名列表，用于分流
-# 未被 ignlist.txt 匹配的归为 tag:gfw
-chnlist-file /etc/chinadns/ignlist.txt
-default-tag gfw
-
-# 收集 tag:chn 域名的 IP
-add-tagchn-ip ignip,ignip6
-
-# dns 缓存
-cache 4096
-cache-stale 86400
-cache-refresh 20
-
-# 详细日志
-# verbose
 ```
 
 </p></details>
