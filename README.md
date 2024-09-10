@@ -155,6 +155,8 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 - `--bar [value]`：选项值是 optional 的
 - `--flag`：没有选项值，即 bool/flag 选项
 
+<details><summary><b>点我展开所有选项</b></summary><p>
+
 ```console
 $ chinadns-ng --help
 usage: chinadns-ng <options...>. the existing options are as follows:
@@ -205,6 +207,8 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  -h, --help                           print `chinadns-ng` help information and exit
 bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otokaze)
 ```
+
+</p></details>
 
 ### 配置示例
 
