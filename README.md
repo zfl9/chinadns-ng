@@ -432,7 +432,7 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 - `add-tagchn-ip` 用于动态添加 tag:chn 域名的解析结果 ip 至 ipset/nftset 集合。
 - `add-taggfw-ip` 用于动态添加 tag:gfw 域名的解析结果 ip 至 ipset/nftset 集合。
-  - 参数格式`ipv4集合名,ipv6集合名`，nftset 格式和注意事项见 [nftset 相关说明](#ipsetnftset-相关说明)。
+  - 参数为`ipv4集合名[,ipv6集合名]`，nftset 格式和注意事项见 [nftset 相关说明](#ipsetnftset-相关说明)。
   - 对于`add-tagchn-ip`，若未给出集合名，则使用`ipset-name4/6`的那个集合。
   - 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用：
     - `--add-tagchn-ip null,chnip6`：表示不需要收集 ipv4 地址
@@ -453,7 +453,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 相关配置/命令行选项：
 
 - **ip test**：`ipset-name4`、`ipset-name6`（默认为 chnroute、chnroute6）
-- **ip add**： `add-tagchn-ip`、`add-taggfw-ip`、`group-ipset`（无默认行为）
+- **ip add**：`add-tagchn-ip`、`add-taggfw-ip`、`group-ipset`（无默认行为）
+- ip add 选项的参数为`ipv4集合名[,ipv6集合名]`，`null`可作为空集合的占位符
 - 注意：所有相关配置要么使用 ipset 后端，要么使用 nftset 后端，不允许混用
 - 程序不会自动创建 ipset/nftset 集合，如果需要，请先手动导入/创建相关集合
 
