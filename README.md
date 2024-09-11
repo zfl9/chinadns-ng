@@ -7,15 +7,14 @@
 - 手动指定国内 DNS 和可信 DNS，而非自动识别，更加可控。
 - 修复原版对保留地址的处理问题，去除过时特性，只留核心功能。
 - 修复原版对可信 DNS 先于国内 DNS 返回而导致判断失效的问题。
-- 支持 `gfwlist/chnlist` 域名列表，并深度优化了性能以及内存占用。
-- 支持纯域名分流：要么走china上游，要么走trust上游，不进行ip测试。
-- 可动态添加大陆域名结果IP至`ipset/nftset`，实现完美chnroute分流。
-- 可动态添加gfw域名结果IP至`ipset/nftset`，用于实现gfwlist透明代理。
-- 支持`nftables set`，并针对 add 操作进行了性能优化，避免操作延迟。
+- 支持 `chnlist/gfwlist` 域名列表，并深度优化了性能以及内存占用。
+- 支持纯域名分流：要么走china上游，要么走trust上游，不进行IP测试。
+- 可动态收集域名的解析结果IP至`ipset/nftset`，辅助各种代理/分流场景。
+- 支持`nftables set`，并针对 IP add 操作进行了性能优化，避免操作延迟。
 - 更加细致的 no-ipv6(AAAA) 控制，可根据域名类型，IP测试结果进行过滤。
 - DNS 缓存、stale 缓存模式、缓存预刷新、缓存忽略名单（不缓存的域名）。
 - 支持 tag:none 域名的判定结果缓存，避免重复请求和判定，减少DNS泄露。
-- 除默认的 china、trust 组外，还支持最多 6 个自定义组（上游DNS、ipset）。
+- 除默认的 china、trust 组外，还有 6 个自定义组（上游DNS、ipset/nftset）。
 
 ---
 
@@ -29,7 +28,7 @@
 
 - gfwlist.txt域名(tag:gfw域名)，转发给trust组，trust需返回未受污染的结果，比如走代理，具体方式不限。
 
-- 其他域名(tag:none域名)，同时转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组。是否为大陆ip的核心依据，就是测试ip是否位于`ipset-name4/6`指定的那个地址集合。
+- 其他域名(tag:none域名)，同时转发给china组和trust组，如果china组解析结果(A/AAAA)是大陆ip，则采纳china组，否则采纳trust组。是否为大陆ip的核心依据，就是测试ip是否在`ipset-name4/6`指定的地址集合中。
 
 - 若启用了tag:none域名的判决缓存，则同一域名的后续请求只会转发给特定的上游组（china组或trust组，具体取决于之前的ip测试结果），建议启用此功能，避免重复请求、判定，减少DNS泄露。
 
@@ -399,15 +398,17 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 - `proto://`：可省略，查询协议，默认为`无`。
   - `无`：UDP/TCP 上游，根据查询方的传入协议来决定使用 UDP 查询还是 TCP 查询。
   - `udp://`：UDP 上游。
-  - `tcp://`；TCP 上游。
+  - `tcp://`：TCP 上游。
   - `tls://`：DoT 上游（需使用 wolfssl 版本）。
 - `host@`：可省略，用于 DoT 上游。
   - 提供 SSL/TLS 握手时的 SNI（服务器名称指示）信息。
   - 启用 SSL/TLS 证书验证时，将检查证书中的域名是否与之匹配。
 - `ip`：不可省略，支持 IPv4 和 IPv6 地址（不需要用 `[]` 括起来）。
 - `#port`：可省略，默认为所选定协议的标准端口（UDP/TCP 是 53，DoT 是 853）。
-- `?count=N`：可省略，默认为 10，表示单个会话最多处理多少个查询，见 [#189](https://github.com/zfl9/chinadns-ng/issues/189)。
+- `?count=N`：可省略，默认为 10，表示单个会话最多处理多少查询，见 [#189](https://github.com/zfl9/chinadns-ng/issues/189)。
+  - 0 表示不限制，只要上游不主动断开连接，对应 TCP/TLS 会话就一直存在。
 - `?life=N`：可省略，默认为 10，表示单个会话最多存活多少秒，见 [#189](https://github.com/zfl9/chinadns-ng/issues/189)。
+  - 0 表示不限制，只要上游不主动断开连接，对应 TCP/TLS 会话就一直存在。
 
 ### chnlist-file、gfwlist-file、chnlist-first
 
@@ -420,8 +421,8 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ### default-tag
 
-- `default-tag` 可用于实现"纯域名分流"，也可用于实现 [gfwlist分流模式](#chinadns-ng-也可用于-gfwlist-透明代理分流)。
-- 该选项的核心逻辑就是指定**不匹配任何列表的域名**的`tag`，并无特别之处。
+- `default-tag` 可用于实现"纯域名分流"，也可用于实现 [gfwlist分流](#chinadns-ng-也可用于-gfwlist-透明代理分流)。
+- 其核心逻辑是设置 **未匹配任何列表的域名** 的`tag`，并无其他特别之处。
 - 通常与`-g`或`-m`选项一起使用，比如下述例子，实现了"纯域名分流"模式：
   - `-g gfwlist.txt -d chn`：gfw列表的域名走可信上游，其他走国内上游。
   - `-m chnlist.txt -d gfw`：chn列表的域名走国内上游，其他走可信上游。
@@ -429,9 +430,9 @@ bug report: https://github.com/zfl9/chinadns-ng. email: zfl9.com@gmail.com (Otok
 
 ### add-tagchn-ip、add-taggfw-ip
 
-- `add-tagchn-ip` 用于动态添加 tag:chn 域名的解析结果 ip 到 ipset/nftset。
-- `add-taggfw-ip` 用于动态添加 tag:gfw 域名的解析结果 ip 到 ipset/nftset。
-  - 参数格式`ipv4集合名,ipv6集合名`，nftset 格式和注意事项见 `ipset-name4/6`。
+- `add-tagchn-ip` 用于动态添加 tag:chn 域名的解析结果 ip 至 ipset/nftset 集合。
+- `add-taggfw-ip` 用于动态添加 tag:gfw 域名的解析结果 ip 至 ipset/nftset 集合。
+  - 参数格式`ipv4集合名,ipv6集合名`，nftset 格式和注意事项见 [nftset 相关说明](#ipsetnftset-相关说明)。
   - 对于`add-tagchn-ip`，若未给出集合名，则使用`ipset-name4/6`的那个集合。
   - 2024.04.13 版本起，可使用特殊集合名 `null` 表示对应集合不会被使用：
     - `--add-tagchn-ip null,chnip6`：表示不需要收集 ipv4 地址
@@ -534,6 +535,10 @@ group-upstream 192.168.1.1
     - 更改了`cache-ignore`、域名列表（内容更改、优先级更改等）。
     - ~~需要重新触发 add ip 操作（有缓存的情况下不会触发 add ip）~~。
     - 2024.07.21 版本起，从 db 恢复的缓存被首次查询时将触发 add-ip。
+  - tool/dns_cache_mgr 可用于操纵 db 文件，进入 tool 目录，`./make.sh` 即可。
+    - `./dns_cache_mgr`：列出 db 中的所有缓存条目（域名、qtype、TTL、size 等）。
+    - `./dns_cache_mgr -r 域名后缀`：删除给定域名的缓存条目，-r 选项可以多次指定。
+    - 默认 db 文件路径是当前目录下的 `dns-cache.db`，可通过 `-f 文件路径` 选项修改。
 
 ### verdict-cache
 
@@ -734,7 +739,7 @@ chinadns-ng -m chnlist.txt -g gfwlist.txt 其他参数... # 重新运行 chinadn
 
 ---
 
-### 为什么不内置 ~~TCP~~、~~DoT~~、`DoH` 等协议的支持
+### 为什么不内置 ~~TCP~~、~~DoT~~、DoH 等协议的支持
 
 - 2024.03.07 版本起，已内置完整的 TCP 支持（传入、传出）。
 - 2024.04.27 版本起，支持 DoT 协议的上游，DoH 不打算实现。
