@@ -222,7 +222,7 @@ const UDP = struct {
     }
 
     /// call path:
-    /// - recv_reply
+    /// - reply_receiver
     /// - check_timeout
     fn free(self: *UDP) void {
         if (self.freed) return;
@@ -345,6 +345,8 @@ const UDP = struct {
             const len = g.evloop.read_udp(self.fdobj, rmsg.buf(), null) orelse return self.on_error("recv");
             rmsg.len = cc.to_u16(len);
 
+            const prev_idle = self.is_idle();
+
             // update query_list
             if (len >= dns.header_len()) {
                 const qid = dns.get_id(rmsg.msg());
@@ -356,8 +358,11 @@ const UDP = struct {
 
             // all queries completed
             if (self.is_idle()) {
-                self.session_node.on_idle();
-                if (self.is_retire()) return; // free
+                if (!prev_idle)
+                    self.session_node.on_idle();
+
+                if (self.is_retire())
+                    return; // free
             }
         }
     }
@@ -796,6 +801,8 @@ const TCP = struct {
             rmsg.len = len;
             self.recv(rmsg.msg()) orelse return;
 
+            const prev_idle = self.is_idle();
+
             // update ack_list
             self.on_recv_msg(rmsg);
 
@@ -804,8 +811,11 @@ const TCP = struct {
 
             // all queries completed
             if (self.is_idle()) {
-                self.session_node.on_idle();
-                if (self.is_retire()) return; // stop and free
+                if (!prev_idle)
+                    self.session_node.on_idle();
+
+                if (self.is_retire())
+                    return; // stop and free
             }
         }
     }

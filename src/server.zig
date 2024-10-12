@@ -102,7 +102,7 @@ const Query = struct {
     }
 
     /// remove from query_list and free()
-    pub fn on_timeout(self: *const Query) void {
+    pub fn on_timeout(self: *Query) void {
         if (g.verbose()) {
             const from = self.flags.get_from_str();
 
@@ -192,7 +192,7 @@ const Query = struct {
         }
 
         /// remove from list and free(q)
-        pub fn del(self: *List, q: *const Query) void {
+        pub fn del(self: *List, q: *Query) void {
             assert(self.map.remove(q.qid));
             q.node.unlink();
             q.free();

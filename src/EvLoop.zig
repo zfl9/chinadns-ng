@@ -126,13 +126,13 @@ pub const Fd = struct {
             return;
 
         self.canceled = true;
-        // cc.set_errno(c.ECANCELED);
 
         _ = self.ref();
         defer self.unref();
 
         if (self.read_frame) |frame|
             co.do_resume(frame);
+
         if (self.write_frame) |frame|
             co.do_resume(frame);
 
@@ -242,7 +242,7 @@ pub noinline fn init() EvLoop {
 }
 
 /// return true if ok (internal api)
-noinline fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*Ev) bool {
+noinline fn ev_ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*Ev) bool {
     cc.epoll_ctl(self.epfd, op, fd, ev) orelse {
         const op_name = switch (op) {
             c.EPOLL_CTL_ADD => "ADD",
@@ -258,20 +258,20 @@ noinline fn ctl(self: *EvLoop, op: c_int, fd: c_int, ev: ?*Ev) bool {
 }
 
 /// return true if ok
-fn add(self: *EvLoop, fdobj: *const Fd, events: u32) bool {
+fn ev_add(self: *EvLoop, fdobj: *const Fd, events: u32) bool {
     var ev = Ev.V.init(events, fdobj);
-    return self.ctl(c.EPOLL_CTL_ADD, fdobj.fd, ev.ptr());
+    return self.ev_ctl(c.EPOLL_CTL_ADD, fdobj.fd, ev.ptr());
 }
 
 /// return true if ok
-fn mod(self: *EvLoop, fdobj: *const Fd, events: u32) bool {
+fn ev_mod(self: *EvLoop, fdobj: *const Fd, events: u32) bool {
     var ev = Ev.V.init(events, fdobj);
-    return self.ctl(c.EPOLL_CTL_MOD, fdobj.fd, ev.ptr());
+    return self.ev_ctl(c.EPOLL_CTL_MOD, fdobj.fd, ev.ptr());
 }
 
 /// return true if ok
-fn del(self: *EvLoop, fdobj: *const Fd) bool {
-    return self.ctl(c.EPOLL_CTL_DEL, fdobj.fd, null);
+fn ev_del(self: *EvLoop, fdobj: *const Fd) bool {
+    return self.ev_ctl(c.EPOLL_CTL_DEL, fdobj.fd, null);
 }
 
 // ======================================================================
@@ -301,13 +301,13 @@ const EvType = enum {
 };
 
 /// before suspend {}
-fn add_event_listener(self: *EvLoop, fdobj: *Fd, comptime ev: EvType, frame: anyframe) void {
+fn add_listener(self: *EvLoop, fdobj: *Fd, comptime ev: EvType, frame: anyframe) void {
     self.cache_change(fdobj); // save the original state
     set_frame(fdobj, comptime ev.field_name(), frame);
 }
 
 /// after suspend {}
-fn del_event_listener(self: *EvLoop, fdobj: *Fd, comptime ev: EvType, frame: anyframe) void {
+fn del_listener(self: *EvLoop, fdobj: *Fd, comptime ev: EvType, frame: anyframe) void {
     self.cache_change(fdobj); // save the original state
     unset_frame(fdobj, comptime ev.field_name(), frame);
 }
@@ -328,11 +328,11 @@ fn apply_change(self: *EvLoop) void {
         if (old_events == new_events) {
             continue;
         } else if (old_events == 0) {
-            assert(self.add(fdobj, new_events));
+            assert(self.ev_add(fdobj, new_events));
         } else if (new_events == 0) {
-            assert(self.del(fdobj));
+            assert(self.ev_del(fdobj));
         } else {
-            assert(self.mod(fdobj, new_events));
+            assert(self.ev_mod(fdobj, new_events));
         }
     }
     self.change_list.clearRetainingCapacity();
@@ -342,7 +342,7 @@ fn on_close_fd(self: *EvLoop, fdobj: *const Fd) void {
     if (self.change_list.fetchRemove(fdobj)) |v| {
         const state: Fd.State = v.value;
         if (!state.is_empty())
-            assert(self.del(fdobj));
+            assert(self.ev_del(fdobj));
     }
 }
 
@@ -437,9 +437,9 @@ comptime {
 /// used for external modules, not for this module: \
 /// because the coroutine chains consume at least 24 bytes per level (x86_64).
 pub fn wait_readable(self: *EvLoop, fdobj: *Fd) ?void {
-    self.add_event_listener(fdobj, .read, @frame());
+    self.add_listener(fdobj, .read, @frame());
     suspend {}
-    self.del_event_listener(fdobj, .read, @frame());
+    self.del_listener(fdobj, .read, @frame());
 
     if (fdobj.is_canceled())
         return null;
@@ -449,9 +449,9 @@ pub fn wait_readable(self: *EvLoop, fdobj: *Fd) ?void {
 /// used for external modules, not for this module: \
 /// because the coroutine chains consume at least 24 bytes per level (x86_64).
 pub fn wait_writable(self: *EvLoop, fdobj: *Fd) ?void {
-    self.add_event_listener(fdobj, .write, @frame());
+    self.add_listener(fdobj, .write, @frame());
     suspend {}
-    self.del_event_listener(fdobj, .write, @frame());
+    self.del_listener(fdobj, .write, @frame());
 
     if (fdobj.is_canceled())
         return null;
@@ -462,9 +462,9 @@ pub fn connect(self: *EvLoop, fdobj: *Fd, addr: *const cc.SockAddr) ?void {
         if (cc.errno() != c.EINPROGRESS)
             return null;
 
-        self.add_event_listener(fdobj, .write, @frame());
+        self.add_listener(fdobj, .write, @frame());
         suspend {}
-        self.del_event_listener(fdobj, .write, @frame());
+        self.del_listener(fdobj, .write, @frame());
 
         if (fdobj.is_canceled())
             return null;
@@ -486,9 +486,9 @@ pub fn accept(self: *EvLoop, fdobj: *Fd, src_addr: ?*cc.SockAddr) ?c_int {
             if (cc.errno() != c.EAGAIN)
                 return null;
 
-            self.add_event_listener(fdobj, .read, @frame());
+            self.add_listener(fdobj, .read, @frame());
             suspend {}
-            self.del_event_listener(fdobj, .read, @frame());
+            self.del_listener(fdobj, .read, @frame());
 
             continue;
         };
@@ -516,9 +516,9 @@ pub fn read(self: *EvLoop, fdobj: *Fd, buf: []u8) ReadErr!void {
 
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (nread < buf.len) {
-            self.add_event_listener(fdobj, .read, @frame());
+            self.add_listener(fdobj, .read, @frame());
             suspend {}
-            self.del_event_listener(fdobj, .read, @frame());
+            self.del_listener(fdobj, .read, @frame());
         }
     }
 }
@@ -529,9 +529,9 @@ pub fn read_udp(self: *EvLoop, fdobj: *Fd, buf: []u8, src_addr: ?*cc.SockAddr) ?
             if (cc.errno() != c.EAGAIN)
                 return null;
 
-            self.add_event_listener(fdobj, .read, @frame());
+            self.add_listener(fdobj, .read, @frame());
             suspend {}
-            self.del_event_listener(fdobj, .read, @frame());
+            self.del_listener(fdobj, .read, @frame());
 
             continue;
         };
@@ -554,9 +554,9 @@ pub fn write(self: *EvLoop, fdobj: *Fd, data: []const u8) ?void {
 
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (nsend < data.len) {
-            self.add_event_listener(fdobj, .write, @frame());
+            self.add_listener(fdobj, .write, @frame());
             suspend {}
-            self.del_event_listener(fdobj, .write, @frame());
+            self.del_listener(fdobj, .write, @frame());
         }
     }
 }
@@ -580,9 +580,9 @@ pub fn writev(self: *EvLoop, fdobj: *Fd, in_iovec: []cc.iovec_t) ?void {
 
         // https://man7.org/linux/man-pages/man7/epoll.7.html
         if (iovec_len > 0) {
-            self.add_event_listener(fdobj, .write, @frame());
+            self.add_listener(fdobj, .write, @frame());
             suspend {}
-            self.del_event_listener(fdobj, .write, @frame());
+            self.del_listener(fdobj, .write, @frame());
         }
     }
 }

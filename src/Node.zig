@@ -112,9 +112,11 @@ fn link(node: *Node, prev: *Node, next: *Node) void {
 
 /// `node.prev` and `node.next` are unmodified, use `node.init()` if needed.
 /// `list_head.unlink()` is not allowed unless `list_head` is an empty list.
-pub fn unlink(node: *const Node) void {
+pub fn unlink(node: *Node) void {
     node.prev.next = node.next;
     node.next.prev = node.prev;
+    node.prev = undefined;
+    node.next = undefined;
 }
 
 // =========================================================
