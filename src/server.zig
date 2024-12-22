@@ -11,7 +11,6 @@ const cache = @import("cache.zig");
 const Tag = @import("tag.zig").Tag;
 const groups = @import("groups.zig");
 const Upstream = @import("Upstream.zig");
-const NoAAAA = @import("NoAAAA.zig");
 const EvLoop = @import("EvLoop.zig");
 const RcMsg = @import("RcMsg.zig");
 const Node = @import("Node.zig");
@@ -344,11 +343,11 @@ const QueryLog = struct {
         );
     }
 
-    pub noinline fn noaaaa(self: *const QueryLog, rule: NoAAAA.Rule.T) void {
+    pub noinline fn noaaaa(self: *const QueryLog, rule: cc.ConstStr) void {
         log.info(
             @src(),
             "query(id:%u, tag:%s, qtype:AAAA, '%s') filtered by rule: %s",
-            .{ cc.to_uint(self.id), self.tag.name(), self.name, NoAAAA.Rule.to_name(rule) },
+            .{ cc.to_uint(self.id), self.tag.name(), self.name, rule },
         );
     }
 
@@ -464,12 +463,14 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
     }
 
     // AAAA filter
-    if (qtype == c.DNS_TYPE_AAAA)
-        if (g.noaaaa_rule.by_tag(tag)) |rule| {
-            if (g.verbose()) qlog.noaaaa(rule);
+    if (qtype == c.DNS_TYPE_AAAA) {
+        const filter = groups.get_ip6_filter(tag);
+        if (filter.filter_query()) {
+            if (g.verbose()) qlog.noaaaa(filter.rule_desc().?);
             const rmsg = dns.empty_reply(msg, qnamelen);
             return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
-        };
+        }
+    }
 
     // qtype filter
     if (std.mem.indexOfScalar(u16, g.filter_qtypes, qtype) != null) {
@@ -606,11 +607,11 @@ const ReplyLog = struct {
         );
     }
 
-    pub noinline fn noaaaa(self: *const ReplyLog, rule: NoAAAA.Rule.T) void {
+    pub noinline fn noaaaa(self: *const ReplyLog, rule: cc.ConstStr) void {
         log.info(
             @src(),
             "reply(qid:%u, tag:%s, qtype:AAAA, '%s') filtered by rule: %s",
-            .{ cc.to_uint(self.qid), self.tag_name(), self.name, NoAAAA.Rule.to_name(rule) },
+            .{ cc.to_uint(self.qid), self.tag_name(), self.name, rule },
         );
     }
 
@@ -748,8 +749,9 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
     // AAAA filter (empty the reply)
     var ip_filtered = false;
     if (qtype == c.DNS_TYPE_AAAA) {
-        if (g.noaaaa_rule.by_ip_test(msg, qnamelen, ip_test_res)) |rule| {
-            if (g.verbose()) rlog.noaaaa(rule);
+        const filter = groups.get_ip6_filter(q.tag);
+        if (filter.filter_reply(msg, qnamelen, ip_test_res)) {
+            if (g.verbose()) rlog.noaaaa(filter.rule_desc().?);
             msg = dns.empty_reply(msg, qnamelen);
             ip_filtered = true;
         }

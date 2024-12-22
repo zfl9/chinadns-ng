@@ -10,81 +10,47 @@ const Tag = @import("tag.zig").Tag;
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const Upstream = @import("Upstream.zig");
+const IP6Filter = @import("ip6_filter.zig").IP6Filter;
 const assert = std.debug.assert;
 const testing = std.testing;
 
 // ========================================================
 
-/// tag:chn, tag:gfw, tag:\<user-defined>
-var _tag_to_group: std.ArrayListUnmanaged(Group) = .{};
+var _all_groups = [_]Group{.{}} ** (c.TAG_NONE + 1);
 
 const Group = struct {
     dnl_filenames: StrList = .{},
     upstream_group: Upstream.Group = .{},
     ipset_name46: DynStr = .{}, // add ip to ipset/nftset
     ipset_addctx: ?*ipset.addctx_t = null,
+    ip6_filter: IP6Filter = .{},
 };
 
-// ========================================================
-
-pub fn module_init() void {
-    // tag:chn, tag:gfw
-    ensure_groups_n(2);
-}
-
-pub fn module_deinit() void {
-    _tag_to_group.clearAndFree(g.allocator);
-}
-
-// ========================================================
-
-noinline fn ensure_groups_n(new_n: usize) void {
-    assert(new_n <= c.TAG__MAX + 1);
-
-    const old_n = _tag_to_group.items.len;
-    if (new_n <= old_n) return;
-
-    _tag_to_group.ensureTotalCapacityPrecise(g.allocator, new_n) catch unreachable;
-
-    var tag_v = cc.to_u8(old_n);
-    while (tag_v < new_n) : (tag_v += 1)
-        _tag_to_group.addOneAssumeCapacity().* = .{};
-}
-
-fn has(tag: Tag) bool {
-    return tag.int() < _tag_to_group.items.len;
-}
-
-/// assume `tag` exists in `_tag_to_group`
 fn get(tag: Tag) *Group {
-    return &_tag_to_group.items[tag.int()];
+    return &_all_groups[tag.int()];
 }
 
-fn get_or_add(tag: Tag) *Group {
-    ensure_groups_n(tag.int() + 1);
-    return get(tag);
-}
-
-/// assume `tag` exists in `_tag_to_group`
 pub inline fn get_upstream_group(tag: Tag) *Upstream.Group {
     return &get(tag).upstream_group;
 }
 
-/// assume `tag` exists in `_tag_to_group`
 pub inline fn get_ipset_addctx(tag: Tag) ?*ipset.addctx_t {
     return get(tag).ipset_addctx;
 }
 
-/// assume `tag` exists in `_tag_to_group`
 pub inline fn get_ipset_name46(tag: Tag) *DynStr {
     return &get(tag).ipset_name46;
+}
+
+pub inline fn get_ip6_filter(tag: Tag) IP6Filter {
+    return get(tag).ip6_filter;
 }
 
 // ========================================================
 
 /// for opt.zig
 pub noinline fn add_dnl(tag: Tag, filenames: []const u8) ?void {
-    const dnl_filenames = &get_or_add(tag).dnl_filenames;
+    const dnl_filenames = &get(tag).dnl_filenames;
 
     var it = std.mem.split(u8, filenames, ",");
     while (it.next()) |path| {
@@ -101,7 +67,7 @@ pub noinline fn add_upstream(tag: Tag, upstreams: []const u8) ?void {
     if (tag.is_null())
         return null;
 
-    const upstream_group = &get_or_add(tag).upstream_group;
+    const upstream_group = &get(tag).upstream_group;
 
     var it = std.mem.split(u8, upstreams, ",");
     while (it.next()) |upstream|
@@ -113,7 +79,38 @@ pub noinline fn set_ipset(tag: Tag, name46: []const u8) ?void {
     if (tag.is_null())
         return null;
 
-    get_or_add(tag).ipset_name46.set(name46);
+    get(tag).ipset_name46.set(name46);
+}
+
+/// for opt.zig
+pub noinline fn add_ip6_filter(rules: ?[]const u8) ?void {
+    if (rules != null) {
+        var it = std.mem.split(u8, rules.?, ",");
+        while (it.next()) |rule| {
+            // "tag:xxx@ip:xxx" | "tag:xxx"(ip:*) | "ip:xxx"(tag:*)
+            if (std.mem.startsWith(u8, rule, "tag:")) {
+                // "tag:xxx@ip:xxx" | "tag:xxx"(ip:*)
+                const tag_name_end = std.mem.indexOfScalar(u8, rule, '@') orelse rule.len;
+                const tag_name = cc.to_cstr(rule[4..tag_name_end]);
+                const tag = Tag.from_name(tag_name) orelse {
+                    opt.print(@src(), "invalid tag", rule[0..tag_name_end]);
+                    return null;
+                };
+                const ip_rule = if (tag_name_end != rule.len) rule[tag_name_end + 1 ..] else null;
+                get(tag).ip6_filter.add_rule(ip_rule) orelse return null;
+            } else {
+                // "ip:xxx"(tag:*)
+                const ip_rule = rule;
+                for (_all_groups) |*group|
+                    group.ip6_filter.add_rule(ip_rule) orelse return null;
+            }
+        }
+    } else {
+        // filter all AAAA query/reply
+        const ip_rule = null;
+        for (_all_groups) |*group|
+            group.ip6_filter.add_rule(ip_rule) orelse return null;
+    }
 }
 
 // ========================================================
@@ -127,33 +124,47 @@ pub fn on_start() void {
         var has_tls_upstream = false;
 
         var tag_v: u8 = 0; // make zls 0.12 happy
-        for (_tag_to_group.items) |*group| {
+        for (_all_groups) |*group| {
             defer tag_v += 1;
 
             const tag = Tag.from_int(tag_v);
-
-            if (!group.dnl_filenames.is_empty())
-                tag_to_filenames[tag_v] = group.dnl_filenames.items_z().ptr
-            else if (tag != .chn and tag != .gfw and tag != g.default_tag)
-                break :e .{ .tag = tag, .msg = "dnl_filenames is empty" };
-
-            if (tag.is_null())
+            if (!tag.valid())
                 continue;
 
-            group.upstream_group.rm_useless();
+            // `tag:none` not exist ?
+            if (tag == .none and g.default_tag != .none)
+                continue;
 
-            if (group.upstream_group.is_empty())
-                break :e .{ .tag = tag, .msg = "upstream_group is empty" };
+            // [dnl]
+            if (!group.dnl_filenames.is_empty())
+                tag_to_filenames[tag_v] = group.dnl_filenames.items_z().ptr
+            else if (tag != .chn and tag != .gfw and tag != .none and tag != g.default_tag)
+                break :e .{ .tag = tag, .msg = "dnl_filenames is empty" };
 
-            for (group.upstream_group.items()) |*upstream| {
-                log.info(src, "tag:%s upstream: %s", .{ tag.name(), upstream.url });
-                has_tls_upstream = has_tls_upstream or upstream.proto == .tls;
+            if (tag != .none and !tag.is_null()) {
+                // [upstream]
+                group.upstream_group.rm_useless();
+
+                if (group.upstream_group.is_empty())
+                    break :e .{ .tag = tag, .msg = "upstream_group is empty" };
+
+                for (group.upstream_group.items()) |*upstream| {
+                    log.info(src, "tag:%s upstream: %s", .{ tag.name(), upstream.url });
+                    has_tls_upstream = has_tls_upstream or upstream.proto == .tls;
+                }
+
+                // [ipset]
+                if (!group.ipset_name46.is_empty()) {
+                    const name46 = group.ipset_name46.cstr();
+                    group.ipset_addctx = ipset.new_addctx(name46);
+                    log.info(src, "tag:%s add ip to: %s", .{ tag.name(), name46 });
+                }
             }
 
-            if (!group.ipset_name46.is_empty()) {
-                const name46 = group.ipset_name46.cstr();
-                group.ipset_addctx = ipset.new_addctx(name46);
-                log.info(src, "tag:%s add ip to: %s", .{ tag.name(), name46 });
+            // [ip6 filter]
+            if (!tag.is_null()) {
+                if (group.ip6_filter.rule_desc()) |rule|
+                    log.info(src, "tag:%s ipv6 filter: %s", .{ tag.name(), rule });
             }
         }
 
@@ -162,14 +173,6 @@ pub fn on_start() void {
 
         dnl.init(&tag_to_filenames);
 
-        // check for registered but not used tags
-        tag_v = c.TAG__USER;
-        while (tag_v <= c.TAG__MAX) : (tag_v += 1) {
-            const tag = Tag.from_int(tag_v);
-            if (tag.valid() and !has(tag))
-                break :e .{ .tag = tag, .msg = "registered but not used" };
-        }
-
         return;
     };
 
@@ -177,6 +180,14 @@ pub fn on_start() void {
 
     log.err(src, "tag:%s %s", .{ err.tag.name(), err.msg });
     cc.exit(1);
+}
+
+pub fn require_ip_test() bool {
+    for (_all_groups) |*group| {
+        if (group.ip6_filter.require_ip_test())
+            return true;
+    }
+    return false;
 }
 
 // ========================================================

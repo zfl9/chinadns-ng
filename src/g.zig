@@ -3,7 +3,6 @@
 const std = @import("std");
 const cc = @import("cc.zig");
 const ipset = @import("ipset.zig");
-const NoAAAA = @import("NoAAAA.zig");
 const DynStr = @import("DynStr.zig");
 const StrList = @import("StrList.zig");
 const EvLoop = @import("EvLoop.zig");
@@ -24,7 +23,6 @@ pub inline fn verbose() bool {
     return flags.verbose;
 }
 
-pub var noaaaa_rule: NoAAAA = .{};
 pub var filter_qtypes: []u16 = &.{};
 
 /// default tag for domains that do not match any list

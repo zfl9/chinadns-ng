@@ -172,15 +172,13 @@ pub fn main() u8 {
 
     groups.on_start();
 
-    if (g.default_tag == .none or g.noaaaa_rule.require_ip_test()) {
+    if (g.default_tag == .none or groups.require_ip_test()) {
         const name46 = cc.to_cstr_x(&.{ g.chnroute_name.slice(), ",", g.chnroute6_name.slice() });
         g.chnroute_testctx = ipset.new_testctx(name46);
         log.info(src, "ip test db: %s", .{name46});
     }
 
     log.info(src, "default domain name tag: %s", .{g.default_tag.name()});
-
-    g.noaaaa_rule.display();
 
     if (g.cache_size > 0) {
         log.info(src, "enable dns cache, capacity: %u", .{cc.to_uint(g.cache_size)});

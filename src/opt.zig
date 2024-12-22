@@ -8,7 +8,6 @@ const log = @import("log.zig");
 const groups = @import("groups.zig");
 const str2int = @import("str2int.zig");
 const Tag = @import("tag.zig").Tag;
-const NoAAAA = @import("NoAAAA.zig");
 const cache_ignore = @import("cache_ignore.zig");
 const local_rr = @import("local_rr.zig");
 const assert = std.debug.assert;
@@ -35,7 +34,7 @@ const help =
     \\ --group-dnl <paths>                  domain name list for the current group
     \\ --group-upstream <upstreams>         upstream dns server for the current group
     \\ --group-ipset <set4,set6>            add the ip of the current group to ipset
-    \\ -N, --no-ipv6 [rules]                rule: tag:<name>, ip:china, ip:non_china
+    \\ -N, --no-ipv6 [rules]                tag:<name>[@ip:*], ip:china, ip:non_china
     \\                                      if no rules, then filter all AAAA queries
     \\ --filter-qtype <qtypes>              filter queries with the given qtype (u16)
     \\ --cache <size>                       enable dns caching, size 0 means disabled
@@ -425,26 +424,7 @@ fn opt_group_ipset(in_value: ?[]const u8) void {
 }
 
 fn opt_no_ipv6(in_value: ?[]const u8) void {
-    const src = @src();
-
-    if (in_value) |value| {
-        var it = std.mem.split(u8, value, ",");
-        while (it.next()) |rule| {
-            if (std.mem.startsWith(u8, rule, "tag:")) {
-                const tag_name = cc.to_cstr(rule[4..]);
-                const tag = Tag.from_name(tag_name) orelse printf_exit(src, "invalid tag: '%s'", .{tag_name});
-                g.noaaaa_rule.add_rule(tag.int()) orelse invalid_optvalue(src, value);
-            } else if (std.mem.eql(u8, rule, "ip:china")) {
-                g.noaaaa_rule.add_rule(NoAAAA.Rule.ip_china) orelse invalid_optvalue(src, value);
-            } else if (std.mem.eql(u8, rule, "ip:non_china")) {
-                g.noaaaa_rule.add_rule(NoAAAA.Rule.ip_non_china) orelse invalid_optvalue(src, value);
-            } else {
-                print_exit(src, "invalid rule", rule);
-            }
-        }
-    } else {
-        g.noaaaa_rule.add_all();
-    }
+    groups.add_ip6_filter(in_value) orelse invalid_optvalue(@src(), in_value orelse "");
 }
 
 fn opt_filter_qtype(in_value: ?[]const u8) void {
