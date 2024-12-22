@@ -326,7 +326,7 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  --group-dnl <paths>                  domain name list for the current group
  --group-upstream <upstreams>         upstream dns server for the current group
  --group-ipset <set4,set6>            add the ip of the current group to ipset
- -N, --no-ipv6 [rules]                rule: tag:<name>, ip:china, ip:non_china
+ -N, --no-ipv6 [rules]                tag:<name>[@ip:*], ip:china, ip:non_china
                                       if no rules, then filter all AAAA queries
  --filter-qtype <qtypes>              filter queries with the given qtype (u16)
  --cache <size>                       enable dns caching, size 0 means disabled
@@ -508,10 +508,14 @@ group-upstream 192.168.1.1
 - `no-ipv6` 用于过滤 AAAA 查询（查询域名的 IPv6 地址），默认不设置此选项。
   - 未给出规则时，过滤所有 AAAA 查询。
   - 2024.04.13 版本起，规则有修改（**不兼容旧版**），多个规则使用逗号隔开：
-    - `tag:<name>`：按域名 tag 过滤，如 `tag:gfw`，支持自定义的 tag
-    - `ip:china`：若响应的 answer 中有 china IP，则过滤（空响应）
-    - `ip:non_china`：若响应的 answer 中有 non-china IP，则过滤（空响应）
-    - `ip:*` 规则的测试数据库由 `--ipset-name6` 选项提供，默认为 chnroute6
+    - `tag:域名组`：过滤给定 **域名组** 的 AAAA 查询
+    - `ip:china`：过滤解析结果为 **大陆 IP** 的 AAAA 响应
+    - `ip:non_china`：过滤解析结果为 **非大陆 IP** 的 AAAA 响应
+    - `ip:条件` 规则的测试数据库由 `--ipset-name6` 提供，默认为 chnroute6
+  - 2024.12.22 版本起，允许给每个域名组单独配置 AAAA 过滤规则：
+    - `tag:域名组@ip:条件`：为给定 **域名组** 设置 AAAA 过滤条件
+    - `tag:域名组` 等价于 `tag:域名组@ip:任何条件`
+    - `ip:条件` 等价于 `tag:所有组@ip:条件`
 
 ### filter-qtype
 
