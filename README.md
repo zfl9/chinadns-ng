@@ -133,6 +133,10 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 # 如果想自己编译，请先前往 zig 根目录，按顺序 apply 这两个补丁
 # - https://github.com/ziglang/zig/pull/14541.patch
 # - https://github.com/ziglang/zig/pull/14556.patch
+
+# riscv64
+zig build -Dtarget=riscv64-linux-musl
+
 ```
 
 </p></details>
