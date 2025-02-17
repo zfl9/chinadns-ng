@@ -136,7 +136,6 @@ ARCH=mips32r5 && MIPS_M_ARCH=$ARCH zig build -Dtarget=mipsel-linux-musl -Dcpu=$A
 
 # riscv64
 zig build -Dtarget=riscv64-linux-musl
-
 ```
 
 </p></details>
