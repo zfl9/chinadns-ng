@@ -344,7 +344,6 @@ static bool exists_in_dnl(const char *noalias name, u8 namelen, u8 *noalias tag)
 
 /* ======================== domain name ======================== */
 
-
 #define MAX_NAME_LEVEL 8 /* bits(s_level_interest) */
 
 static u8 s_level_interest = 0;
@@ -377,7 +376,7 @@ static const char *check_name(const char *name) {
 
     s_level_interest |= 1 << (level - 1);
 
-    if (s_level_max == 0 || level > s_level_max)
+    if (level > s_level_max)
         s_level_max = level;
 
     return name;
