@@ -7,7 +7,7 @@ const Step = std.build.Step;
 const LibExeObjStep = std.build.LibExeObjStep;
 const OptionsStep = std.build.OptionsStep;
 
-const chinadns_version = "2024.12.22";
+const chinadns_version = "2025.03.27";
 
 var _b: *Builder = undefined;
 
@@ -37,7 +37,7 @@ const DependLib = struct {
 };
 
 var _dep_wolfssl: DependLib = b: {
-    const version = "5.7.4";
+    const version = "5.7.6";
     const src_dir = "dep/wolfssl-" ++ version;
     break :b .{
         .url = "https://github.com/wolfSSL/wolfssl/archive/refs/tags/v" ++ version ++ "-stable.tar.gz",
@@ -320,6 +320,12 @@ fn is_musl() bool {
     return _target.getAbi().isMusl();
 }
 
+fn is_armv5() bool {
+    return _target.getCpuArch() == .arm and
+        (_target.getCpuFeatures().isEnabled(@enumToInt(std.Target.arm.Feature.v5t)) or
+        _target.getCpuFeatures().isEnabled(@enumToInt(std.Target.arm.Feature.v5te)));
+}
+
 /// return 0 if not x86_64 arch
 fn get_x86_64_level() u8 {
     const name = _target.getCpuModel().name;
@@ -586,6 +592,7 @@ fn build_wolfssl() *Step {
         \\  intelasm='{s}'
         \\  armasm='{s}'
         \\  aarch64='{s}'
+        \\  cflags='{s}'
         \\  cwd="$PWD"
         \\
         \\  cd "$src_dir"
@@ -656,7 +663,7 @@ fn build_wolfssl() *Step {
         \\      --disable-crypttests \
         \\      --disable-benchmark \
         \\      --disable-examples \
-        \\      EXTRA_CFLAGS="-include $cwd/src/wolfssl_opt.h"
+        \\      EXTRA_CFLAGS="-include $cwd/src/wolfssl_opt.h $cflags"
         \\  make install
     ;
 
@@ -670,6 +677,7 @@ fn build_wolfssl() *Step {
         .mips64, .mips64el => "0",
         else => "1",
     };
+    const opt_cflags: [:0]const u8 = if (is_armv5()) "-DWOLFSSL_NO_FENCE" else "";
 
     const cmd = fmt(cmd_, .{
         _b.pathFromRoot(_dep_wolfssl.base_dir),
@@ -685,6 +693,7 @@ fn build_wolfssl() *Step {
         opt_intelasm,
         opt_armasm,
         opt_aarch64,
+        opt_cflags,
     });
 
     wolfssl.dependOn(add_sh_cmd_x(cmd));
