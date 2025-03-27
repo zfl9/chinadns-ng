@@ -359,7 +359,7 @@ static const char *check_name(const char *name) {
 
     for (int i = namelen - 1; i >= 0; --i) {
         if (name[i] == '.') {
-            unlikely_if (label_len < 1 || label_len > DNS_NAME_LABEL_MAXLEN)
+            unlikely_if (label_len < 1)
                 return NULL;
 
             label_len = 0;
@@ -370,7 +370,8 @@ static const char *check_name(const char *name) {
                 break;
             }
         } else {
-            ++label_len;
+            unlikely_if (++label_len > DNS_NAME_LABEL_MAXLEN)
+                return NULL;
         }
     }
 
