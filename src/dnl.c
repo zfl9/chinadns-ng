@@ -23,9 +23,6 @@
 /* for L1 map */
 #define MAX_COLLISION 4
 
-/* "www.google.com.hk" */
-#define LABEL_MAXCNT 4
-
 /* u32 (bit-field) */
 #define NAMEADDR_BIT 29
 
@@ -345,40 +342,72 @@ static bool exists_in_dnl(const char *noalias name, u8 namelen, u8 *noalias tag)
     }
 }
 
-// "a.www.google.com.hk" => "www.google.com.hk"
-static const char *trim_name(const char *name) {
+/* ======================== domain name ======================== */
+
+
+#define MAX_NAME_LEVEL 8 /* bits(s_level_interest) */
+
+static u8 s_level_interest = 0;
+static int s_level_max = 0;
+
+/* truncate if needed */
+static const char *check_name(const char *name) {
     int namelen = strlen(name);
-    if (namelen < 1 || name[0] == '.' || name[namelen - 1] == '.') return NULL;
-    int labellen = 0, count = 0;
+    unlikely_if (namelen < 1 || name[0] == '.' || name[0] == '#' || name[namelen - 1] == '.')
+        return NULL;
+
+    int label_len = 0, level = 1;
+
     for (int i = namelen - 1; i >= 0; --i) {
-        if (name[i] != '.') {
-            if (++labellen > DNS_NAME_LABEL_MAXLEN) return NULL;
+        if (name[i] == '.') {
+            unlikely_if (label_len < 1 || label_len > DNS_NAME_LABEL_MAXLEN)
+                return NULL;
+
+            label_len = 0;
+
+            if (++level > MAX_NAME_LEVEL) {
+                --level;
+                name += i + 1;
+                break;
+            }
         } else {
-            if (labellen < 1) return NULL;
-            labellen = 0;
-            if (++count >= LABEL_MAXCNT) return name + i + 1;
+            ++label_len;
         }
     }
+
+    s_level_interest |= 1 << (level - 1);
+
+    if (s_level_max == 0 || level > s_level_max)
+        s_level_max = level;
+
     return name;
 }
 
-/* "a.www.google.com.hk" => ["hk", "com.hk", "google.com.hk", "www.google.com.hk"], arraylen=LABEL_MAXCNT */
-static int split_name(const char *noalias name, int namelen, const char *noalias sub_names[noalias], int sub_namelens[noalias]) {
-    int n = 0;
-    const char *p, *end;
-    p = end = name + namelen;
-    while (n < LABEL_MAXCNT && (p = memrchr(name, '.', p - name))) {
-        sub_names[n] = p + 1;
-        sub_namelens[n] = end - (p + 1);
-        ++n;
+/* "foo.www.google.com.hk" => ["hk", "com.hk", "google.com.hk", "www.google.com.hk"], #array=MAX_NAME_LEVEL */
+static int get_suffix(const char *noalias name, int namelen, const char *noalias suffix_array[noalias], int suffixlen_array[noalias]) {
+    int array_len = 0, level = 1;
+
+    for (const char *end = name + namelen, *dot = end;
+        level <= s_level_max && (dot = memrchr(name, '.', dot - name));
+        ++level)
+    {
+        if (s_level_interest & (1 << (level - 1))) {
+            suffix_array[array_len] = dot + 1;
+            suffixlen_array[array_len] = end - (dot + 1);
+            ++array_len;
+        }
     }
-    if (n < LABEL_MAXCNT) { /* p is NULL */
-        sub_names[n] = name;
-        sub_namelens[n] = namelen;
-        ++n;
+
+    if (s_level_interest & (1 << (level - 1))) {
+        suffix_array[array_len] = name;
+        suffixlen_array[array_len] = namelen;
+        ++array_len;
     }
-    return n;
+
+    return array_len;
 }
+
+/* ======================== domain list ======================== */
 
 /* return `has_domains` */
 static bool load_list(u8 tag, filenames_t filenames,
@@ -402,7 +431,7 @@ static bool load_list(u8 tag, filenames_t filenames,
 
         char buf[DNS_NAME_MAXLEN + 1];
         while (fscanf(fp, "%" literal(DNS_NAME_MAXLEN) "s", buf) > 0) {
-            const char *name = trim_name(buf);
+            const char *name = check_name(buf);
             if (name) {
                 u32 nameaddr = add_name(name, tag);
                 if (count++ == 0) addr0 = nameaddr;
@@ -456,6 +485,8 @@ static void do_test(void) {
     }
 }
 #endif
+
+/* ======================== public API ======================== */
 
 void dnl_init(const filenames_t tag_to_filenames[TAG__MAX + 1], bool gfwlist_first) {
     /* first load_list() and then add_list() is friendly to malloc/realloc */
@@ -527,18 +558,23 @@ bool dnl_is_empty(void) {
 u8 dnl_get_tag(const char *noalias name, int namelen, u8 default_tag) {
     assert(!dnl_is_null());
 
-    const char *noalias sub_names[LABEL_MAXCNT];
-    int sub_namelens[LABEL_MAXCNT];
-
     assert(namelen > 0);
     assert((u8)namelen == namelen);
-    int n = split_name(name, namelen, sub_names, sub_namelens);
-    assert(n > 0);
 
-    u8 tag;
+    const char *noalias suffix_array[MAX_NAME_LEVEL];
+    int suffixlen_array[MAX_NAME_LEVEL];
+
+    int n = get_suffix(name, namelen, suffix_array, suffixlen_array);
+
+    // for (int i = 0; i < n; ++i)
+    //     log_warning("suffix[%d] = '%.*s'", i, suffixlen_array[i], suffix_array[i]);
+
     while (--n >= 0) {
-        if (exists_in_dnl(sub_names[n], sub_namelens[n], &tag))
+        u8 tag;
+        if (exists_in_dnl(suffix_array[n], suffixlen_array[n], &tag)) {
+            // log_warning("match[%d] = '%.*s'", n, suffixlen_array[n], suffix_array[n]);
             return tag;
+        }
     }
 
     return default_tag;
