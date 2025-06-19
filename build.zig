@@ -37,7 +37,7 @@ const DependLib = struct {
 };
 
 var _dep_wolfssl: DependLib = b: {
-    const version = "5.7.6";
+    const version = "5.8.0";
     const src_dir = "dep/wolfssl-" ++ version;
     break :b .{
         .url = "https://github.com/wolfSSL/wolfssl/archive/refs/tags/v" ++ version ++ "-stable.tar.gz",

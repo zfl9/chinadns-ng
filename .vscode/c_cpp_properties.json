@@ -5,7 +5,7 @@
             "intelliSenseMode": "linux-clang-x64",
             "compilerPath": "/usr/bin/clang",
             "compilerArgs": [
-                "-I${workspaceFolder}/dep/wolfssl-5.7.0-stable",
+                "-I${workspaceFolder}/dep/wolfssl-5.8.0-stable",
                 "-I${workspaceFolder}/dep/mimalloc-2.1.2/include"
             ],
             "defines": [
