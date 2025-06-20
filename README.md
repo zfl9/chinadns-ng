@@ -832,6 +832,34 @@ chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 
 ---
 
+### 将 default-tag 设置为 null，可实现白名单解析
+
+若只想解析特定域名（如本地 hosts），并在查询其它域名时返回 NODATA 结果（相当于过滤），该如何实现？
+
+chinadns-ng 在收到查询时，会先检查本地资源记录（比如加载的 hosts 文件），再执行域名分组逻辑（tag:chn、tag:gfw、tag:none、自定义组），其中有一个特殊自定义组 `null`，此域名组的任何查询均会返回 NODATA 结果。
+
+因此若想实现上述“白名单解析”逻辑，可将 default-tag 设为 `null`，此配置下，任何不在指定范围内的域名查询均会返回 NODATA 结果。以下是几个相关配置示例：
+
+> chinadns-ng 2025.06.20 版本为此用例调整了逻辑顺序，如有需要，请最新到最新版本。
+
+```shell
+# 只允许查询 /etc/hosts 中的域名
+chinadns-ng --hosts --group null --default-tag null
+
+# 只允许查询 chnlist.txt 中的域名
+chinadns-ng -m chnlist.txt --group null --default-tag null
+
+# 只允许查询 gfwlist.txt 中的域名
+chinadns-ng -g gfwlist.txt --group null --default-tag null
+
+# 只允许查询 /etc/hosts、chnlist.txt、gfwlist.txt、x.txt 中的域名
+chinadns-ng --hosts -m chnlist.txt -g gfwlist.txt \
+          --group x --group-dnl x.txt --group-upstream 1.1.1.1 \
+          --group null --default-tag null
+```
+
+---
+
 ### 使用 chinadns-ng 替代 dnsmasq 的注意事项
 
 chinadns-ng 2.0 已经足以替代经典用例下的 dnsmasq：
