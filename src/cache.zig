@@ -167,7 +167,7 @@ pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (!enabled())
         return false;
 
-    if (dns.is_tc(msg) or dns.get_rcode(msg) != c.DNS_RCODE_NOERROR)
+    if (!dns.is_good(msg))
         return false;
 
     if (cache_ignore.is_ignored(msg, qnamelen))

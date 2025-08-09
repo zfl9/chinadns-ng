@@ -649,7 +649,7 @@ fn use_china_reply(msg: []const u8, qnamelen: c_int, p_test_res: *?dns.TestIpRes
             if (g.verbose()) rlog.china_noip();
             break :b g.flags.noip_as_chnip;
         },
-        .other_case => dns.is_tc(msg), // `truncated` or `rcode != 0`
+        .other_case => dns.is_tc(msg), // allow truncate
     };
 }
 

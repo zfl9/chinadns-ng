@@ -233,9 +233,6 @@ static bool foreach_record(void *noalias *noalias p_ptr, ssize_t *noalias p_len,
     return true;
 }
 
-#define is_normal_msg(msg) \
-    (!dns_is_tc(msg) && dns_get_rcode(msg) == DNS_RCODE_NOERROR)
-
 #define get_answer_count(msg) \
     ntohs(cast(const struct dns_header *, msg)->answer_count)
 
@@ -330,6 +327,11 @@ bool dns_is_tc(const void *noalias msg) {
     return cast(const struct dns_header *, msg)->tc;
 }
 
+bool dns_is_good(const void *noalias msg) {
+    u8 rcode = dns_get_rcode(msg);
+    return !dns_is_tc(msg) && (rcode == DNS_RCODE_NOERROR || rcode == DNS_RCODE_NXDOMAIN);
+}
+
 static int get_qnamelen(const void *noalias msg, ssize_t len) {
     msg += sizeof(struct dns_header);
     len -= sizeof(struct dns_header);
@@ -359,7 +361,7 @@ u16 dns_empty_reply(void *noalias msg, int qnamelen) {
 
 // return newlen (0 if failed)
 static u16 rm_additional(void *noalias msg, ssize_t len, int qnamelen) {
-    if (!is_normal_msg(msg))
+    if (!dns_is_good(msg))
         return len;
 
     void *start = msg;
@@ -448,7 +450,7 @@ static bool add_ip(struct dns_record *noalias record, int rnamelen, void *ud, bo
 }
 
 int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen, const struct ipset_testctx *noalias ctx) {
-    if (!is_normal_msg(msg))
+    if (!dns_is_good(msg))
         return DNS_TEST_IP_OTHER_CASE;
 
     int count = get_answer_count(msg);
@@ -464,7 +466,7 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen, const struct
 }
 
 void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset_addctx *noalias ctx) {
-    if (!is_normal_msg(msg))
+    if (!dns_is_good(msg))
         return;
 
     int count = get_answer_count(msg);
@@ -505,7 +507,7 @@ static bool update_ttl(struct dns_record *noalias record, int rnamelen, void *ud
 }
 
 i32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, i32 nodata_ttl) {
-    if (!is_normal_msg(msg))
+    if (!dns_is_good(msg))
         return -1;
 
     int count = get_records_count(msg);

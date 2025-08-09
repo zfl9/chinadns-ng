@@ -48,6 +48,10 @@ pub inline fn is_tc(msg: []const u8) bool {
     return c.dns_is_tc(msg.ptr);
 }
 
+pub inline fn is_good(msg: []const u8) bool {
+    return c.dns_is_good(msg.ptr);
+}
+
 /// return the truncated msg (global static buffer)
 pub inline fn truncate(msg: []const u8) []u8 {
     const res_msg = cc.static_buf(c.DNS_QMSG_MAXSIZE);

@@ -28,6 +28,7 @@
 #define DNS_QR_REPLY 1
 
 #define DNS_RCODE_NOERROR 0
+#define DNS_RCODE_NXDOMAIN 3
 
 #define DNS_CLASS_IN 1
 
@@ -60,6 +61,9 @@ u16 dns_get_bufsz(const void *noalias msg, ssize_t len, int qnamelen);
 u8 dns_get_rcode(const void *noalias msg);
 
 bool dns_is_tc(const void *noalias msg);
+
+/* !tc && (rcode==noerror || rcode==nxdomain) */
+bool dns_is_good(const void *noalias msg);
 
 /*
 * the msg has been checked by `check_reply()`
