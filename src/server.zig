@@ -764,15 +764,14 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
             dns.add_ip(msg, qnamelen, addctx);
         };
 
-    // [sync && nosuspend] send reply to client
-    if (q.flags.from_client())
-        send_reply(msg, q.fdobj, &q.src_addr, q.bufsz, q.id, q.flags);
-
-    // add to cache (may modify the msg)
-    // must come after the `send_reply()`
+    // add to cache (may modify the msg.ttl)
     var ttl: i32 = undefined;
     if (cache.add(msg, qnamelen, &ttl))
         if (g.verbose()) rlog.cache(ttl, msg.len);
+
+    // [sync && nosuspend] send reply to client
+    if (q.flags.from_client())
+        send_reply(msg, q.fdobj, &q.src_addr, q.bufsz, q.id, q.flags);
 
     // must be at the end
     _query_list.del(q);

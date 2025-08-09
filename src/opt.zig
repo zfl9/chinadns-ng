@@ -41,6 +41,8 @@ const help =
     \\ --cache-stale <N>                    use stale cache: expired time <= N(second)
     \\ --cache-refresh <N>                  pre-refresh the cached data if TTL <= N(%)
     \\ --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
+    \\ --cache-min-ttl <ttl>                if record.ttl < min_ttl, set ttl to min_ttl
+    \\ --cache-max-ttl <ttl>                if record.ttl > max_ttl, set ttl to max_ttl
     \\ --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
     \\ --cache-db <path>                    dns cache persistence (from/to db file)
     \\ --verdict-cache <size>               enable verdict caching for tag:none domains
@@ -136,6 +138,8 @@ const optdef_array = [_]OptDef{
     .{ .short = "",  .long = "cache-stale",        .value = .required, .optfn = opt_cache_stale,        },
     .{ .short = "",  .long = "cache-refresh",      .value = .required, .optfn = opt_cache_refresh,      },
     .{ .short = "",  .long = "cache-nodata-ttl",   .value = .required, .optfn = opt_cache_nodata_ttl,   },
+    .{ .short = "",  .long = "cache-min-ttl",      .value = .required, .optfn = opt_cache_min_ttl,      },
+    .{ .short = "",  .long = "cache-max-ttl",      .value = .required, .optfn = opt_cache_max_ttl,      },
     .{ .short = "",  .long = "cache-ignore",       .value = .required, .optfn = opt_cache_ignore,       },
     .{ .short = "",  .long = "cache-db",           .value = .required, .optfn = opt_cache_db,           },
     .{ .short = "",  .long = "verdict-cache",      .value = .required, .optfn = opt_verdict_cache,      },
@@ -463,6 +467,24 @@ fn opt_cache_refresh(in_value: ?[]const u8) void {
 fn opt_cache_nodata_ttl(in_value: ?[]const u8) void {
     const value = in_value.?;
     g.cache_nodata_ttl = str2int.parse(@TypeOf(g.cache_nodata_ttl), value, 10) orelse
+        invalid_optvalue(@src(), value);
+    if (g.cache_nodata_ttl < 0)
+        invalid_optvalue(@src(), value);
+}
+
+fn opt_cache_min_ttl(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    g.cache_min_ttl = str2int.parse(@TypeOf(g.cache_min_ttl), value, 10) orelse
+        invalid_optvalue(@src(), value);
+    if (g.cache_min_ttl < 0)
+        invalid_optvalue(@src(), value);
+}
+
+fn opt_cache_max_ttl(in_value: ?[]const u8) void {
+    const value = in_value.?;
+    g.cache_max_ttl = str2int.parse(@TypeOf(g.cache_max_ttl), value, 10) orelse
+        invalid_optvalue(@src(), value);
+    if (g.cache_max_ttl < 0)
         invalid_optvalue(@src(), value);
 }
 

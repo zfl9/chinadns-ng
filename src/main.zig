@@ -190,7 +190,13 @@ pub fn main() u8 {
             log.info(src, "pre-refresh cache, remain TTL: %u%%", .{cc.to_uint(g.cache_refresh)});
 
         if (g.cache_nodata_ttl > 0)
-            log.info(src, "cache NODATA response, TTL: %u", .{cc.to_uint(g.cache_nodata_ttl)});
+            log.info(src, "cache NODATA response, TTL: %ld", .{cc.to_long(g.cache_nodata_ttl)});
+
+        if (g.cache_min_ttl > 0)
+            log.info(src, "cache TTL overwrite, min TTL: %ld", .{cc.to_long(g.cache_min_ttl)});
+
+        if (g.cache_max_ttl > 0)
+            log.info(src, "cache TTL overwrite, max TTL: %ld", .{cc.to_long(g.cache_max_ttl)});
 
         cache.load();
     }

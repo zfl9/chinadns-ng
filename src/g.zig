@@ -63,8 +63,14 @@ pub var cache_stale: u32 = 0;
 /// refresh current cache if TTL <= N(%)
 pub var cache_refresh: u8 = 0;
 
-/// rcode=NOERROR && no-records
-pub var cache_nodata_ttl: u16 = 60;
+/// good_msg && no-records
+pub var cache_nodata_ttl: i32 = 60;
+
+/// set ttl to this (if rr.ttl < min_ttl)
+pub var cache_min_ttl: i32 = 0;
+
+/// set ttl to this (if rr.ttl > max_ttl)
+pub var cache_max_ttl: i32 = 0;
 
 /// load/dump cache from/to this file
 pub var cache_db: ?cc.ConstStr = null;

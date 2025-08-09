@@ -476,6 +476,13 @@ void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset
     ipset_end_add_ip(ctx);
 }
 
+struct get_ttl_ud {
+    i32 min_ttl; // param
+    i32 max_ttl; // param
+    i32 ttl; // result
+    bool nodata; // result
+};
+
 static bool get_ttl(struct dns_record *noalias record, int rnamelen, void *ud, bool *noalias is_break) {
     (void)rnamelen;
     (void)is_break;
@@ -484,9 +491,27 @@ static bool get_ttl(struct dns_record *noalias record, int rnamelen, void *ud, b
         /* it is hereby specified that a TTL value is an unsigned number,
             with a minimum value of 0, and a maximum value of 2147483647. */
         i32 ttl = ntohl(record->rttl);
-        i32 *final_ttl = ud;
-        if (ttl < *final_ttl)
-            *final_ttl = ttl;
+
+        struct get_ttl_ud *u = ud;
+
+        // overwrite the record.ttl
+        bool overwritten = false;
+        if (u->min_ttl > 0 && ttl < u->min_ttl) {
+            ttl = u->min_ttl;
+            overwritten = true;
+        }
+        if (u->max_ttl > 0 && ttl > u->max_ttl) {
+            ttl = u->max_ttl;
+            overwritten = true;
+        }
+        if (overwritten)
+            record->rttl = htonl(ttl);
+
+        // get the result ttl
+        if (u->nodata || ttl < u->ttl) {
+            u->nodata = false;
+            u->ttl = ttl;
+        }
     }
 
     return true;
@@ -506,22 +531,23 @@ static bool update_ttl(struct dns_record *noalias record, int rnamelen, void *ud
     return true;
 }
 
-i32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, i32 nodata_ttl) {
+i32 dns_get_ttl(void *noalias msg, ssize_t len, int qnamelen, i32 nodata_ttl, i32 min_ttl, i32 max_ttl) {
     if (!dns_is_good(msg))
         return -1;
 
     int count = get_records_count(msg);
     move_to_records(msg, len, qnamelen);
 
-    i32 ttl = INT32_MAX;
+    struct get_ttl_ud ud = {
+        .min_ttl = min_ttl,
+        .max_ttl = max_ttl,
+        .ttl = nodata_ttl,
+        .nodata = true,
+    };
+    unlikely_if (!foreach_record(&msg, &len, count, get_ttl, &ud))
+        ud.ttl = -1;
 
-    unlikely_if (!foreach_record((void **)&msg, &len, count, get_ttl, &ttl))
-        ttl = -1;
-
-    if (ttl == INT32_MAX) /* nodata */
-        ttl = nodata_ttl;
-
-    return ttl;
+    return ud.ttl;
 }
 
 void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, i32 ttl_change) {
