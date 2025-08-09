@@ -7,7 +7,7 @@ const Step = std.build.Step;
 const LibExeObjStep = std.build.LibExeObjStep;
 const OptionsStep = std.build.OptionsStep;
 
-const chinadns_version = "2025.06.20";
+const chinadns_version = "2025.08.09";
 
 var _b: *Builder = undefined;
 
@@ -37,7 +37,7 @@ const DependLib = struct {
 };
 
 var _dep_wolfssl: DependLib = b: {
-    const version = "5.8.0";
+    const version = "5.8.2";
     const src_dir = "dep/wolfssl-" ++ version;
     break :b .{
         .url = "https://github.com/wolfSSL/wolfssl/archive/refs/tags/v" ++ version ++ "-stable.tar.gz",
