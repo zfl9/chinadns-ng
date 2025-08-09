@@ -336,6 +336,8 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  --cache-stale <N>                    use stale cache: expired time <= N(second)
  --cache-refresh <N>                  pre-refresh the cached data if TTL <= N(%)
  --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
+ --cache-min-ttl <ttl>                if record.ttl < min_ttl, set ttl to min_ttl
+ --cache-max-ttl <ttl>                if record.ttl > max_ttl, set ttl to max_ttl
  --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
  --cache-db <path>                    dns cache persistence (from/to db file)
  --verdict-cache <size>               enable verdict caching for tag:none domains
@@ -541,6 +543,8 @@ group-upstream 192.168.1.1
   - 2024.04.13 版本起，数据类型从 `u16` 改为 `u32`，以允许设置更大的过期时长。
 - `cache-refresh` 若当前查询的缓存的 TTL 不足初始值的百分之 N，则提前在后台刷新。
 - `cache-nodata-ttl` 给 NODATA 响应提供默认的缓存时长，默认 60 秒，0 表示不缓存。
+- `cache-min-ttl` 若响应记录的 TTL 小于此值，则将其 TTL 修改为此值，0 表示禁用。
+- `cache-max-ttl` 若响应记录的 TTL 大于此值，则将其 TTL 修改为此值，0 表示禁用。
 - `cache-ignore` 不要缓存给定的域名（后缀，最高支持 8 级），此选项可多次指定。
 - `cache-db` 启用缓存持久化，参数是 db 文件路径（可以不预先创建）。
   - 进程启动时，自动从 db 恢复缓存；进程退出时，自动将缓存写回至 db。
